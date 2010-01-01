@@ -34,7 +34,15 @@ config IOSCHED_CFQ
 
 	  This is the default I/O scheduler.
 
-	  Note: If BLK_CGROUP=m, then CFQ can be built only as module.
+config IOSCHED_SIO
+	tristate "Simple I/O scheduler"
+	default y
+	---help---
+	  The Simple I/O scheduler is an extremely simple scheduler that
+	  does basic merging and no sorting. It is aimed for usage in
+	  aleatory access devices like SSD, USB flash devices, etc.
+	  It differences synchronous requests from asynchronous ones for
+	  better interactibility.
 
 config CFQ_GROUP_IOSCHED
 	bool "CFQ Group Scheduling support"
@@ -92,6 +100,9 @@ choice
 	config DEFAULT_VR
 		bool "VR" if IOSCHED_VR=y
 
+	config DEFAULT_SIO
+		bool "SIO" if IOSCHED_SIO=y
+
 	config DEFAULT_NOOP
 		bool "No-op"
 
@@ -103,6 +114,7 @@ config DEFAULT_IOSCHED
 	default "cfq" if DEFAULT_CFQ
 	default "bfq" if DEFAULT_BFQ
 	default "vr" if DEFAULT_VR
+	default "sio" if DEFAULT_SIO
 	default "noop" if DEFAULT_NOOP
 
 endmenu
