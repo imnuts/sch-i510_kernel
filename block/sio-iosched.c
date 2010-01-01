@@ -7,7 +7,7 @@
  *
  * This algorithm does not do any kind of sorting, as it is aimed for
  * aleatory access devices, but it does some basic merging. We try to
- * keep minimum overhead to achieve low latencies.
+ * keep minimum overhead to achieve low latency.
  *
  * Asynchronous and synchronous requests are not treated separately, but
  * we relay on deadlines to ensure fairness.
