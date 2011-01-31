@@ -20,7 +20,7 @@
 #include <mach/regs-clock.h> 
 #include <mach/gpio.h> 
 #include "wm8994.h"
-
+#include "wm8994_voodoo.h"
 
 #include "A1026_regs.h"
 #include "A1026_dev.h"
@@ -1311,6 +1311,10 @@ void wm8994_record_main_mic(struct snd_soc_codec *codec)
 	//	val |= ( WM8994_IN1LP_TO_IN1L | WM8994_IN1LN_TO_IN1L );
 		val = ( /*WM8994_IN1LP_TO_IN1L |*/ WM8994_IN1LN_TO_IN1L);
 		wm8994_write(codec, WM8994_INPUT_MIXER_2, val);
+
+#ifdef CONFIG_SND_VOODOO_RECORD_PRESETS
+	voodoo_hook_record_main_mic();
+#endif
 
 		//Digital Paths
 		val = wm8994_read(codec, WM8994_AIF1_ADC1_LEFT_VOLUME);

@@ -37,7 +37,7 @@
 #include <mach/regs-clock.h> 
 #include <linux/wakelock.h>
 #include "wm8994.h"
-
+#include "wm8994_voodoo.h"
 
 #include <mach/gpio.h> 
 #include "A1026_regs.h"
@@ -237,6 +237,10 @@ int wm8994_write(struct snd_soc_codec *codec, unsigned int reg, unsigned int val
 	u8 data[4];
 	int ret;
 	//BUG_ON(reg > WM8993_MAX_REGISTER);
+
+#ifdef CONFIG_SND_VOODOO_RECORD_PRESETS
+	voodoo_hook_record_main_mic();
+#endif
 
 	/* data is
 	 *   D15..D9 WM8993 register offset
@@ -2290,6 +2294,9 @@ static int wm8994_i2c_probe(struct i2c_client *i2c,
 	codec->dev = &i2c->dev;
 	control_data1 = i2c;
 	ret = wm8994_init(wm8994_priv);
+#ifdef CONFIG_SND_VOODOO_RECORD_PRESETS
+	voodoo_hook_record_main_mic();
+#endif
 	if (ret < 0)
 		dev_err(&i2c->dev, "failed to initialize WM8994\n");
 	return ret;

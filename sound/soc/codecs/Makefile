@@ -39,7 +39,11 @@ snd-soc-wm8974-objs := wm8974.o
 snd-soc-wm8988-objs := wm8988.o
 snd-soc-wm8990-objs := wm8990.o
 snd-soc-wm8993-objs := wm8993.o
+ifeq ($(CONFIG_SND_VOODOO),y)
+snd-soc-wm8994-objs := wm8994.o wm8994_aries.o fm33.o A1026_i2c_drv.o audience.o wm8994_voodoo.o
+else
 snd-soc-wm8994-objs := wm8994.o wm8994_aries.o fm33.o A1026_i2c_drv.o audience.o
+endif
 snd-soc-wm9081-objs := wm9081.o
 snd-soc-wm9705-objs := wm9705.o
 snd-soc-wm9712-objs := wm9712.o
