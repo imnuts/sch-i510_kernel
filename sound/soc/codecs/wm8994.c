@@ -37,7 +37,9 @@
 #include <mach/regs-clock.h> 
 #include <linux/wakelock.h>
 #include "wm8994.h"
+#ifdef CONFIG_SND_VOODOO
 #include "wm8994_voodoo.h"
+#endif
 
 #include <mach/gpio.h> 
 #include "A1026_regs.h"

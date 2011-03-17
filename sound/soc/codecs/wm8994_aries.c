@@ -20,7 +20,9 @@
 #include <mach/regs-clock.h> 
 #include <mach/gpio.h> 
 #include "wm8994.h"
+#ifdef CONFIG_SND_VOODOO
 #include "wm8994_voodoo.h"
+#endif
 
 #include "A1026_regs.h"
 #include "A1026_dev.h"
@@ -2480,6 +2482,10 @@ void wm8994_set_playback_speaker(struct snd_soc_codec *codec)
 	val &= ~(WM8994_AIF1DAC1L_TO_DAC1L_MASK);
 	val |= WM8994_AIF1DAC1L_TO_DAC1L;
 	wm8994_write(codec, WM8994_DAC1_LEFT_MIXER_ROUTING, val);
+
+#ifdef CONFIG_SND_VOODOO
+	voodoo_hook_playback_speaker();
+#endif
 	
 	//Enbale bias,vmid and Left speaker
 	val = wm8994_read(codec,WM8994_POWER_MANAGEMENT_1);
