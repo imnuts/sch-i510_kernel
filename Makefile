@@ -346,8 +346,19 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
-		   -fno-delete-null-pointer-checks
-KBUILD_AFLAGS   := -D__ASSEMBLY__
+		   -fno-delete-null-pointer-checks \
+		   -march=armv7-a -mtune=cortex-a8 \
+		   -mcpu=cortex-a8 -mfpu=neon -mfloat-abi=hard \
+		   -fno-gcse -marm \
+		   -mthumb -fomit-frame-pointer \
+		   -funroll-loops -ffast-math -fsingle-precision-constant \
+		   --param l2-cache-size=256 \
+		   --param l1-cache-size=32 \
+		   --param simultaneous-prefetches=6 \
+		   --param prefetch-latency=400 \
+		   --param l1-cache-line-size=32
+
+KBUILD_AFLAGS   := -D__ASSEMBLY__ -Dlinux
 
 # Read KERNELRELEASE from include/config/kernel.release (if it exists)
 KERNELRELEASE = $(shell cat include/config/kernel.release 2> /dev/null)
