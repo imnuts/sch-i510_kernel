@@ -240,8 +240,8 @@ int wm8994_write(struct snd_soc_codec *codec, unsigned int reg, unsigned int val
 	int ret;
 	//BUG_ON(reg > WM8993_MAX_REGISTER);
 
-#ifdef CONFIG_SND_VOODOO_RECORD_PRESETS
-	voodoo_hook_record_main_mic();
+#ifdef CONFIG_SND_VOODOO
+	value = voodoo_hook_wm8994_write(codec, reg, value);
 #endif
 
 	/* data is
@@ -2296,9 +2296,6 @@ static int wm8994_i2c_probe(struct i2c_client *i2c,
 	codec->dev = &i2c->dev;
 	control_data1 = i2c;
 	ret = wm8994_init(wm8994_priv);
-#ifdef CONFIG_SND_VOODOO_RECORD_PRESETS
-	voodoo_hook_record_main_mic();
-#endif
 	if (ret < 0)
 		dev_err(&i2c->dev, "failed to initialize WM8994\n");
 	return ret;
@@ -2450,6 +2447,10 @@ static int wm8994_pcm_probe(struct platform_device *pdev)
 #endif        
 #else
                 /* Add other interfaces here */
+#endif
+
+#ifdef CONFIG_SND_VOODOO
+	voodoo_hook_wm8994_pcm_probe(codec);
 #endif
 
         return ret;

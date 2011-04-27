@@ -1314,10 +1314,6 @@ void wm8994_record_main_mic(struct snd_soc_codec *codec)
 		val = ( /*WM8994_IN1LP_TO_IN1L |*/ WM8994_IN1LN_TO_IN1L);
 		wm8994_write(codec, WM8994_INPUT_MIXER_2, val);
 
-#ifdef CONFIG_SND_VOODOO_RECORD_PRESETS
-	voodoo_hook_record_main_mic();
-#endif
-
 		//Digital Paths
 		val = wm8994_read(codec, WM8994_AIF1_ADC1_LEFT_VOLUME);
 		val &= ~(WM8994_AIF1ADC1L_VOL_MASK);
@@ -2483,10 +2479,6 @@ void wm8994_set_playback_speaker(struct snd_soc_codec *codec)
 	val |= WM8994_AIF1DAC1L_TO_DAC1L;
 	wm8994_write(codec, WM8994_DAC1_LEFT_MIXER_ROUTING, val);
 
-#ifdef CONFIG_SND_VOODOO
-	voodoo_hook_playback_speaker();
-#endif
-	
 	//Enbale bias,vmid and Left speaker
 	val = wm8994_read(codec,WM8994_POWER_MANAGEMENT_1);
 	val &= ~(WM8994_BIAS_ENA_MASK | WM8994_VMID_SEL_MASK |WM8994_HPOUT1L_ENA_MASK |WM8994_HPOUT1R_ENA_MASK | 
