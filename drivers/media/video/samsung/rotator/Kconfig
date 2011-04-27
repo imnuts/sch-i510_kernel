@@ -1,0 +1,11 @@
+#
+# Configuration for rotator
+#
+
+config VIDEO_ROTATOR
+	bool "Samsung Image Rotator Driver" 
+	depends on VIDEO_SAMSUNG && (CPU_S5PV210_EVT1)
+	default n
+	---help---
+	  This is a Rotator for Samsung CPU_S5PV210_EVT1.
+

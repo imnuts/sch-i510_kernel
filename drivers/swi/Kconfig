@@ -1,0 +1,14 @@
+config SWI
+	tristate "GPIO-based bitbanging SWI support"
+	depends on GENERIC_GPIO
+	default y
+	help
+		This is GPIO bitbanging Single-wired interface driver
+		and could be used for Backlight device with single-wired
+		interface.
+
+		backlight driver could control single-wired interface based
+		on GPIO as registering interface specific data to swi_board_info
+		and backlight driver to swi driver.
+		swi_board_info.controller_data holds the GPIO number for
+		interfacing between CPU and Device.

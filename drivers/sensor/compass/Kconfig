@@ -1,0 +1,19 @@
+#
+# MAGNETIC Sensor Configuration
+#
+
+config COMPASS
+	bool "Sensors"
+	default n
+	help
+	  This option enables sensors
+
+
+config COMPASS_YAMAHA
+	depends on COMPASS
+	tristate "YAMAHA"
+	default y
+	help
+	  This option enables magnetic sensors using YAMAHA driver.
+	  It is optimized for s3c6410.
+
