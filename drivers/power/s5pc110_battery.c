@@ -1272,6 +1272,7 @@ static ssize_t s3c_bat_store(struct device *dev,
 			}
 			break;
 #endif
+#if 0
 #ifdef __VZW_AUTH_CHECK__
 		case AUTH_BATTERY_ENABLE:
 			if (sscanf(buf, "%d\n", &x) == 1) {
@@ -1284,6 +1285,7 @@ static ssize_t s3c_bat_store(struct device *dev,
 				ret = count;
 			}
 			break;
+#endif
 #endif
 #ifdef __TEMP_BLOCK_EXCEPTION__
 		case BATT_CHARGINGBLOCK_CLEAR:
@@ -1833,10 +1835,12 @@ void s3c_cable_changed(void)
 
 	s3c_bat_info.bat_info.batt_is_full = 0;
 
+#if 0
 #ifdef __VZW_AUTH_CHECK__
 		pr_info("%s: retry vzw batt auth\n", __func__);
 		batt_auth_full_check = 0; // P110208-0686 (Stealth-V: Retry vzw battery auth.)
 		s3c_bat_check_v_f();
+#endif
 #endif
 
 	schedule_work(&cable_work);
