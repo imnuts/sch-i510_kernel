@@ -12,6 +12,12 @@ config IOSCHED_NOOP
 	  that do their own scheduling and require only minimal assistance from
 	  the kernel.
 
+config IOSCHED_FIFO
+	tristate "FIFO I/O scheduler"
+	default y
+	---help---
+	  A no-op scheduler that really does nothing.
+
 config IOSCHED_AS
 	tristate "Anticipatory I/O scheduler"
 	default y
@@ -55,6 +61,9 @@ choice
 	  Select the I/O scheduler which will be used by default for all
 	  block devices.
 
+	config DEFAULT_FIFO
+		bool "FIFO" if IOSCHED_FIFO=y
+
 	config DEFAULT_AS
 		bool "Anticipatory" if IOSCHED_AS=y
 
@@ -74,6 +83,7 @@ endchoice
 
 config DEFAULT_IOSCHED
 	string
+	default "fifo" if DEFAULT_FIFO
 	default "anticipatory" if DEFAULT_AS
 	default "deadline" if DEFAULT_DEADLINE
 	default "cfq" if DEFAULT_CFQ
