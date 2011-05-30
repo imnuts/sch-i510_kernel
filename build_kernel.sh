@@ -26,7 +26,7 @@ echo "***** Building : $CONFIG *****"
 make clean mrproper > /dev/null 2>&1
 rm -f update_"$CONFIG"/*.zip update_"$CONFIG"/kernel_update/zImage
 
-make ARCH=arm stealth_defconfig 1>/dev/null 2>"$WORK"/errlog.txt
+make ARCH=arm charge_defconfig 1>/dev/null 2>"$WORK"/errlog.txt
 make -j6 CROSS_COMPILE=/usr/bin/arm-linux-gnueabi- ARCH=arm HOSTCFLAGS="-g -O3" 1>"$WORK"/stdlog.txt 2>>"$WORK"/errlog.txt
 if [ $? != 0 ]; then
 		echo -e "FAIL!\n"
@@ -41,7 +41,7 @@ fi
 cp arch/arm/boot/zImage update_"$CONFIG"/kernel_update/zImage
 cd update_"$CONFIG"
 zip -r -q kernel_update.zip .
-mv kernel_update.zip ../"$DATE"_stealth_"$CONFIG".zip
+mv kernel_update.zip ../"$DATE"_charge_"$CONFIG".zip
 cd ../../
 mv .git stealth_initramfs/
 cd $WORK
