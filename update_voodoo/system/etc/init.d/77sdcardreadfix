@@ -1,5 +1,0 @@
-#!/system/bin/sh
-if [ -e /sys/devices/virtual/bdi/179:0/read_ahead_kb ]
-then
-/system/xbin/echo "4096" > /sys/devices/virtual/bdi/179:0/read_ahead_kb;
-fi;
