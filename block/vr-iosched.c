@@ -27,6 +27,8 @@
 #include <linux/compiler.h>
 #include <linux/rbtree.h>
 
+#include <asm/div64.h>
+
 enum vr_data_dir {
 	ASYNC,
 	SYNC,
@@ -78,17 +80,17 @@ vr_add_rq_rb(struct vr_data *vd, struct request *rq)
 		BUG_ON(alias);
 	}
 
-	if (rq->sector >= vd->last_sector) {
-		if (!vd->next_rq || vd->next_rq->sector > rq->sector)
+	if (blk_rq_pos(rq) >= vd->last_sector) {
+		if (!vd->next_rq || blk_rq_pos(vd->next_rq) > blk_rq_pos(rq))
 			vd->next_rq = rq;
 	}
 	else {
-		if (!vd->prev_rq || vd->prev_rq->sector < rq->sector)
+		if (!vd->prev_rq || blk_rq_pos(vd->prev_rq) < blk_rq_pos(rq))
 			vd->prev_rq = rq;
 	}
 
 	BUG_ON(vd->next_rq && vd->next_rq == vd->prev_rq);
-	BUG_ON(vd->next_rq && vd->prev_rq && vd->next_rq->sector < vd->prev_rq->sector);
+	BUG_ON(vd->next_rq && vd->prev_rq && blk_rq_pos(vd->next_rq) < blk_rq_pos(vd->prev_rq));
 }
 
 static void
@@ -105,7 +107,7 @@ vr_del_rq_rb(struct vr_data *vd, struct request *rq)
 		vd->prev_rq = elv_rb_former_request(NULL, rq);
 
 	BUG_ON(vd->next_rq && vd->next_rq == vd->prev_rq);
-	BUG_ON(vd->next_rq && vd->prev_rq && vd->next_rq->sector < vd->prev_rq->sector);
+	BUG_ON(vd->next_rq && vd->prev_rq && blk_rq_pos(vd->next_rq) < blk_rq_pos(vd->prev_rq));
 
 	elv_rb_del(&vd->sort_list, rq);
 }
@@ -193,12 +195,12 @@ vr_move_request(struct vr_data *vd, struct request *rq)
 {
 	struct request_queue *q = rq->q;
 
-	if (rq->sector > vd->last_sector)
+	if (blk_rq_pos(rq) > vd->last_sector)
 		vd->head_dir = FORWARD;
 	else
 		vd->head_dir = BACKWARD;
 
-	vd->last_sector = rq->sector;
+	vd->last_sector = blk_rq_pos(rq);
 	vd->next_rq = elv_rb_latter_request(NULL, rq);
 	vd->prev_rq = elv_rb_former_request(NULL, rq);
 
@@ -266,13 +268,13 @@ vr_choose_request(struct vr_data *vd)
 
 	/* At this point both prev and next are defined and distinct */
 
-	next_pen = next->sector - vd->last_sector;
-	prev_pen = vd->last_sector - prev->sector;
+	next_pen = blk_rq_pos(next) - vd->last_sector;
+	prev_pen = vd->last_sector - blk_rq_pos(prev);
 
 	if (vd->head_dir == FORWARD)
-		next_pen /= penalty;
+		next_pen = do_div(next_pen, penalty);
 	else
-		prev_pen /= penalty;
+		prev_pen = do_div(prev_pen, penalty);
 
 	if (next_pen <= prev_pen)
 		return next;
@@ -311,7 +313,7 @@ vr_queue_empty(struct request_queue *q)
 }
 
 static void
-vr_exit_queue(elevator_t *e)
+vr_exit_queue(struct elevator_queue *e)
 {
 	struct vr_data *vd = e->elevator_data;
 	BUG_ON(!RB_EMPTY_ROOT(&vd->sort_list));
@@ -357,7 +359,7 @@ vr_var_store(int *var, const char *page, size_t count)
 }
 
 #define SHOW_FUNCTION(__FUNC, __VAR, __CONV)				\
-static ssize_t __FUNC(elevator_t *e, char *page)			\
+static ssize_t __FUNC(struct elevator_queue *e, char *page)			\
 {									\
 	struct vr_data *vd = e->elevator_data;				\
 	int __data = __VAR;						\
@@ -372,7 +374,7 @@ SHOW_FUNCTION(vr_rev_penalty_show, vd->rev_penalty, 0);
 #undef SHOW_FUNCTION
 
 #define STORE_FUNCTION(__FUNC, __PTR, MIN, MAX, __CONV)			\
-static ssize_t __FUNC(elevator_t *e, const char *page, size_t count)	\
+static ssize_t __FUNC(struct elevator_queue *e, const char *page, size_t count)	\
 {									\
 	struct vr_data *vd = e->elevator_data;				\
 	int __data;							\
@@ -442,4 +444,3 @@ module_exit(vr_exit);
 MODULE_AUTHOR("Aaron Carroll");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("V(R) IO scheduler");
-
