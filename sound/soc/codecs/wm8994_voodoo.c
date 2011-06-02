@@ -485,15 +485,17 @@ bool is_path(int unified_path)
 			|| wm8994->fmradio_path == FMR_HP);
 #else
 #ifdef M110S
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 35)
+		return (wm8994->cur_path == HP
+			|| wm8994->cur_path == HP_NO_MIC);
+#else
 		return (wm8994->cur_path == HP);
+#endif
 #else
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 35)
 		return (wm8994->cur_path == HP
 			|| wm8994->cur_path == HP_NO_MIC
-#ifndef M110S
-			|| wm8994->fmradio_path == FMR_HP
-#endif
-			);
+			|| wm8994->fmradio_path == FMR_HP);
 #else
 		return (wm8994->cur_path == HP
 			|| wm8994->fmradio_path == FMR_HP);

@@ -20,14 +20,15 @@
 #include <mach/regs-clock.h> 
 #include <mach/gpio.h> 
 #include "wm8994.h"
-#ifdef CONFIG_SND_VOODOO
-#include "wm8994_voodoo.h"
-#endif
 
 #include "A1026_regs.h"
 #include "A1026_dev.h"
 #include "A1026_i2c_drv.h"
 #include "audience.h"
+
+#ifdef CONFIG_SND_VOODOO
+#include "wm8994_voodoo.h"
+#endif
 
 
 //------------------------------------------------
@@ -1331,6 +1332,10 @@ void wm8994_record_main_mic(struct snd_soc_codec *codec)
 			val |= (WM8994_AIF1ADC1_VU | TUNING_RECORD_MAIN_AIF1ADCR_VOL); // 0db
 		wm8994_write(codec, WM8994_AIF1_ADC1_RIGHT_VOLUME, val);
 	}
+
+#ifdef CONFIG_SND_VOODOO_RECORD_PRESETS
+	voodoo_hook_record_main_mic();
+#endif
 
 	val = wm8994_read(codec,WM8994_POWER_MANAGEMENT_4 );
 	val &= ~(WM8994_ADCL_ENA_MASK |WM8994_AIF1ADC1L_ENA_MASK  );
