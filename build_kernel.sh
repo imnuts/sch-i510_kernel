@@ -10,12 +10,12 @@ cd ..
 # check for voodoo/non-voodoo
 if [ "$1" != "V" ]; then
 	CONFIG="novoodoo"
-	cd stealth_initramfs
+	cd charge_initramfs
 	git checkout froyo
 	mv .git ../
 else
 	CONFIG="voodoo"
-	cd stealth_initramfs
+	cd charge_initramfs
 	git checkout froyo-voodoo
 	mv .git ../
 fi
@@ -31,7 +31,7 @@ make -j6 CROSS_COMPILE=/usr/bin/arm-linux-gnueabi- ARCH=arm HOSTCFLAGS="-g -O3" 
 if [ $? != 0 ]; then
 		echo -e "FAIL!\n"
 		cd ..
-		mv .git stealth_initramfs/
+		mv .git charge_initramfs/
 		exit 1
 	else
 		echo -e "Success!\n"
@@ -43,7 +43,7 @@ cd update_"$CONFIG"
 zip -r -q kernel_update.zip .
 mv kernel_update.zip ../"$DATE"_charge_"$CONFIG".zip
 cd ../../
-mv .git stealth_initramfs/
+mv .git charge_initramfs/
 cd $WORK
 echo -e "***** Successfully compiled: $CONFIG *****\n"
 
