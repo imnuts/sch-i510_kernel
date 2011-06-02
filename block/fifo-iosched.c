@@ -48,7 +48,7 @@ static void *fifo_init_queue(struct request_queue *q)
 	return fifo_d;
 }
 
-static void fifo_exit_queue(elevator_t *e)
+static void fifo_exit_queue(struct elevator_queue *e)
 {
 	struct fifo_data *fifo_d = e->elevator_data;
 
