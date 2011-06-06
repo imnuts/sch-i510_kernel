@@ -24,7 +24,7 @@ fi
 cd $WORK
 echo "***** Building : $CONFIG *****"
 make clean mrproper > /dev/null 2>&1
-rm -f update_"$CONFIG"/*.zip update_"$CONFIG"/kernel_update/zImage
+rm -f update/*.zip update/kernel_update/zImage
 
 make ARCH=arm charge_defconfig 1>/dev/null 2>"$WORK"/errlog.txt
 make -j6 CROSS_COMPILE=/usr/bin/arm-linux-gnueabi- ARCH=arm HOSTCFLAGS="-g -O3" 1>"$WORK"/stdlog.txt 2>>"$WORK"/errlog.txt
@@ -38,8 +38,8 @@ if [ $? != 0 ]; then
 		rm -f "$WORK"/*log.txt
 fi
 
-cp arch/arm/boot/zImage update_"$CONFIG"/kernel_update/zImage
-cd update_"$CONFIG"
+cp arch/arm/boot/zImage update/kernel_update/zImage
+cd update
 zip -r -q kernel_update.zip .
 mv kernel_update.zip ../"$DATE"_charge_"$CONFIG".zip
 cd ../../
