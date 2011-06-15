@@ -1671,16 +1671,17 @@ unsigned int voodoo_hook_wm8994_write(struct snd_soc_codec *codec_,
 	}
 	if (debug_log(LOG_VERBOSE))
 	// log every write to dmesg
+		printk("Voodoo sound: wm8994_write 0x%03X 0x%04X "
 #ifdef NEXUS_S
-		printk("Voodoo sound: codec_state=%u, stream_state=%u, "
+		       "codec_state=%u, stream_state=%u, "
 		       "cur_path=%i, rec_path=%i, "
 		       "power_state=%i\n",
+		       reg, value,
 		       wm8994->codec_state, wm8994->stream_state,
 		       wm8994->cur_path, wm8994->rec_path,
 		       wm8994->power_state);
 #else
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 35)
-		printk("Voodoo sound: wm8994_write 0x%03X 0x%04X "
 		       "codec_state=%u, stream_state=%u, "
 		       "cur_path=%i, rec_path=%i, "
 #ifndef M110S
@@ -1703,7 +1704,6 @@ unsigned int voodoo_hook_wm8994_write(struct snd_soc_codec *codec_,
 #endif
 		       wm8994->power_state);
 #else
-		printk("Voodoo sound: wm8994_write 0x%03X 0x%04X "
 		       "codec_state=%u, stream_state=%u, "
 		       "cur_path=%i, rec_path=%i, "
 #ifndef M110S
