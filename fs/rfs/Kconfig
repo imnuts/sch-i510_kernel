@@ -2,11 +2,13 @@ menu "RFS Filesystem"
 
 config RFS_FS
        tristate "Robust FAT Filesystem (RFS) support"
+       default m
        help    
          Samsung Robust File System support.
 
 config RFS_VFAT
        bool "FAT && long file name support"
+       default y
        depends on RFS_FS
 
 config RFS_SYNC_ON_CLOSE
