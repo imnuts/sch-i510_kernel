@@ -1,0 +1,17 @@
+#
+# Makefile for the linux rfs-filesystem for gcov
+#
+
+CFLAGS_cluster.o += $(GCOV_FLAGS)
+CFLAGS_code_convert.o += $(GCOV_FLAGS)
+CFLAGS_dir.o += $(GCOV_FLAGS)
+CFLAGS_dos.o += $(GCOV_FLAGS)
+CFLAGS_file.o += $(GCOV_FLAGS)
+CFLAGS_inode.o += $(GCOV_FLAGS)
+CFLAGS_log.o += $(GCOV_FLAGS)
+CFLAGS_log_replay.o += $(GCOV_FLAGS)
+CFLAGS_namei.o += $(GCOV_FLAGS)
+CFLAGS_rfs_24.o += $(GCOV_FLAGS)
+CFLAGS_rfs_26.o += $(GCOV_FLAGS)
+CFLAGS_super.o += $(GCOV_FLAGS)
+CC = $(CROSS_COMPILE)gcc

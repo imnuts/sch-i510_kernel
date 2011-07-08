@@ -1,0 +1,37 @@
+#
+# RFS FAT configuration
+#
+
+tristate 'RFS filesystem support' CONFIG_RFS_FS
+
+if [ "$CONFIG_RFS_FS" = "y" -o "$CONFIG_RFS_FS" = "m" ]; then
+   dep_mbool '  FAT32 & long file name support' CONFIG_RFS_VFAT
+   dep_mbool '  Sync on close support' CONFIG_RFS_SYNC_ON_CLOSE
+   dep_mbool '  Support NLS on RFS filesystem' CONFIG_RFS_NLS $CONFIG_RFS_VFAT
+   if [ "$CONFIG_RFS_NLS" = "y" ]; then
+      string '  Use default NLS Codepage' CONFIG_RFS_DEFAULT_CODEPAGE "cp949"
+   fi
+   dep_mbool '  Debugging' CONFIG_RFS_FAT_DEBUG
+   if [ "$CONFIG_RFS_FAT_DEBUG" = "y" ]; then
+      int '   Debugging verbosity (0 = quiet, 3 = noisy)' CONFIG_RFS_FAT_DEBUG_VERBOSE 0
+   fi
+fi
+
+if [ "$CONFIG_RFS_XSR_STL" = "y" ]; then
+   define_bool CONFIG_RFS_MAPDESTROY y
+fi
+
+if [ "$CONFIG_RFS_FS" = "m" -a "$CONFIG_RFS_XSR_STL" = "m" ]; then
+   define_bool CONFIG_RFS_MAPDESTROY y
+fi
+
+define_bool CONFIG_RFS_IGET4 y
+define_string CONFIG_RFS_VERSION "RFS_1.3.1_b070"
+
+# When file is extended, it is the max number of clusters
+#      which one transaction can use.
+# If the transaction rollbacks, the amount of
+#      (CONFIG_RFS_PRE_ALLOC * cluster size) data would also rollback.
+define_int CONFIG_RFS_PRE_ALLOC 50
+
+define_int CONFIG_RFS_LOG_WAKEUP_DELAY 5

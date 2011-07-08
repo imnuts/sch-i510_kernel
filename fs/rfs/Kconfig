@@ -1,0 +1,95 @@
+menu "RFS Filesystem"
+
+config RFS_FS
+       tristate "Robust FAT Filesystem (RFS) support"
+       help    
+         Samsung Robust File System support.
+
+config RFS_VFAT
+       bool "FAT && long file name support"
+       depends on RFS_FS
+
+config RFS_SYNC_ON_CLOSE
+       bool "Sync on close support"
+       depends on RFS_FS
+
+config RFS_NLS
+       bool "Support NLS on RFS filesystem"
+       select NLS
+       default y
+       depends on RFS_VFAT
+
+config RFS_DEFAULT_CODEPAGE
+       string "Use default NLS codepage"
+       default NLS_DEFAULT 
+       depends on RFS_NLS
+
+config RFS_POSIX_ATTR
+        bool "POSIX attribute support"
+       default false
+        depends on RFS_FS
+
+config RFS_FS_XATTR
+        bool "RFS extended attributes"
+        depends on RFS_FS
+        default false 
+        help
+        Extended attributes are name:value pairs associated with inodes
+        by the kernel or by users (see the attr(5) manual page,
+        or visit <http://acl.bestbits.at/> for details).
+
+config RFS_FS_SECURITY
+        bool "RFS Security Labels"
+        depends on RFS_FS_XATTR
+        help
+        Security labels support alternative access control models
+        implemented by security modules like SELinux.
+        This option enables an extended attribute namespace
+        for inode security labels in the RFS filesystem.
+
+#config RFS_FS_FULL_PERMISSION
+#       bool "support 32bit uid, gid"
+#       depends on RFS_FS_XATTR && RFS_POSIX_ATTR
+
+config RFS_FAST_LOOKUP
+        bool "RFS fast file lookup"
+       default false
+        depends on RFS_FS
+
+config RFS_FAST_SEEK
+        bool "RFS fast seek"
+       default false
+        depends on RFS_FS
+
+#config RFS_QUOTA
+#       bool
+#       depends on QUOTA && RFS_POSIX_ATTR
+#       default y
+
+config RFS_UID_BITS
+        int
+        default 8
+        depends on RFS_POSIX_ATTR
+
+config RFS_FAT_DEBUG
+       bool "FAT Debug Message support"
+       depends on RFS_FS
+
+config RFS_FAT_DEBUG_VERBOSE
+       int "Debugging versosity (0 = quiet, 3 = noisy)"
+       default 0
+       depends on RFS_FAT_DEBUG
+
+config RFS_MAPDESTROY
+       bool
+       default false 
+
+config RFS_PRE_ALLOC
+       int
+       default 50
+
+config RFS_VERSION
+       string
+       default "RFS_1.3.1_b070"
+
+endmenu

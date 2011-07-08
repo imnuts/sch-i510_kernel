@@ -1,0 +1,23 @@
+#
+# Makefile for the linux rfs-filesystem (kernel 2.6)
+#
+
+obj-$(CONFIG_RFS_FS)    += rfs.o
+
+rfs-y           += fcache.o cluster.o code_convert.o dos.o
+rfs-y           += dir.o file.o inode_26.o inode.o namei.o super.o
+rfs-y           += log.o log_replay.o
+rfs-y           += rfs_26.o
+#ifdef CONFIG_PROC_FS
+rfs-y           += misc.o
+#endif
+ifdef CONFIG_RFS_FS_XATTR
+       rfs-y           += xattr.o xattr_user.o xattr_trusted.o
+endif
+#ifdef CONFIG_RFS_FS_POSIX_ACL
+rfs-y           +=
+#endif
+ifdef CONFIG_RFS_FS_SECURITY
+       rfs-y           += xattr_security.o
+endif
+
