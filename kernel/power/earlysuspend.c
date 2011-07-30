@@ -100,10 +100,6 @@ static void early_suspend(struct work_struct *work)
 	struct early_suspend *pos;
 	unsigned long irqflags;
 	int abort = 0;
-#ifdef CONFIG_CPU_FREQ
-	int error;
-	struct cpufreq_policy policy;
-#endif
 
 	mutex_lock(&early_suspend_lock);
 	spin_lock_irqsave(&state_lock, irqflags);
