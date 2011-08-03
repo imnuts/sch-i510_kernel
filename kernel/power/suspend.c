@@ -280,7 +280,6 @@ int enter_state(suspend_state_t state)
 
 
 #ifdef CONFIG_CPU_FREQ
-#if 1
 	// change cpufreq governor to performance
 	// if conservative governor
 	if(is_userspace_gov())
@@ -288,7 +287,8 @@ int enter_state(suspend_state_t state)
 		g_cpuspeed = s5pc110_getspeed(0);
 		printk("userspace cpu speed %d \n",g_cpuspeed);
 		userSpaceGovernor=true;
-    	} else if(is_conservative_gov()) {
+//    	} else if(is_conservative_gov()) {
+    	} else {
 		/*Fix the upper transition scaling*/
 		g_dvfs_fix_lock_limit = true;
 		s5pc110_lock_dvfs_high_level(DVFS_LOCK_TOKEN_7, LEV_800MHZ);
@@ -303,11 +303,6 @@ int enter_state(suspend_state_t state)
 
 		cpufreq_driver_target(&policy, 800000, CPUFREQ_RELATION_L);
 	}
-	
-#else
-//	cpufreq_direct_set_policy(0, "userspace");
-//	cpufreq_direct_store_scaling_setspeed(0, "800000", 0);
-#endif
 #endif
 
 	printk(KERN_INFO "PM: Syncing filesystems ... ");
