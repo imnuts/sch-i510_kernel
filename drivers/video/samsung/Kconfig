@@ -116,6 +116,20 @@ config FB_S3C_MDNIE_TUNINGMODE_FOR_BACKLIGHT
 	---help---
 		  This option enables to control mDNIe tuning for backlights.
 
+config VOODOO_MDNIE
+	bool "Voodoo mDNIe sharpness and color enhancements"
+	depends on FB_S3C_MDNIE
+	default y
+	---help---
+	  This enables Voodoo mDNIe tweaks
+
+config VOODOO_MDNIE_VIDEOS_ALT_PRESETS
+	bool "Replace Warm & Cold Video presets by Boost and Soft"
+	depends on VOODOO_MDNIE
+	default y
+	---help---
+	  This enables Voodoo mDNIe useful alternative presets used by Samsung video player
+
 config FB_S3C_LVDS
 	bool "LVDS"
 	depends on FB_S3C && (ARCH_S5PV210)
@@ -131,14 +145,6 @@ config FB_S3C_AMS701KA
 	default n
 	---help---
 	  This enables support for Samsung AMS701KA LCD panel
-
-config FB_S3C_MDNIE
-	bool "Samsung MDNIE"
-	depends on FB_S3C
-	depends on FB_S3C && (ARCH_S5PV210)
-	default "0"
-	---help---
-	  This enables support for Samsung MDNIE feature
 
 config FB_S3C_TL2796_ACL
 	bool "Samsung TL2796(ACL)"
