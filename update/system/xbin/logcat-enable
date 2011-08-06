@@ -1,0 +1,13 @@
+#!/system/bin/sh
+#
+# Script to enable logcat via shell/terminal
+# This will load the logcat kernel module and
+# delete /data/local/disable-logcat so that logcat
+# will be enabled on restart.
+#
+# (c) 2011 - Mark Dietz (imnuts)
+# http://twitter.com/imnuts07
+
+insmod /lib/modules/logger.ko
+rm -f /data/local/disable-logcat
+echo "Logcat has been enabled"

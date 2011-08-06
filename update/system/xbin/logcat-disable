@@ -1,0 +1,13 @@
+#!/system/bin/sh
+#
+# Script to disable logcat via shell/terminal
+# This will remove the logcat kernel module and
+# create /data/local/disable-logcat so that logcat
+# will remain disabled on restart.
+#
+# (c) 2011 - Mark Dietz (imnuts)
+# http://twitter.com/imnuts07
+
+rmmod -f /lib/modules/logger.ko
+touch /data/local/disable-logcat
+echo "Logcat has been disabled"
