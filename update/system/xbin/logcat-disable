@@ -8,6 +8,5 @@
 # (c) 2011 - Mark Dietz (imnuts)
 # http://twitter.com/imnuts07
 
-rmmod -f /lib/modules/logger.ko
 touch /data/local/disable-logcat
-echo "Logcat has been disabled"
+echo "Logcat will be disabled after restarting"

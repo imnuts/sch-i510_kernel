@@ -9,5 +9,5 @@
 # http://twitter.com/imnuts07
 
 insmod /lib/modules/logger.ko
-rm -f /data/local/disable-logcat
+rm /data/local/disable-logcat
 echo "Logcat has been enabled"
