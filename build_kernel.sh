@@ -39,6 +39,12 @@ if [ $? != 0 ]; then
 fi
 
 cp arch/arm/boot/zImage update/kernel_update/zImage
+if [ $CONFIG == novoodoo ]; then
+	cp arch/arm/boot/zImage recovery.bin
+	tar -c recovery.bin > "$DATE"_charge_recovery.tar
+	md5sum -t "$DATE"_charge_recovery.tar >> "$DATE"_charge_recovery.tar
+	mv "$DATE"_charge_recovery.tar "$DATE"_charge_recovery.tar.md5
+fi
 cd update
 zip -r -q kernel_update.zip .
 mv kernel_update.zip ../"$DATE"_charge_"$CONFIG".zip
