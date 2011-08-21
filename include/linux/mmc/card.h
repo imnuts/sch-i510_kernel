@@ -117,6 +117,9 @@ struct mmc_card {
 	const char		**info;		/* info strings */
 	struct sdio_func_tuple	*tuples;	/* unknown common tuples */
 
+	unsigned int		err_count;
+#define ERR_TRIGGER_REINIT 1024
+
 	struct dentry		*debugfs_root;
 };
 

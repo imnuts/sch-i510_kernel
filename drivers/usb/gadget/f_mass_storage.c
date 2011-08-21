@@ -104,7 +104,7 @@
 #define UMS_DISK_LUNS	1
 #ifdef _ENABLE_CDFS_
 #define UMS_CDROM_LUNS	1
-#define UMS_CDROM_ID	0
+#define UMS_CDROM_ID	1
 #else
 #define UMS_CDROM_LUNS	0
 #endif
@@ -173,10 +173,6 @@ struct platform_device* fsg_platform_device = NULL; //denis
 
 extern int UmsCDEnable;
 static int UmsInitStatus=0;
-
-#ifdef _SUPPORT_SAMSUNG_AUTOINSTALLER_
-extern bool IsKiesCurrentUsbStatus(); 
-#endif
 
 static struct {
 	char		*file[MAX_LUNS];
@@ -820,18 +816,8 @@ static int fsg_function_setup(struct usb_function *f,
 				break;
 			}
 
-#ifdef _SUPPORT_SAMSUNG_AUTOINSTALLER_
-			if( IsKiesCurrentUsbStatus() )
-			{
-				printk("[USB:UMS] %s, CurrentUsbStatus is KIES, return to PC fsg->nluns=1\n", __FUNCTION__);
-				*(u8 *)cdev->req->buf = 0;
-			}
-			else
-#endif
-			{
-				printk("[USB:UMS] %s, return to PC fsg->nluns=%d\n", __FUNCTION__, fsg->nluns);
+			printk("[USB:UMS] %s, return to PC fsg->nluns=%d\n", __FUNCTION__, fsg->nluns);
 			*(u8 *)cdev->req->buf = fsg->nluns - 1;
-			}
 			
 			value = 1;
 			break;
@@ -3828,6 +3814,7 @@ int mass_storage_function_config_changed(struct usb_composite_dev *cdev,
 	printk(KERN_INFO "mass_storage_function_config_changed\n");
 
 	fsg->function.bind = NULL;
+	fsg->nluns = nluns; 
 
 	rc = usb_add_function(c, &fsg->function);
 	if (rc != 0)

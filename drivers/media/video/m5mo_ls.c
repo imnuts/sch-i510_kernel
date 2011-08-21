@@ -4331,13 +4331,24 @@ m5moLS_i2c_update_firmware(struct v4l2_subdev *sd)
 	u32 val = 0, flash_addr;
 	u8 pin1 = 0x7E;
 	u8 status = '1';
-	
+	int ret_val;
+
         m5moLS_msg(&client->dev, "%s: start\n", __func__);
-	
 	/* Set M-5MoLS Pins */
-	m5moLS_write_mem(client, 0x0001, 0x50000308, &pin1);
-	/* M-5MoLS flash memory select */
-	m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0F, 0x13, 0x01);
+	ret_val = m5moLS_write_mem(client, 0x0001, 0x50000308, &pin1);
+	if(ret_val < 0)
+	{
+		m5moLS_msg(&client->dev,"return failed");
+		return -1;
+	}
+	/* M-5MoLS flash memory select */   
+	ret_val = m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0F, 0x13, 0x01);
+	if(ret_val < 0)
+	{
+		m5moLS_msg(&client->dev,"return failed");
+		return -1;
+	}
+	msleep(30);
 
 	m5moLS_msg(&client->dev,"Firmware Update Start!!\n");
 	m5moLS_write_fw_status(&status);
@@ -4346,9 +4357,10 @@ m5moLS_i2c_update_firmware(struct v4l2_subdev *sd)
 	{
 		/* Set Flash ROM memory address */
 		m5moLS_write_category_parm(client, M5MO_LS_32BIT, 0x0F, 0x00, flash_addr);
-
+		msleep(30);
 		/* Erase FLASH ROM entire memory */
 		m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0F, 0x06, 0x01);
+		msleep(30);
 		retry = 0;
 		while(1) 
 		{
@@ -4357,13 +4369,14 @@ m5moLS_i2c_update_firmware(struct v4l2_subdev *sd)
 			if(val == 0)	//4
 				break;
 
-			mdelay(20);
+			//mdelay(50);
+			msleep(200);
 			retry++;
 		}	
 
 		/* Set FLASH ROM programming size */
 		m5moLS_write_category_parm(client, M5MO_LS_16BIT, 0x0F, 0x04, 0x0000);
-
+		msleep(30);
 		/* Clear M-5MoLS internal RAM */
 		m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0F, 0x08, 0x01);
 		mdelay(10);
@@ -4371,7 +4384,7 @@ m5moLS_i2c_update_firmware(struct v4l2_subdev *sd)
 		printk("Firmware Update is processing... %d!!\n", i);
 		/* Set Flash ROM programming address */
 		m5moLS_write_category_parm(client, M5MO_LS_32BIT, 0x0F, 0x00, flash_addr);
-
+		msleep(30);
 		/* Send programmed firmware */
 		for(j=0; j<0x10000; j+=0x1000)
 		{
@@ -4383,6 +4396,7 @@ m5moLS_i2c_update_firmware(struct v4l2_subdev *sd)
 
 		/* Start Programming */
 		m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0F, 0x07, 0x01);						
+		msleep(30);
 		/* Confirm programming has been completed */
 		retry = 0;
 		while(1) 
@@ -4390,8 +4404,8 @@ m5moLS_i2c_update_firmware(struct v4l2_subdev *sd)
 			m5moLS_read_category_parm(client, M5MO_LS_8BIT, 0x0F, 0x07, &val);
 			if(val == 0)			//check programming process
 				break;
-
-			mdelay(10);
+			//mdelay(50);
+			msleep(200);
 			retry++;
 		}
 		mdelay(20);
@@ -4406,9 +4420,10 @@ m5moLS_i2c_update_firmware(struct v4l2_subdev *sd)
 	{
 		/* Set FLASH ROM memory address */
 		m5moLS_write_category_parm(client, M5MO_LS_32BIT, 0x0F, 0x00, flash_addr);
-
+		msleep(30);
 		/* Erase FLASH ROM entire memory */
 		m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0F, 0x06, 0x01);
+		msleep(30);
 		retry = 0;
 		while(1) 
 		{
@@ -4417,20 +4432,22 @@ m5moLS_i2c_update_firmware(struct v4l2_subdev *sd)
 			if(val == 0)	//4
 				break;
 
-			mdelay(20);
+			//mdelay(20);
+			msleep(200);
 			retry++;
                      m5moLS_msg(&client->dev,"Response while sector-erase is operating :: retry = %d\n",retry);
 		}	
 		
 		/* Set FLASH ROM programming size */
 		m5moLS_write_category_parm(client, M5MO_LS_16BIT, 0x0F, 0x04, 0x2000);
-
+		msleep(30); /* This isn't in EE4, but it was added at all other locations in the changes made, so I'm putting it here */
 		/* Clear M-5MoLS internal RAM */
 		m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0F, 0x08, 0x01);
 		mdelay(10);
 
 		/* Set Flash ROM programming address */
 		m5moLS_write_category_parm(client, M5MO_LS_32BIT, 0x0F, 0x00, flash_addr);
+		msleep(30);
 
 		/* Send programmed firmware */
 		for(j=0; j<0x2000; j+=0x1000)
@@ -4451,10 +4468,12 @@ m5moLS_i2c_update_firmware(struct v4l2_subdev *sd)
 			if(val == 0)			//check programming process
 				break;
 
-			mdelay(10);
+			//mdelay(10);
+			msleep(200);
 			retry++;
 		}
-		mdelay(20);
+		//mdelay(20);
+		msleep(20);
 		
 		/* Increase Flash ROM memory address */
 		flash_addr += 0x2000;	
@@ -4469,12 +4488,12 @@ m5moLS_i2c_update_firmware(struct v4l2_subdev *sd)
 	fw_update_status = 100;
 	if(camfw_update == 1)
 		camfw_update = 2;
-        
+
 	status = '0';
 	m5moLS_write_fw_status(&status);
-        
+
      	return 0;
-		
+
 }
 
 static int 

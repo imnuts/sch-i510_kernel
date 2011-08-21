@@ -613,7 +613,7 @@ static int onedram_mmap(struct file *filp, struct vm_area_struct *vma)
 
 /* This code MUST BE REMOVED!!! */
 #define IMG_SIZE (8 * 1024)
-extern int spi_load_lte_boot (unsigned char * addr, unsigned int len);
+int spi_load_lte_boot (unsigned char * addr, unsigned int len){return 1;}
 struct spi_param {
 	char __user *buf;
 	int len;
@@ -1037,4 +1037,3 @@ module_exit(onedram_exit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Suchang Woo <suchang.woo@samsung.com>");
 MODULE_DESCRIPTION("Onedram driver");
-

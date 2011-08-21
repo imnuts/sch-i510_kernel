@@ -28,8 +28,6 @@ config FS_MBCACHE
 	default m if EXT2_FS_XATTR || EXT3_FS_XATTR || EXT4_FS_XATTR
 
 source "fs/reiserfs/Kconfig"
-source "fs/jfs/Kconfig"
-
 config FS_POSIX_ACL
 # Posix ACL utility routines (for now, only ext2/ext3/jfs/reiserfs/nfs4)
 #
@@ -165,6 +163,8 @@ menuconfig MISC_FILESYSTEMS
 	  disabled; if unsure, say Y here.
 
 if MISC_FILESYSTEMS
+
+# RFS File System configuration
 
 source "fs/adfs/Kconfig"
 source "fs/affs/Kconfig"

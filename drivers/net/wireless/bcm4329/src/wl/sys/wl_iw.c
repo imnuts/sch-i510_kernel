@@ -230,7 +230,7 @@ typedef struct iscan_info {
 
 	char ioctlbuf[WLC_IOCTL_SMLEN];
 } iscan_info_t;
-#define  COEX_DHCP 1 
+//#define  COEX_DHCP 1 
 static void wl_iw_bt_flag_set(struct net_device *dev, bool set);
 static void wl_iw_bt_release(void);
 

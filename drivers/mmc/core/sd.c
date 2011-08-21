@@ -529,6 +529,7 @@ static int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 		}
 	}
 
+	card->err_count = 0;
 	return 0;
 
 free_card:
@@ -568,6 +569,8 @@ static void mmc_sd_detect(struct mmc_host *host)
        
 	mmc_claim_host(host);
 
+	if (host->card->err_count >= ERR_TRIGGER_REINIT)
+		err = mmc_sd_init_card(host, host->ocr, host->card);
 	/*
 	 * Just check if our card has been removed.
 	 */
@@ -586,7 +589,8 @@ static void mmc_sd_detect(struct mmc_host *host)
 		       __func__, mmc_hostname(host), err);
 	}
 #else
-	err = mmc_send_status(host->card, NULL);
+	if (!err)
+		err = mmc_send_status(host->card, NULL);
 #endif
 	mmc_release_host(host);
 
@@ -809,4 +813,3 @@ err:
 
 	return err;
 }
-

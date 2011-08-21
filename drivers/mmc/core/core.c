@@ -1342,7 +1342,6 @@ int mmc_suspend_host(struct mmc_host *host, pm_message_t state)
 	if (unlikely(cancel_delayed_work(&host->detect)))	{
 		atomic_dec(&wakelock_refs);
 	}
-	mmc_flush_scheduled_work();
 
 	mmc_bus_get(host);
 	if (host->bus_ops && !host->bus_dead) {
@@ -1398,17 +1397,6 @@ int mmc_resume_host(struct mmc_host *host)
 			printk(KERN_WARNING "%s: error %d during resume "
 					    "(card was removed?)\n",
 					    mmc_hostname(host), err);
-
-			// remove sdcard linux patch
-			// following codes causes lock-up. bus_ops->remove function never returns.
-			#if 0
-			if (host->bus_ops->remove)
-				host->bus_ops->remove(host);
-			mmc_claim_host(host);
-			mmc_detach_bus(host);
-			mmc_release_host(host);
-			#endif
-			/* no need to bother upper layers */
 			err = 0;
 		}
 	}
@@ -1450,7 +1438,7 @@ static int __init mmc_init(void)
 
 	wake_lock_init(&mmc_delayed_work_wake_lock, WAKE_LOCK_SUSPEND, "mmc_delayed_work");
 
-	workqueue = create_singlethread_workqueue("kmmcd");
+	workqueue = create_freezeable_workqueue("kmmcd");
 	if (!workqueue)
 		return -ENOMEM;
 

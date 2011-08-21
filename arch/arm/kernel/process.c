@@ -107,7 +107,7 @@ void arm_machine_restart(char mode, const char *cmd)
 	kernel_sec_clear_upload_magic_number();  // Clear the magic number because it's normal reboot.
 #endif
 	writel(0x12345678, S5P_INFORM5);  //Reset
-	writel(0x0,        S5P_INFORM6);
+	writel(__raw_readl(S5P_INFORM6)&0xFFFF00FF, S5P_INFORM6);
 
 	/*
 	 * Now call the architecture specific reboot code.

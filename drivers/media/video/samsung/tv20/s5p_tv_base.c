@@ -923,16 +923,17 @@ void TVout_LDO_ctrl(int enable)
 				if(Isdrv_open)
 					msleep(50);
 			}
-//			if((gpio_get_value(GPIO_ACCESSORY_INT))&&
 			if ((IsPower_on) && (!Isdrv_open))
 			{
 //				max8998_ldo3_8_control(0,LDO_TV_OUT);
 				//ldo 3,8 off
-				ldo38_control_by_tvout(0);
-				printk("%s: LDO3_8 is disabled by TV \n", __func__);
-				IsPower_on = 0;
+				if(hpd_sleep_state != 1)
+				{
+					ldo38_control_by_tvout(0);
+					printk("%s: LDO3_8 is disabled by TV \n", __func__);
+					IsPower_on = 0;
+				}
 			}
-//		}
 	}
 }
 
@@ -949,6 +950,7 @@ void s5p_handle_cable(void)
         return;
 #endif
    int previous_hpd_status = s5ptv_status.hpd_status;
+	msleep(200);
 #ifdef CONFIG_HDMI_HPD
     if (s5p_hpd_get_state()) {
         s5ptv_status.hpd_status = 1;
@@ -961,7 +963,6 @@ void s5p_handle_cable(void)
         set_irq_type(IRQ_EINT13, IRQ_TYPE_EDGE_RISING); 
     }
 
-//    s5ptv_status.hpd_status= gpio_get_value(S5PV210_GPH1(5));
 #else
     return;
 #endif
@@ -1311,14 +1312,18 @@ int s5p_tv_early_suspend(struct platform_device *dev, pm_message_t state)
     suspend_resume_sync = 1;
     printk(KERN_INFO "s5p_tv_early suspend executing..\n");
 #ifdef CABLE_CHECK
-          //s5p_hpd_set_state(HPD_SLEEP);
-    if (s5p_hpd_get_state()) {
-        hpd_sleep_state = 0;
-        set_irq_type(IRQ_EINT13, IRQ_TYPE_EDGE_FALLING);
-    } else {
-        hpd_sleep_state = 1;
-        set_irq_type(IRQ_EINT13, IRQ_TYPE_EDGE_RISING);
-    }
+#if 0    
+	if (s5p_hpd_get_state()) {
+	        set_irq_type(IRQ_EINT13, IRQ_TYPE_EDGE_FALLING);
+        	hpd_sleep_state = 0;
+	else{
+        	set_irq_type(IRQ_EINT13, IRQ_TYPE_EDGE_RISING);
+        	hpd_sleep_state = 1;
+	}
+#endif
+       	hpd_sleep_state = 1;
+        set_irq_type(IRQ_EINT13, IRQ_TYPE_EDGE_BOTH);
+
 #endif
     if(!(s5ptv_status.hpd_status))
     {
@@ -1364,7 +1369,6 @@ int s5p_tv_early_suspend(struct platform_device *dev, pm_message_t state)
 	    /* clk & power off */
 	    s5p_tv_clk_gate( false );
 
-
 #ifdef CONFIG_CPU_FREQ_S5PV210
 	    s5pv210_set_cpufreq_level(NORMAL_TABLE);
 #endif /* CONFIG_CPU_FREQ_S5PV210 */
@@ -1385,8 +1389,8 @@ int s5p_tv_late_resume(struct platform_device *dev)
     s5ptv_status.suspend_status = false;
     suspend_resume_sync = 2;
 #ifdef CABLE_CHECK
-          //s5p_hpd_set_state(HPD_SLEEP);
-           hpd_sleep_state =0;
+	//s5p_hpd_set_state(HPD_SLEEP);
+	hpd_sleep_state =0;
 #endif
 
     printk(KERN_INFO "s5p_tv_late_resume executing...\n");
@@ -1403,7 +1407,7 @@ int s5p_tv_late_resume(struct platform_device *dev)
     else
     {
 #ifdef CONFIG_CPU_FREQ_S5PV210
-		s5pv210_set_cpufreq_level(RESTRICT_TABLE);
+	s5pv210_set_cpufreq_level(RESTRICT_TABLE);
 #endif /* CONFIG_CPU_FREQ_S5PV210 */
 
 	/* clk & power on */

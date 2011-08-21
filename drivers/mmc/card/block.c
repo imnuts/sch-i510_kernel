@@ -267,13 +267,14 @@ mmc_blk_set_blksize(struct mmc_blk_data *md, struct mmc_card *card)
 	return 0;
 }
 
-
+#define BUSY_TIMEOUT_MS (16 * 1024)
 static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 {
 	struct mmc_blk_data *md = mq->data;
 	struct mmc_card *card = md->queue.card;
 	struct mmc_blk_request brq;
 	int ret = 1, disable_multi = 0;
+	unsigned long timeout = 0;
 
 #ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
 	if (mmc_bus_needs_resume(card->host)) {
@@ -439,7 +440,9 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 			       brq.stop.resp[0], status);
 		}
 
-		if (!mmc_host_is_spi(card->host) && rq_data_dir(req) != READ) {
+		if (!mmc_host_is_spi(card->host) && rq_data_dir(req) != READ &&
+				!brq.cmd.error && !brq.data.error && !brq.stop.error) {
+			timeout = jiffies + msecs_to_jiffies(BUSY_TIMEOUT_MS);
 			do {
 				int err;
 
@@ -452,13 +455,23 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 					       req->rq_disk->disk_name, err);
 					goto cmd_err;
 				}
+
+				if (cmd.resp[0] & R1_ERROR_MASK) {
+					printk(KERN_ERR "%s: card err %#x\n",
+							req->rq_disk->disk_name,
+							cmd.resp[0]);
+					goto cmd_err;
+				}
 				/*
 				 * Some cards mishandle the status bits,
 				 * so make sure to check both the busy
 				 * indication and the card state.
 				 */
-			} while (!(cmd.resp[0] & R1_READY_FOR_DATA) ||
-				(R1_CURRENT_STATE(cmd.resp[0]) == 7));
+				if ((cmd.resp[0] & R1_READY_FOR_DATA) &&
+						(R1_CURRENT_STATE(cmd.resp[0]) != 7))
+					break;
+			} while (time_before(jiffies, timeout));
+			/* Ignore timeout out */
 
 #if 0
 			if (cmd.resp[0] & ~0x00000900)
@@ -537,6 +550,15 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 		ret = __blk_end_request(req, -EIO, blk_rq_cur_bytes(req));
 	spin_unlock_irq(&md->lock);
 
+	card->err_count++;
+	printk(KERN_DEBUG "%s: %s err_count = %d.\n", __func__, mmc_card_name(card), card->err_count);
+#if 0	/* It's for removing card if the card doesn't work */
+	if (card->err_count >= ERR_TRIGGER_REINIT) {
+		printk(KERN_WARNING "%s: re-init the card due to error\n",
+				req->rq_disk->disk_name);
+		mmc_detect_change(card->host, 0);
+	}
+#endif
 	return 0;
 }
 
@@ -761,4 +783,3 @@ module_exit(mmc_blk_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Multimedia Card (MMC) block device driver");
-

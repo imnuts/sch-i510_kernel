@@ -362,6 +362,7 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 			goto err;
 		}
 
+		oldcard->err_count = 0;
 		card = oldcard;
 	} else {
 		/*
@@ -525,17 +526,20 @@ static void mmc_remove(struct mmc_host *host)
  */
 static void mmc_detect(struct mmc_host *host)
 {
-	int err;
+	int err = 0;
 
 	BUG_ON(!host);
 	BUG_ON(!host->card);
 
 	mmc_claim_host(host);
 
+	if (host->card->err_count >= ERR_TRIGGER_REINIT)
+		err = mmc_init_card(host, host->ocr, host->card);
 	/*
 	 * Just check if our card has been removed.
 	 */
-	err = mmc_send_status(host->card, NULL);
+	if (!err)
+		err = mmc_send_status(host->card, NULL);
 
 	mmc_release_host(host);
 

@@ -1755,13 +1755,17 @@ static ssize_t print_switch_state(struct switch_dev *sdev, char *buf)
 	if(usbstatus){
 		if(currentusbstatus == USBSTATUS_VTP)
 			return sprintf(buf, "%s\n", "RemoveOffline");
-		else if((currentusbstatus== USBSTATUS_UMS) || (currentusbstatus== USBSTATUS_ADB))
+		else if((currentusbstatus== USBSTATUS_UMS) 
+			|| (currentusbstatus== USBSTATUS_ADB)
+			|| (currentusbstatus== USBSTATUS_SAMSUNG_KIES))
 			return sprintf(buf, "%s\n", "ums online");
 		else
 			return sprintf(buf, "%s\n", "InsertOffline");
 	}
 	else{
-		if((currentusbstatus== USBSTATUS_UMS) || (currentusbstatus== USBSTATUS_ADB))
+		if((currentusbstatus== USBSTATUS_UMS) 
+			|| (currentusbstatus== USBSTATUS_ADB)
+			|| (currentusbstatus== USBSTATUS_SAMSUNG_KIES))
 			return sprintf(buf, "%s\n", "ums offline");
 		else
 			return sprintf(buf, "%s\n", "RemoveOffline");
@@ -1936,4 +1940,3 @@ struct i2c_driver fsa9480_i2c_driver = {
 	.remove	= __devexit_p(fsa9480_remove),
 	.command = NULL,
 };
-

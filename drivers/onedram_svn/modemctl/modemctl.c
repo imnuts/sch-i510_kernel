@@ -141,12 +141,15 @@ static void lte_reset(struct modemctl *mc)
 	if(!mc->gpio_phone_on || !mc->gpio_cp_reset)
 		return;
 
-	r = gpio_get_value(mc->gpio_phone_on);
-	if (r == 0)
-		lte_on(mc);
+//	r = gpio_get_value(mc->gpio_phone_on);
+//	if (r == 0)
+//		lte_on(mc);
 
+	gpio_set_value(mc->gpio_phone_on, 0);
 	gpio_set_value(mc->gpio_cp_reset, 0);
-	msleep(100);
+	msleep(10);
+	gpio_set_value(mc->gpio_phone_on, 1);
+	msleep(20);
 	gpio_set_value(mc->gpio_cp_reset, 1);
 }
 

@@ -557,6 +557,7 @@ int s3c2410_dma_enqueue(unsigned int channel, void *id,
 	if (buf->mcptr_cpu == NULL) {
 		printk(KERN_ERR "%s: failed to allocate memory for micro codes\n",
 				__func__);
+		kmem_cache_free(dma_kmem, buf);
 		return -ENOMEM;
 	}
 

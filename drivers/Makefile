@@ -44,7 +44,6 @@ obj-$(CONFIG_IDE)		+= ide/
 obj-$(CONFIG_SCSI)		+= scsi/
 obj-$(CONFIG_ATA)		+= ata/
 obj-$(CONFIG_MTD)		+= mtd/
-obj-$(CONFIG_TINY_FSR)		+= tfsr/
 obj-$(CONFIG_SPI)		+= spi/
 obj-$(CONFIG_SWI)		+= swi/
 obj-y				+= net/
@@ -117,6 +116,5 @@ obj-y				+= ieee802154/
 obj-$(CONFIG_SAMSUNG_PHONE_TTY)	+= cdma_dpram/
 obj-$(CONFIG_SAMSUNG_PHONE_SVNET)	+= onedram_svn/
 obj-$(CONFIG_SENSOR)		+= sensor/
-obj-$(CONFIG_SAMSUNG_MODULES)	+= samsung/
 
 obj-y   += level/

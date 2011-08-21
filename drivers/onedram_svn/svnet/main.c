@@ -45,7 +45,7 @@
 #ifdef CONFIG_HAS_WAKELOCK
 #include <linux/wakelock.h>
 
-#define DEFAULT_WAKE_TIME (4*HZ)
+#define DEFAULT_WAKE_TIME (2*HZ)
 #endif
 
 #if defined(PERF_DEBUG)

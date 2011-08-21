@@ -2966,6 +2966,7 @@ void wm8994_set_voicecall_common_setting(struct snd_soc_codec *codec)
 {
 	int val;
 
+	msleep(50); // to prevent one way mute
 
 #if 1 //Reduced tick noise when changing call path.
 	val = wm8994_read(codec, WM8994_AIF2_DAC_FILTERS_1);

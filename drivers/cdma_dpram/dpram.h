@@ -134,6 +134,7 @@ struct _param_em {
 #define HN_PDP_TXSTOP		_IO(IOC_MZ2_MAGIC, 0xe4)
 #define HN_PDP_SETRADIO		_IOW(IOC_MZ2_MAGIC, 0xe5,int)
 #define HN_PDP_DATASTATUS	_IOW(IOC_MZ2_MAGIC, 0xe6,int)
+#define HN_PDP_FLUSH_WORK	_IO(IOC_MZ2_MAGIC, 0xe7)
 
 /* structure definitions. */
 typedef struct dpram_serial {

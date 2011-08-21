@@ -3101,11 +3101,13 @@ extern int askonstatus;
 
 void charging_start_without_magic_number(void)
 {
+	writel(__raw_readl(S5P_INFORM6)|0xEE00, S5P_INFORM6);
 	Set_MAX8998_PM_REG(CHGENB, 0x0);	// charge
 }
 
 void charging_stop_without_magic_number(void)
 {
+	writel(__raw_readl(S5P_INFORM6)&0xFFFF00FF, S5P_INFORM6);
 	Set_MAX8998_PM_REG(CHGENB, 0x1);	// discharge
 }
 	

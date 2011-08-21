@@ -20,6 +20,7 @@
 #include <linux/input.h>
 #include <linux/interrupt.h>
 #include <linux/wakelock.h>
+#define DEBUG_LOG_ENABLE 0
 
 enum {
 	DEBOUNCE_UNSTABLE     = BIT(0),	/* Got irq, while debouncing */
@@ -79,10 +80,13 @@ static enum hrtimer_restart gpio_event_input_timer_func(struct hrtimer *timer)
 		if (key_state->debounce & DEBOUNCE_UNSTABLE) {
 			debounce = key_state->debounce = DEBOUNCE_UNKNOWN;
 			enable_irq(gpio_to_irq(key_entry->gpio));
+//#ifdef CONFIG_KERNEL_DEBUG_SEC
+#if DEBUG_LOG_ENABLE
 			pr_info("gpio_keys_scan_keys: key %x-%x, %d "
 				"(%d) continue debounce\n",
 				ds->info->type, key_entry->code,
 				i, key_entry->gpio);
+#endif
 		}
 		npolarity = !(gpio_flags & GPIOEDF_ACTIVE_HIGH);
 		pressed = gpio_get_value(key_entry->gpio) ^ npolarity;
@@ -90,29 +94,38 @@ static enum hrtimer_restart gpio_event_input_timer_func(struct hrtimer *timer)
 			if (pressed == !(debounce & DEBOUNCE_PRESSED)) {
 				ds->debounce_count++;
 				key_state->debounce = DEBOUNCE_UNKNOWN;
+//#ifdef CONFIG_KERNEL_DEBUG_SEC
+#if DEBUG_LOG_ENABLE
 				if (gpio_flags & GPIOEDF_PRINT_KEY_DEBOUNCE)
 					pr_info("gpio_keys_scan_keys: key %x-"
 						"%x, %d (%d) start debounce\n",
 						ds->info->type, key_entry->code,
 						i, key_entry->gpio);
+#endif
 			}
 			continue;
 		}
 		if (pressed && (debounce & DEBOUNCE_NOTPRESSED)) {
+//#ifdef CONFIG_KERNEL_DEBUG_SEC
+#if DEBUG_LOG_ENABLE
 			if (gpio_flags & GPIOEDF_PRINT_KEY_DEBOUNCE)
 				pr_info("gpio_keys_scan_keys: key %x-%x, %d "
 					"(%d) debounce pressed 1\n",
 					ds->info->type, key_entry->code,
 					i, key_entry->gpio);
+#endif
 			key_state->debounce = DEBOUNCE_PRESSED;
 			continue;
 		}
 		if (!pressed && (debounce & DEBOUNCE_PRESSED)) {
+//#ifdef CONFIG_KERNEL_DEBUG_SEC
+#if DEBUG_LOG_ENABLE
 			if (gpio_flags & GPIOEDF_PRINT_KEY_DEBOUNCE)
 				pr_info("gpio_keys_scan_keys: key %x-%x, %d "
 					"(%d) debounce pressed 0\n",
 					ds->info->type, key_entry->code,
 					i, key_entry->gpio);
+#endif
 			key_state->debounce = DEBOUNCE_NOTPRESSED;
 			continue;
 		}
@@ -122,10 +135,13 @@ static enum hrtimer_restart gpio_event_input_timer_func(struct hrtimer *timer)
 			key_state->debounce |= DEBOUNCE_WAIT_IRQ;
 		else
 			key_state->debounce |= DEBOUNCE_POLL;
+//#ifdef CONFIG_KERNEL_DEBUG_SEC
+#if DEBUG_LOG_ENABLE
 		if (gpio_flags & GPIOEDF_PRINT_KEYS)
 			pr_info("gpio_keys_scan_keys: key %x-%x, %d (%d) "
 				"changed to %d\n", ds->info->type,
 				key_entry->code, i, key_entry->gpio, pressed);
+#endif
 		input_event(ds->input_devs->dev[key_entry->dev], ds->info->type,
 			    key_entry->code, pressed);
 	}
@@ -175,11 +191,14 @@ static irqreturn_t gpio_event_input_irq_handler(int irq, void *dev_id)
 					&ds->timer, ds->info->debounce_time,
 					HRTIMER_MODE_REL);
 			}
+//#ifdef CONFIG_KERNEL_DEBUG_SEC
+#if DEBUG_LOG_ENABLE
 			if (ds->info->flags & GPIOEDF_PRINT_KEY_DEBOUNCE)
 				pr_info("gpio_event_input_irq_handler: "
 					"key %x-%x, %d (%d) start debounce\n",
 					ds->info->type, key_entry->code,
 					keymap_index, key_entry->gpio);
+#endif
 		} else {
 			disable_irq_nosync(irq);
 			ks->debounce = DEBOUNCE_UNSTABLE;
@@ -188,11 +207,14 @@ static irqreturn_t gpio_event_input_irq_handler(int irq, void *dev_id)
 	} else {
 		pressed = gpio_get_value(key_entry->gpio) ^
 			!(ds->info->flags & GPIOEDF_ACTIVE_HIGH);
+//#ifdef CONFIG_KERNEL_DEBUG_SEC
+#if DEBUG_LOG_ENABLE
 		if (ds->info->flags & GPIOEDF_PRINT_KEYS)
 			pr_info("gpio_event_input_irq_handler: key %x-%x, %d "
 				"(%d) changed to %d\n",
 				ds->info->type, key_entry->code, keymap_index,
 				key_entry->gpio, pressed);
+#endif
 		input_event(ds->input_devs->dev[key_entry->dev], ds->info->type,
 			    key_entry->code, pressed);
 	}

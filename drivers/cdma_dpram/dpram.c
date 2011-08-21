@@ -33,6 +33,7 @@
 #include <linux/tty_flip.h>
 #include <linux/irq.h>
 #include <linux/poll.h>
+#include <linux/timer.h>
 #include <linux/io.h>
 #include <asm/irq.h>
 #include <mach/regs-gpio.h>
@@ -56,10 +57,6 @@
 #include <linux/time.h>
 #include <linux/if_arp.h>
 
-/* TODO: kthur
-   add debug, : ramdump mode
-   remove useless log
- */
 #include "dpram.h"
 
 #define SVNET_PDP_ETHER
@@ -222,6 +219,9 @@ void dpram_debug_dump_raw_read_buffer(const unsigned char  *buf, int len);
 void multipdp_debug_dump_write_buffer(const unsigned char  *buf, int len);
 static void net_wakeup_all_if(void);
 static void net_stop_all_if (void);
+void request_phone_reset(unsigned long data);
+
+struct timer_list phone_active_timer;
 
 /*****************************************************************************/
 #ifdef _ENABLE_DEBUG_PRINTS
@@ -309,7 +309,7 @@ u16 mulitpdp_debug_mask = MULTIPDP_PRINT_ERROR | MULTIPDP_PRINT_WARNING;
 #endif /*_ENABLE_DEBUG_PRINTS */
 
 #ifdef _ENABLE_ERROR_DEVICE
-#define DPRAM_ERR_MSG_LEN			65
+#define DPRAM_ERR_MSG_LEN			128
 #define DPRAM_ERR_DEVICE			"dpramerr"
 #endif	/* _ENABLE_ERROR_DEVICE */
 
@@ -388,6 +388,8 @@ static void res_ack_tasklet_handler(unsigned long data);
 static void fmt_rcv_tasklet_handler(unsigned long data);
 static void raw_rcv_tasklet_handler(unsigned long data);
 
+static int pdp_activate(pdp_arg_t *pdp_arg, unsigned type, unsigned flags );
+
 static DECLARE_TASKLET(fmt_send_tasklet, fmt_rcv_tasklet_handler, 0);
 static DECLARE_TASKLET(raw_send_tasklet, raw_rcv_tasklet_handler, 0);
 static DECLARE_TASKLET(fmt_res_ack_tasklet, res_ack_tasklet_handler, (unsigned long)&dpram_table[FORMATTED_INDEX]);
@@ -409,10 +411,13 @@ extern void usb_switch_mode(int);
    stage we need a larger delay */
 //static int modem_pif_init_wait_time_ctrl = FALSE;
 int modem_pif_init_wait_condition;
+int dpram_init_cmd_wait_condition;
 static wait_queue_head_t modem_pif_init_done_wait_q;
+static wait_queue_head_t dpram_init_cmd_wait_q;
 struct wake_lock dpram_wake_lock;
 
-#define PIF_TIMEOUT		180 * HZ
+#define PIF_TIMEOUT				180 * HZ
+#define DPRAM_INIT_TIMEOUT		15 * HZ
 
 static atomic_t raw_txq_req_ack_rcvd;
 static atomic_t fmt_txq_req_ack_rcvd;
@@ -428,8 +433,11 @@ static u8 is_net_stopped = 0;
 void dpram_initiate_self_error_correction(void)
 {
 #ifdef _ENABLE_SELF_ERROR_CORRECTION
+	int ret;
 	DPRAM_LOG_ERR ("[DPRAM] dpram_initiate_self_error_correction\n");
-	request_phone_reset();
+	ret = mod_timer(&phone_active_timer, jiffies + msecs_to_jiffies(2000));
+	if(ret) 
+		printk(KERN_ERR "error timer!!\n");
 #endif
 }
 
@@ -484,6 +492,7 @@ static inline void _memcpy(void *p_dest, const void *p_src, int size)
 	}
 
 	if (src & 1) {
+
 		unsigned char *s = (unsigned char *)src;
 		volatile u16 *d = (unsigned short *)dest;
 
@@ -845,7 +854,6 @@ static int dpram_read_raw(dpram_device_t *device, const u16 non_cmd)
 		if (ch == 0x7f) {
 			read_offset++;
 		} else {
-			//TODO:kthur LOGE("First byte: %d, drop byte: %d\n buff addr: %x\n read addr: %x\n", ch, size, (device->in_buff_addr), (device->in_buff_addr + ((u16)(tail + read_offset) % device->in_buff_size)));
 			dpram_drop_data(device);
 			return -1;
 		}
@@ -968,23 +976,27 @@ static int dpram_read_raw(dpram_device_t *device, const u16 non_cmd)
 }
 
 #ifdef _ENABLE_ERROR_DEVICE
-void request_phone_reset(void)
+void request_phone_reset(unsigned long data)
 {
 	char buf[DPRAM_ERR_MSG_LEN];
 	unsigned long flags;
+	volatile int gpio_state;
+	gpio_state = gpio_get_value(GPIO_PHONE_ACTIVE);
 
-	memset((void *)buf, 0, sizeof(buf));
+	if(!gpio_state) {
+		memset((void *)buf, 0, sizeof(buf));
 
-	memcpy(buf, "8 $PHONE-OFF", sizeof("8 $PHONE-OFF"));
-	DPRAM_LOG_ERR("[PHONE ERROR] ->> %s\n", buf);
+		memcpy(buf, "8 $PHONE-OFF", sizeof("8 $PHONE-OFF"));
+		DPRAM_LOG_ERR("[PHONE ERROR] ->> %s\n", buf);
 
-	local_irq_save(flags);
-	memcpy(dpram_err_buf, buf, DPRAM_ERR_MSG_LEN);
-	is_dpram_err = TRUE;
-	local_irq_restore(flags);
+		local_irq_save(flags);
+		memcpy(dpram_err_buf, buf, DPRAM_ERR_MSG_LEN);
+		is_dpram_err = TRUE;
+		local_irq_restore(flags);
 
-	wake_up_interruptible(&dpram_err_wait_q);
-	kill_fasync(&dpram_err_async_q, SIGIO, POLL_IN);
+		wake_up_interruptible(&dpram_err_wait_q);
+		kill_fasync(&dpram_err_async_q, SIGIO, POLL_IN);
+	}
 }
 #endif
 
@@ -1096,19 +1108,24 @@ static void dpram_drop_data(dpram_device_t *device)
 
 static void dpram_phone_reset(void)
 {
+	/* hardware guide */
+#if 0
 	gpio_set_value(GPIO_PHONE_ON, GPIO_LEVEL_LOW);
 	mdelay(100);
 	gpio_set_value(GPIO_PHONE_ON, GPIO_LEVEL_HIGH);
+#endif
 }
 
 static int dpram_phone_power_on(void)
 {
 	int RetVal = 0;
+	int dpram_init_RetVal = 0;
 
 	DPRAM_LOG_INFO("[DPRAM] dpram_phone_power_on using GPIO_PHONE_ON()\n");
 
-	gpio_set_value(GPIO_PHONE_RST_N, GPIO_LEVEL_LOW);
 	gpio_set_value(GPIO_PHONE_ON, GPIO_LEVEL_HIGH);
+	mdelay(10);
+	gpio_set_value(GPIO_PHONE_RST_N, GPIO_LEVEL_LOW);
 	mdelay(600);
 	gpio_set_value(GPIO_PHONE_RST_N, GPIO_LEVEL_HIGH);
 
@@ -1119,8 +1136,16 @@ static int dpram_phone_power_on(void)
 	/* Wait here until the PHONE is up. Waiting as the this called from IOCTL->UM thread */
 	DPRAM_LOG_INFO("[DPRAM] power control waiting for INT_MASK_CMD_PIF_INIT_DONE\n");
 	modem_pif_init_wait_condition = 0;
+	dpram_init_cmd_wait_condition = 0;
 	/* 1HZ = 1 clock tick, 100 default */
 	ClearPendingInterruptFromModem();
+
+	dpram_init_RetVal = wait_event_interruptible_timeout(dpram_init_cmd_wait_q, dpram_init_cmd_wait_condition, DPRAM_INIT_TIMEOUT);
+	if (!dpram_init_RetVal) {
+		/*RetVal will be 0 on timeout, non zero if interrupted */
+		DPRAM_LOG_WARN("[DPRAM] INIT_START cmd was not arrived. dpram_init_cmd_wait_condition is 0 and wait timeout happend \n");
+		return FALSE;
+	}
 
 	RetVal = wait_event_interruptible_timeout(modem_pif_init_done_wait_q, modem_pif_init_wait_condition, PIF_TIMEOUT);
 
@@ -1447,7 +1472,7 @@ static int dpram_tty_ioctl(struct tty_struct *tty, struct file *file,
 			dump_on = 0;
 			if (!dpram_phone_power_on()) {
 				DPRAM_LOG_ERR("dpram_phone_power_on failed\n");
-				return -EFAULT;
+				return -EAGAIN;
 			}
 			return 0;
 
@@ -1678,7 +1703,6 @@ static void cmd_req_active_handler(void)
 	send_interrupt_to_phone(INT_COMMAND(INT_MASK_CMD_RES_ACTIVE));
 }
 
-#define DPRAM_ERR_MSG_LEN 128
 static unsigned char cpdump_debug_file_name[DPRAM_ERR_MSG_LEN] = "CDMA Crash";
 
 static void cmd_error_display_handler(void)
@@ -1729,6 +1753,8 @@ static void cmd_phone_start_handler(void)
 {
 	DPRAM_LOG_INFO("[DPRAM] Received 0xc8 from Phone (Phone Boot OK).\n");
 	dpram_init_and_report(); /* TODO init always now. otherwise starting/stopping modem code on debugger don't make this happen */
+	dpram_init_cmd_wait_condition = 1;
+	wake_up_interruptible(&dpram_init_cmd_wait_q);
 }
 
 static void cmd_req_time_sync_handler(void)
@@ -1858,7 +1884,7 @@ static void non_command_handler(u16 non_cmd)
 	}
 
 	if (non_cmd & INT_MASK_SEND_R) {
-		wake_lock_timeout(&dpram_wake_lock, HZ*4);
+		wake_lock_timeout(&dpram_wake_lock, HZ*2);
 		dpram_tasklet_data[RAW_INDEX].device = &dpram_table[RAW_INDEX];
 		dpram_tasklet_data[RAW_INDEX].non_cmd = non_cmd;
 		raw_send_tasklet.data = (unsigned long)&dpram_tasklet_data[RAW_INDEX];
@@ -1882,7 +1908,7 @@ static void non_command_handler(u16 non_cmd)
 	}
 
 	if (non_cmd & INT_MASK_RES_ACK_R) {
-		wake_lock_timeout(&dpram_wake_lock, HZ*4);
+		wake_lock_timeout(&dpram_wake_lock, HZ*2);
 		tasklet_schedule(&raw_res_ack_tasklet);
 
 		MULTIPDP_LOG_INFO("NON_CMD RES_ACK_R Interrupt ==> schedule write work item \n");
@@ -1943,12 +1969,17 @@ static irqreturn_t phone_active_irq_handler(int irq, void *dev_id)
 {
 	volatile int gpio_state;
 	gpio_state = gpio_get_value(GPIO_PHONE_ACTIVE);
-	DPRAM_LOG_INFO("[DPRAM] PHONE_ACTIVE level: %s, phone_sync: %d\n",
+	int ret;
+	DPRAM_LOG_ERR("[DPRAM] PHONE_ACTIVE level: %s, phone_sync: %d\n",
 			((gpio_state) ? "HIGH" : "LOW "), phone_sync);
 
 #ifdef _ENABLE_ERROR_DEVICE
-	if((phone_sync) && (!gpio_state))
-		request_phone_reset();
+	if((phone_sync) && (!gpio_state)) {
+		/* after 2 sec, check PHONE_ACTIVE pin again */
+		ret = mod_timer(&phone_active_timer, jiffies + msecs_to_jiffies(2000));
+		if(ret) 
+			printk(KERN_ERR "error timer!!\n");
+	}
 #endif
 	return IRQ_HANDLED;
 }
@@ -2141,8 +2172,11 @@ static int vnet_open(struct net_device *net)
 
 static int vnet_stop(struct net_device *net)
 {
+	struct pdp_info *dev = (struct pdp_info *)net->ml_priv;
+
+	down(&dev->vn_dev.netq_sem);
 	netif_stop_queue(net);
-	flush_scheduled_work(); /* flush any pending tx tasks */
+	up(&dev->vn_dev.netq_sem);
 
 	return 0;
 }
@@ -2257,8 +2291,59 @@ static int vs_open(struct tty_struct *tty, struct file *filp)
 	struct pdp_info *dev;
 
 	dev = pdp_get_serdev(tty->driver->name); /* 2.6 kernel porting */
-	if (dev == NULL)
-		return -ENODEV;
+	if (dev == NULL) {
+		int ret;
+
+		pdp_arg_t pdp_arg = { .id = 7, .ifname = "ttyCDMA", };
+		pdp_arg_t scrn_arg = { .id = 16, .ifname = "ttySCRN", };
+		pdp_arg_t debug_arg = { .id = 28, .ifname = "ttyDEBUG", };
+		pdp_arg_t atchnl_arg = { .id = 17, .ifname = "ttyCSD", };
+		pdp_arg_t ets_arg = { .id = 26, .ifname = "ttyETS", };
+		pdp_arg_t ptp_arg = { .id = 18, .ifname = "ttyPTP", };
+		
+		MULTIPDP_LOG_ERR("tty_driver retry routine!!\n");
+
+		if(strcmp(tty->driver->name, "ttyCDMA") == 0) {
+			ret = pdp_activate(&pdp_arg, DEV_TYPE_SERIAL,DEV_FLAG_STICKY);
+			if (ret < 0) {
+				MULTIPDP_LOG_ERR("failed to create a serial device for ttyCDMA\n");
+				return -ENODEV;
+			}
+		} else if (strcmp(tty->driver->name, "ttySCRN") == 0) {
+			ret = pdp_activate(&scrn_arg, DEV_TYPE_SERIAL,DEV_FLAG_STICKY);
+			if (ret < 0) {
+				MULTIPDP_LOG_ERR("failed to create a serial device for ttySCRN\n");
+				return -ENODEV;
+			}
+		} else if (strcmp(tty->driver->name, "ttyDEBUG") == 0) {
+			ret = pdp_activate(&debug_arg, DEV_TYPE_SERIAL,DEV_FLAG_STICKY);
+			if (ret < 0) {
+				MULTIPDP_LOG_ERR("failed to create a serial device for ttyDEBUG\n");
+				return -ENODEV;
+			}
+		} else if (strcmp(tty->driver->name, "ttyCSD") == 0) {
+			ret = pdp_activate(&atchnl_arg, DEV_TYPE_SERIAL,DEV_FLAG_STICKY);
+			if (ret < 0) {
+				MULTIPDP_LOG_ERR("failed to create a serial device for ttyCSD\n");
+				return -ENODEV;
+			}
+		} else if (strcmp(tty->driver->name, "ttyETS") == 0) {
+			ret = pdp_activate(&ets_arg, DEV_TYPE_SERIAL,DEV_FLAG_STICKY);
+			if (ret < 0) {
+				MULTIPDP_LOG_ERR("failed to create a serial device for ttyETS\n");
+				return -ENODEV;
+			}
+		} else if (strcmp(tty->driver->name, "ttyPTP") == 0) {
+			ret = pdp_activate(&ptp_arg, DEV_TYPE_SERIAL,DEV_FLAG_STICKY);
+			if (ret < 0) {
+				MULTIPDP_LOG_ERR("failed to create a serial device for ttyPTP\n");
+				return -ENODEV;
+			}
+		} else {
+			MULTIPDP_LOG_ERR("invalid argument! : %s\n", tty->driver->name);
+			return -ENODEV;
+		}
+	}
 
 	tty->driver_data = (void *)dev;
 	tty->low_latency = 0;
@@ -2666,6 +2751,7 @@ static int pdp_datastatus(const int datastatus)
 					netif_wake_queue(dev->vn_dev.net);
 				}
 				dev->vn_dev.netq_active = ACTIVE;
+
 			}
 			up(&dev->vn_dev.netq_sem);
 		}
@@ -2756,11 +2842,15 @@ static int multipdp_ioctl(struct inode *inode, struct file *file,
 		case HN_PDP_TXSTART:
 			pdp_tx_flag = 0;
 			return 0;
-
 		case HN_PDP_TXSTOP:
 			pdp_tx_flag = 1;
 			return 0;
+		case HN_PDP_FLUSH_WORK:
+			flush_scheduled_work(); /* flush any pending tx tasks */
+			return 0;
 
+
+	MULTIPDP_LOG_ERR("invalid ioctl cmd : %x\n", cmd);
 	}
 	return -EINVAL;
 }
@@ -3173,6 +3263,11 @@ static int dpram_resume(struct platform_device *dev)
 	return 0;
 }
 
+static void init_phone_active_timer(void)
+{
+	setup_timer( &phone_active_timer, request_phone_reset, 0 );
+}
+
 static int __devinit dpram_probe(struct platform_device *dev)
 {
 	int retval;
@@ -3196,6 +3291,7 @@ static int __devinit dpram_probe(struct platform_device *dev)
 	}
 
 	init_waitqueue_head(&modem_pif_init_done_wait_q);
+	init_waitqueue_head(&dpram_init_cmd_wait_q);
 
 	memset((void *)dpram_err_buf, '\0', sizeof dpram_err_buf);
 #endif /* _ENABLE_ERROR_DEVICE */
@@ -3236,12 +3332,15 @@ static int __devinit dpram_probe(struct platform_device *dev)
 #endif
 	device_create_file(multipdp_dev.this_device, &dev_attr_debug);
 
+	init_phone_active_timer();
+
 	printk(KERN_ERR  "[DPRAM] *** Leaving dpram_probe()\n");
 	return 0;
 }
 
 static int __devexit dpram_remove(struct platform_device *dev)
 {
+	int ret;
 
 #ifdef _ENABLE_DEBUG_PRINTS
 	deregister_dpram_debug_control_attribute();
@@ -3264,6 +3363,10 @@ static int __devexit dpram_remove(struct platform_device *dev)
 	free_irq(IRQ_PHONE_ACTIVE, NULL);
 
 	kill_tasklets();
+	ret = del_timer(&phone_active_timer);
+	if(ret) {
+		printk(KERN_ERR "The timer is still in use...\n");
+	}
 	return 0;
 }
 

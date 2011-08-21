@@ -12,9 +12,9 @@ source "drivers/of/Kconfig"
 
 source "drivers/parport/Kconfig"
 
-# for TINY_FSR
-source "drivers/tfsr/Kconfig"
+# for FSR
 
+# for TINY_FSR
 source "drivers/pnp/Kconfig"
 
 source "drivers/block/Kconfig"
@@ -126,6 +126,4 @@ source "drivers/cdma_dpram/Kconfig"
 source "drivers/onedram_svn/Kconfig"
 
 source "drivers/sensor/Kconfig"
-
-source "drivers/samsung/Kconfig"
 endmenu

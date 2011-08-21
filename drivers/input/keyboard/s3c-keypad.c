@@ -35,7 +35,8 @@
  
 #include "s3c-keypad.h"
 
-#define USE_PERF_LEVEL_KEYPAD 1 
+#define USE_PERF_LEVEL_KEYPAD 1
+#define DEBUG_LOG_ENABLE 0
 #undef S3C_KEYPAD_DEBUG 
 //#define S3C_KEYPAD_DEBUG 
 
@@ -174,7 +175,14 @@ static void s3c_keypad_timer_handler(unsigned long data)
 		while (press_mask) {
 			if (press_mask & 1) {
 				input_report_key(dev,pdata->keycodes[i],1);
-				printk("\n[KEYPAD] key Pressed  : key %d map %d\n",i, pdata->keycodes[i]);
+				
+//#ifdef CONFIG_KERNEL_DEBUG_SEC
+#if DEBUG_LOG_ENABLE
+				printk(KERN_DEBUG"[KEYPAD] key Pressed  : key %d map %d\n",i, pdata->keycodes[i]);
+#else
+				printk(KERN_DEBUG"[KEYPAD] key Pressed\n");
+#endif
+	
 						}
 			press_mask >>= 1;
 			i++;
@@ -185,8 +193,12 @@ static void s3c_keypad_timer_handler(unsigned long data)
 		while (release_mask) {
 			if (release_mask & 1) {
 				input_report_key(dev,pdata->keycodes[i],0);
-				printk("\n[KEYPAD] key Released : %d  map %d\n",i,pdata->keycodes[i]);
-
+//#ifdef CONFIG_KERNEL_DEBUG_SEC
+#if DEBUG_LOG_ENABLE
+				printk(KERN_DEBUG"[KEYPAD] key Pressed  : %d  map %d\n",i, pdata->keycodes[i]);
+#else
+				printk(KERN_DEBUG"[KEYPAD] key Pressed\n");
+#endif
             }
 			release_mask >>= 1;
 			i++;

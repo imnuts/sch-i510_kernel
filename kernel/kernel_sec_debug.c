@@ -380,11 +380,11 @@ void kernel_sec_set_upload_cause(kernel_sec_upload_cause_type uploadType)
 	__raw_writel( temp , S5P_INFORM6);
 	
 	printk(KERN_EMERG"(kernel_sec_set_upload_cause) : upload_cause set %x\n",uploadType);	
-	
-    dump_all_task_info();
-	dump_cpu_stat();
 
-	
+	if (uploadType != UPLOAD_CAUSE_INIT) {
+		dump_all_task_info();
+		dump_cpu_stat();
+	}
 }
 EXPORT_SYMBOL(kernel_sec_set_upload_cause);
 

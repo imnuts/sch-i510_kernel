@@ -30,6 +30,7 @@
 #include <mach/cpu-freq-v210.h>
 #endif
 
+#define DEBUG_LOG_ENABLE 0
 #include <mach/gpio.h>
 
 struct i2c_driver qt602240_i2c_driver;
@@ -2814,7 +2815,7 @@ void TSP_forced_release(void)
 
 		input_report_abs(qt602240->input_dev, ABS_MT_POSITION_X, fingerInfo[i].x);
 		input_report_abs(qt602240->input_dev, ABS_MT_POSITION_Y, fingerInfo[i].y);
-		input_report_abs(qt602240->input_dev, ABS_MT_TOUCH_MAJOR, fingerInfo[i].pressure);	// 0이면 Release, 아니면 Press 상태(Down or Move)
+> 		input_report_abs(qt602240->input_dev, ABS_MT_TOUCH_MAJOR, fingerInfo[i].pressure);	// Release, Press (Down or Move)
 		input_report_abs(qt602240->input_dev, ABS_MT_WIDTH_MAJOR, fingerInfo[i].size_id);	// (ID<<8) | Size
 		input_mt_sync(qt602240->input_dev);
 
@@ -2842,7 +2843,7 @@ void TSP_forced_release_forOKkey(void)
 
 		input_report_abs(qt602240->input_dev, ABS_MT_POSITION_X, fingerInfo[i].x);
 		input_report_abs(qt602240->input_dev, ABS_MT_POSITION_Y, fingerInfo[i].y);
-		input_report_abs(qt602240->input_dev, ABS_MT_TOUCH_MAJOR, fingerInfo[i].pressure);	// 0이면 Release, 아니면 Press 상태(Down or Move)
+		input_report_abs(qt602240->input_dev, ABS_MT_TOUCH_MAJOR, fingerInfo[i].pressure);	// Release, Press (Down or Move)
 		input_report_abs(qt602240->input_dev, ABS_MT_WIDTH_MAJOR, fingerInfo[i].size_id);	// (ID<<8) | Size
 		input_mt_sync(qt602240->input_dev);
 
@@ -2908,7 +2909,7 @@ void  get_message(struct work_struct * p)
 						fingerInfo[i].pressure= 0;
 						input_report_abs(qt602240->input_dev, ABS_MT_POSITION_X, fingerInfo[i].x);
 						input_report_abs(qt602240->input_dev, ABS_MT_POSITION_Y, fingerInfo[i].y);
-						input_report_abs(qt602240->input_dev, ABS_MT_TOUCH_MAJOR, fingerInfo[i].pressure);	// 0이면 Release, 아니면 Press 상태(Down or Move)
+						input_report_abs(qt602240->input_dev, ABS_MT_TOUCH_MAJOR, fingerInfo[i].pressure);	// Release, Press (Down or Move)
 						input_report_abs(qt602240->input_dev, ABS_MT_WIDTH_MAJOR, fingerInfo[i].size_id);	// (ID<<8) | Size
 						input_mt_sync(qt602240->input_dev);
 			
@@ -3019,7 +3020,13 @@ void  get_message(struct work_struct * p)
 				fingerInfo[id].size_id= (id<<8)|size;
 				fingerInfo[id].pressure= 0;
 				bChangeUpDn= 1;
+
+//#ifdef CONFIG_KERNEL_DEBUG_SEC
+#if DEBUG_LOG_ENABLE
 				printk(KERN_DEBUG "[TSP]### Finger[%d] Up (%d,%d) - touch num is (%d)  status=0x%02x\n", id, fingerInfo[id].x, fingerInfo[id].y , --qt_touch_num_state[id], quantum_msg[1]);
+#else
+				printk(KERN_DEBUG "[TSP]### Finger[%d] Up - touch num is (%d)  status=0x%02x\n", id, --qt_touch_num_state[id], quantum_msg[1]);
+#endif
 			}
 			else if ( (quantum_msg[1] & 0x80) && (quantum_msg[1] & 0x40) )	// Detect & Press
 			{
@@ -3042,7 +3049,13 @@ void  get_message(struct work_struct * p)
 				fingerInfo[id].x= (int16_t)x;
 				fingerInfo[id].y= (int16_t)y;
 				bChangeUpDn= 1;
+
+//#ifdef CONFIG_KERNEL_DEBUG_SEC
+#if DEBUG_LOG_ENABLE
 				printk(KERN_DEBUG "[TSP]### Finger[%d] Down (%d,%d) - touch num is (%d)   status=0x%02x\n", id, fingerInfo[id].x, fingerInfo[id].y , ++qt_touch_num_state[id], quantum_msg[1] );
+#else
+				printk(KERN_DEBUG "[TSP]### Finger[%d] Down - touch num is (%d)   status=0x%02x\n", id, ++qt_touch_num_state[id], quantum_msg[1] );
+#endif				
 			}
 			else if ( (quantum_msg[1] & 0x80) && (quantum_msg[1] & 0x10) )	// Detect & Move
 			{
@@ -3113,27 +3126,27 @@ void  get_message(struct work_struct * p)
 #ifdef _SUPPORT_MULTITOUCH_
 		if ( nPrevID >= id || bChangeUpDn )
 		{
-	//		amplitude= 0;
+			//amplitude= 0;
 			for ( i= 0; i<MAX_USING_FINGER_NUM; ++i )
 			{
 				if ( fingerInfo[i].pressure == -1 ) continue;
 	
 				input_report_abs(qt602240->input_dev, ABS_MT_POSITION_X, fingerInfo[i].x);
 				input_report_abs(qt602240->input_dev, ABS_MT_POSITION_Y, fingerInfo[i].y);
-				input_report_abs(qt602240->input_dev, ABS_MT_TOUCH_MAJOR, fingerInfo[i].pressure);	// 0이면 Release, 아니면 Press 상태(Down or Move)
+				input_report_abs(qt602240->input_dev, ABS_MT_TOUCH_MAJOR, fingerInfo[i].pressure);	// Release, Press (Down or Move)
 				input_report_abs(qt602240->input_dev, ABS_MT_WIDTH_MAJOR, fingerInfo[i].size_id);	// (ID<<8) | Size
 				input_mt_sync(qt602240->input_dev);
 				
-	//			amplitude++;
-		//		printk("[TSP]%s x=%3d, y=%3d\n",__FUNCTION__, fingerInfo[i].x, fingerInfo[i].y);
-			//	printk("ID[%d]= %s", (fingerInfo[i].size_id>>8), (fingerInfo[i].pressure == 0)?"Up ":"" );
+				//amplitude++;
+				//printk("[TSP]%s x=%3d, y=%3d\n",__FUNCTION__, fingerInfo[i].x, fingerInfo[i].y);
+				//printk("ID[%d]= %s", (fingerInfo[i].size_id>>8), (fingerInfo[i].pressure == 0)?"Up ":"" );
 	
 				if ( fingerInfo[i].pressure == 0 ) fingerInfo[i].pressure= -1;
 				else if( fingerInfo[i].pressure > 0 ) one_touch_input_flag++;//hugh 0312
 			}
 			input_sync(qt602240->input_dev);
-		//	printk("\n");
-		//	printk("##### Multi-Touch Event[%d] Done!\n", amplitude );
+			//printk("\n");
+			//printk("##### Multi-Touch Event[%d] Done!\n", amplitude );
 		}
 		nPrevID= id;
 #else
