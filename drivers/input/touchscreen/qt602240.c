@@ -2815,7 +2815,7 @@ void TSP_forced_release(void)
 
 		input_report_abs(qt602240->input_dev, ABS_MT_POSITION_X, fingerInfo[i].x);
 		input_report_abs(qt602240->input_dev, ABS_MT_POSITION_Y, fingerInfo[i].y);
-> 		input_report_abs(qt602240->input_dev, ABS_MT_TOUCH_MAJOR, fingerInfo[i].pressure);	// Release, Press (Down or Move)
+ 		input_report_abs(qt602240->input_dev, ABS_MT_TOUCH_MAJOR, fingerInfo[i].pressure);	// Release, Press (Down or Move)
 		input_report_abs(qt602240->input_dev, ABS_MT_WIDTH_MAJOR, fingerInfo[i].size_id);	// (ID<<8) | Size
 		input_mt_sync(qt602240->input_dev);
 
