@@ -470,6 +470,7 @@ void s5p_set_otg_dvfs(int enable)
         } else {
                 s5pv210_unlock_dvfs_high_level(DVFS_LOCK_TOKEN_8);
         }
+}
 
 int s3c_vbus_enable(struct usb_gadget *gadget, int enable)
 {
