@@ -462,6 +462,15 @@ static int s3c_udc_power(struct s3c_udc *dev, char en)
 	return 0;
 }
 
+void s5p_set_otg_dvfs(int enable)
+{
+  if (enable) {
+		// was L1 = 800MHz in original arch/arm/mach-s5pv210/cpu-freq.c
+                s5pv210_lock_dvfs_high_level(DVFS_LOCK_TOKEN_8, L8); // 800MHz
+        } else {
+                s5pv210_unlock_dvfs_high_level(DVFS_LOCK_TOKEN_8);
+        }
+
 int s3c_vbus_enable(struct usb_gadget *gadget, int enable)
 {
 	unsigned long flags;
