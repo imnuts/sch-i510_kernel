@@ -18,16 +18,16 @@
 #ifdef __KERNEL__
 
 enum {
-	SEC_JACK_NO_DEVICE				= 0x0,
-	SEC_HEADSET_4POLE				= 0x01 << 0,
-	SEC_HEADSET_3POLE				= 0x01 << 1,
-	SEC_TTY_DEVICE					= 0x01 << 2,
-	SEC_FM_HEADSET					= 0x01 << 3,
-	SEC_FM_SPEAKER					= 0x01 << 4,
-	SEC_TVOUT_DEVICE				= 0x01 << 5,
-	SEC_EXTRA_DOCK_SPEAKER				= 0x01 << 6,
-	SEC_EXTRA_CAR_DOCK_SPEAKER			= 0x01 << 7,
-	SEC_UNKNOWN_DEVICE				= 0x01 << 8,
+	SEC_JACK_NO_DEVICE		= 0x0,
+	SEC_HEADSET_4POLE		= 0x01 << 0,
+	SEC_HEADSET_3POLE		= 0x01 << 1,
+	SEC_TTY_DEVICE			= 0x01 << 2,
+	SEC_FM_HEADSET			= 0x01 << 3,
+	SEC_FM_SPEAKER			= 0x01 << 4,
+	SEC_TVOUT_DEVICE		= 0x01 << 5,
+	SEC_EXTRA_DOCK_SPEAKER		= 0x01 << 6,
+	SEC_EXTRA_CAR_DOCK_SPEAKER	= 0x01 << 7,
+	SEC_UNKNOWN_DEVICE		= 0x01 << 8,
 };
 
 struct sec_jack_zone {
@@ -37,16 +37,23 @@ struct sec_jack_zone {
 	unsigned int jack_type;
 };
 
+struct sec_jack_buttons_zone {
+	unsigned int code;
+	unsigned int adc_low;
+	unsigned int adc_high;
+};
+
 struct sec_jack_platform_data {
-	int	(*get_det_jack_state) (void);
-	int	(*get_send_key_state) (void);
 	void	(*set_micbias_state) (bool);
 	int	(*get_adc_value) (void);
 	struct sec_jack_zone	*zones;
+	struct sec_jack_buttons_zone	*buttons_zones;
 	int	num_zones;
-	int	det_int;
-	int	send_int;
-	
+	int	num_buttons_zones;
+	int	det_gpio;
+	int	send_end_gpio;
+	bool	det_active_high;
+	bool	send_end_active_high;
 };
 #endif
 

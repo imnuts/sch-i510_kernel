@@ -25,13 +25,6 @@
 #include <plat/clock-clksrc.h>
 #include <plat/s5p-clock.h>
 
-#include <mach/regs-power.h>
-
-#ifdef CONFIG_PM_PWR_GATING
-#include <mach/powergating.h>
-extern int tvblk_turnon;
-#endif
-
 /* fin_apll, fin_mpll and fin_epll are all the same clock, which we call
  * clk_ext_xtal_mux.
 */
@@ -52,7 +45,7 @@ struct clk clk_xrtcxti = {
 	.rate		= 32768,
 };
 
-static struct clk s5p_clk_27m = {
+struct clk s5p_clk_27m = {
 	.name		= "clk_27m",
 	.id		= -1,
 	.rate		= 27000000,
@@ -84,6 +77,13 @@ struct clk clk_fout_mpll = {
 /* EPLL clock output */
 struct clk clk_fout_epll = {
 	.name		= "fout_epll",
+	.id		= -1,
+	.ctrlbit	= (1 << 31),
+};
+
+/* VPLL clock output */
+struct clk clk_fout_vpll = {
+	.name		= "fout_vpll",
 	.id		= -1,
 	.ctrlbit	= (1 << 31),
 };
@@ -134,73 +134,27 @@ struct clk clk_vpll = {
 	.id		= -1,
 };
 
-extern int s5pc11x_blk_gate(struct clk *clk, int enable);
-
 int s5p_gatectrl(void __iomem *reg, struct clk *clk, int enable)
 {
 	unsigned int ctrlbit = clk->ctrlbit;
-	u32 con, mask;
+	u32 con;
 
 	con = __raw_readl(reg);
-
-
-	if (enable) {
-
-		/*Disable the src mask before enabling the gating*/
-		if(clk->srcMaskReg)
-		{
-			mask = __raw_readl(clk->srcMaskReg);
-			mask |= (clk->srcMaskBit);
-			__raw_writel(mask, clk->srcMaskReg);
-			//printk("\nenable mask for %s\n",clk->name);
-		}
-#ifdef CONFIG_PM_PWR_GATING
-		if(clk->powerDomain)
-		{
-			s5p_power_gating(clk->powerDomain,  DOMAIN_ACTIVE_MODE);
-		}
-#endif
-		/*Enable clock level block, if required*/
-		if(clk->gb)
-			s5pc11x_blk_gate(clk, enable);
-
-		con |= ctrlbit;
-		__raw_writel(con, reg);
-
-	} else {
-		con &= ~ctrlbit;
-		__raw_writel(con, reg);
-
-		/*Disable clock level block, if required*/
-		if(clk->gb)
-			s5pc11x_blk_gate(clk, enable);
-
-#ifdef CONFIG_PM_PWR_GATING
-		if(clk->powerDomain)
-		{
-			s5p_power_gating(clk->powerDomain,  DOMAIN_LP_MODE);
-		}
-#endif
-		/*Enable the src mask before enabling the gating*/
-		if(clk->srcMaskReg)
-		{
-			mask = __raw_readl(clk->srcMaskReg);
-			mask &= (~(clk->srcMaskBit));
-			__raw_writel(mask, clk->srcMaskReg);
-			//printk("\ndisable mask for %s\n",clk->name);
-		}
-	}
+	con = enable ? (con | ctrlbit) : (con & ~ctrlbit);
+	__raw_writel(con, reg);
 	return 0;
 }
 
 static struct clk *s5p_clks[] __initdata = {
 	&clk_ext_xtal_mux,
 	&clk_xrtcxti,
+	&clk_xusbxti,
 	&clk_48m,
 	&s5p_clk_27m,
 	&clk_fout_apll,
 	&clk_fout_mpll,
 	&clk_fout_epll,
+	&clk_fout_vpll,
 	&clk_arm,
 	&clk_vpll,
 };

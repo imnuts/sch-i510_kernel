@@ -12,6 +12,7 @@
 #include <linux/blkdev.h>
 #include <linux/namei.h>
 #include <linux/ctype.h>
+#include <linux/string.h>
 #include <linux/slab.h>
 #include <linux/interrupt.h>
 #include <linux/mutex.h>
@@ -237,6 +238,9 @@ void dm_table_destroy(struct dm_table *t)
 {
 	unsigned int i;
 
+	if (!t)
+		return;
+
 	while (atomic_read(&t->holders))
 		msleep(1);
 	smp_mb();
@@ -425,8 +429,7 @@ static int upgrade_mode(struct dm_dev_internal *dd, fmode_t new_mode,
  * it's already present.
  */
 static int __table_get_device(struct dm_table *t, struct dm_target *ti,
-			      const char *path, sector_t start, sector_t len,
-			      fmode_t mode, struct dm_dev **result)
+		      const char *path, fmode_t mode, struct dm_dev **result)
 {
 	int r;
 	dev_t uninitialized_var(dev);
@@ -523,11 +526,10 @@ int dm_set_device_limits(struct dm_target *ti, struct dm_dev *dev,
 }
 EXPORT_SYMBOL_GPL(dm_set_device_limits);
 
-int dm_get_device(struct dm_target *ti, const char *path, sector_t start,
-		  sector_t len, fmode_t mode, struct dm_dev **result)
+int dm_get_device(struct dm_target *ti, const char *path, fmode_t mode,
+		  struct dm_dev **result)
 {
-	return __table_get_device(ti->table, ti, path,
-				  start, len, mode, result);
+	return __table_get_device(ti->table, ti, path, mode, result);
 }
 
 
@@ -599,11 +601,8 @@ int dm_split_args(int *argc, char ***argvp, char *input)
 		return -ENOMEM;
 
 	while (1) {
-		start = end;
-
 		/* Skip whitespace */
-		while (*start && isspace(*start))
-			start++;
+		start = skip_spaces(end);
 
 		if (!*start)
 			break;	/* success, we hit the end */
@@ -1230,8 +1229,6 @@ void dm_table_unplug_all(struct dm_table *t)
 
 struct mapped_device *dm_table_get_md(struct dm_table *t)
 {
-	dm_get(t->md);
-
 	return t->md;
 }
 

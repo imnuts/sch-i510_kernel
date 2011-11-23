@@ -24,7 +24,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd.h,v 1.32.4.7.2.4.14.40 2010/05/09 22:03:37 Exp $
+ * $Id: dhd.h,v 1.32.4.7.2.4.14.49.4.7 2010/11/12 22:48:36 Exp $
  */
 
 /****************
@@ -86,9 +86,11 @@ enum dhd_bus_wake_state {
 	WAKE_LOCK_TMOUT,
 	WAKE_LOCK_WATCHDOG,
 	WAKE_LOCK_LINK_DOWN_TMOUT,
+	WAKE_LOCK_PNO_FIND_TMOUT,
 	WAKE_LOCK_SOFTAP_SET,
 	WAKE_LOCK_SOFTAP_STOP,
 	WAKE_LOCK_SOFTAP_START,
+	WAKE_LOCK_SOFTAP_THREAD,
 	WAKE_LOCK_MAX
 };
 enum dhd_prealloc_index {
@@ -150,13 +152,19 @@ typedef struct dhd_pub {
 	/* Last error from dongle */
 	int dongle_error;
 
-        /* Early Suspend Status */
-        int early_suspended;
+	/* Suspend disable flag  flag */
+	int suspend_disable_flag; /* "1" to disable all extra powersaving during suspend */
+	int in_suspend;			/* flag set to 1 when early suspend called */
+#ifdef PNO_SUPPORT
+	int pno_enable;                 /* pno status : "1" is pno enable */
+#endif /* PNO_SUPPORT */
+	int dtim_skip;         /* dtim skip , default 0 means wake each dtim */
 
-        /* DHCP period*/
-        int dhcp_in_progress;
+    /* Early Suspend Status */
+    int early_suspended;
 
-
+    /* DHCP period*/
+    int dhcp_in_progress;
 
 	/* Pkt filter defination */
 	char * pktfilter[100];
@@ -180,6 +188,7 @@ typedef struct dhd_pub {
 	#define DHD_PM_RESUME_WAIT_INIT(a) DECLARE_WAIT_QUEUE_HEAD(a);
 	#define _DHD_PM_RESUME_WAIT(a, b) do {\
 			int retry = 0; \
+			smp_mb(); \
 			while (dhd_mmc_suspend && retry++ != b) { \
 				wait_event_timeout(a, FALSE, HZ/100); \
 			} \
@@ -222,20 +231,6 @@ inline static void MUTEX_LOCK_INIT(dhd_pub_t * dhdp)
 {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 25)) && 1
 	mutex_init(&dhdp->wl_start_stop_lock);
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)) */
-}
-
-inline static void MUTEX_LOCK(dhd_pub_t * dhdp)
-{
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 25)) && 1
-	mutex_lock(&dhdp->wl_start_stop_lock);
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)) */
-}
-
-inline static void MUTEX_UNLOCK(dhd_pub_t * dhdp)
-{
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 25)) && 1
-	mutex_unlock(&dhdp->wl_start_stop_lock);
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)) */
 }
 
@@ -328,6 +323,12 @@ typedef struct dhd_if_event {
 	uint8 bssidx;
 } dhd_if_event_t;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 25)) && 1
+extern void dhd_os_start_lock(dhd_pub_t *pub);
+extern void dhd_os_start_unlock(dhd_pub_t *pub);
+#endif 
+extern unsigned long dhd_os_spin_lock(dhd_pub_t *pub);
+extern void dhd_os_spin_unlock(dhd_pub_t *pub, unsigned long flags);
 /*
  * Exported from dhd OS modules (dhd_linux/dhd_ndis)
  */
@@ -519,9 +520,6 @@ extern char nv_path[MOD_PARAM_PATHLEN];
 #define DHD_DEL_IF	-0xe
 #define DHD_BAD_IF	-0xf
 
-#ifdef APSTA_PINGTEST
-#define MAX_GUEST 8
-#endif
 
 extern void dhd_wait_for_event(dhd_pub_t *dhd, bool *lockvar);
 extern void dhd_wait_event_wakeup(dhd_pub_t*dhd);

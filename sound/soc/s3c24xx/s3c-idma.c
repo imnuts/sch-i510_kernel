@@ -2,7 +2,7 @@
  * s3c-idma.c  --  I2S0's Internal Dma driver
  *
  * Copyright (c) 2010 Samsung Electronics Co. Ltd
- * 	Jaswinder Singh <jassi.brar@samsung.com>
+ *	Jaswinder Singh <jassi.brar@samsung.com>
  *
  * This program is free software; you can redistribute  it and/or modify it
  * under  the terms of  the GNU General  Public License as published by the
@@ -13,7 +13,7 @@
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
 #include <linux/dma-mapping.h>
-
+#include <linux/slab.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
@@ -27,22 +27,43 @@
 #include <mach/map.h>
 #include <mach/regs-clock.h>
 #define dump_i2s()	do {	\
-				printk("%s:%s:%d\n", __FILE__, __func__, __LINE__);	\
-				printk("\tS3C_IISCON : %x", readl(s3c_idma.regs + S3C2412_IISCON));	\
-				printk("\tS3C_IISMOD : %x\n", readl(s3c_idma.regs + S3C2412_IISMOD));	\
-				printk("\tS3C_IISFIC : %x", readl(s3c_idma.regs + S3C2412_IISFIC));	\
-				printk("\tS3C_IISFICS : %x", readl(s3c_idma.regs + S5P_IISFICS));	\
-				printk("\tS3C_IISPSR : %x\n", readl(s3c_idma.regs + S3C2412_IISPSR));	\
-				printk("\tS3C_IISAHB : %x\n", readl(s3c_idma.regs + S5P_IISAHB));	\
-				printk("\tS3C_IISSTR : %x\n", readl(s3c_idma.regs + S5P_IISSTR));	\
-				printk("\tS3C_IISSIZE : %x\n", readl(s3c_idma.regs + S5P_IISSIZE));	\
-				printk("\tS3C_IISADDR0 : %x\n", readl(s3c_idma.regs + S5P_IISADDR0));	\
-				printk("\tS5P_CLKGATE_D20 : %x\n", readl(S5P_CLKGATE_D20));	\
-				printk("\tS5P_LPMP_MODE_SEL : %x\n", readl(S5P_LPMP_MODE_SEL));	\
+				printk(KERN_INFO	\
+					"%s:%s:%d\n",	\
+					__FILE__, __func__, __LINE__);	\
+				printk(KERN_INFO	\
+					"\tS3C_IISCON : %x",	\
+					readl(s3c_idma.regs + S3C2412_IISCON));\
+				printk(KERN_INFO	\
+					"\tS3C_IISMOD : %x\n",	\
+					readl(s3c_idma.regs + S3C2412_IISMOD));\
+				printk(KERN_INFO	\
+					"\tS3C_IISFIC : %x",	\
+					readl(s3c_idma.regs + S3C2412_IISFIC));\
+				printk(KERN_INFO	\
+					"\tS3C_IISFICS : %x",	\
+					readl(s3c_idma.regs + S5P_IISFICS));\
+				printk(KERN_INFO	\
+					"\tS3C_IISPSR : %x\n",	\
+					readl(s3c_idma.regs + S3C2412_IISPSR));\
+				printk(KERN_INFO	\
+					"\tS3C_IISAHB : %x\n",	\
+					readl(s3c_idma.regs + S5P_IISAHB));\
+				printk(KERN_INFO	\
+					"\tS3C_IISSTR : %x\n",	\
+					readl(s3c_idma.regs + S5P_IISSTR));\
+				printk(KERN_INFO	\
+					"\tS3C_IISSIZE : %x\n",	\
+					readl(s3c_idma.regs + S5P_IISSIZE));\
+				printk(KERN_INFO	\
+					"\tS3C_IISADDR0 : %x\n",	\
+					readl(s3c_idma.regs + S5P_IISADDR0));\
+				printk(KERN_INFO	\
+					"\tS5P_CLKGATE_D20 : %x\n",	\
+					readl(S5P_CLKGATE_D20));\
+				printk(KERN_INFO	\
+					"\tS5P_LPMP_MODE_SEL : %x\n",\
+					readl(S5P_LPMP_MODE_SEL));\
 			} while (0)
-
-#define S5P_IISLVLINTMASK       (0xf<<20)
-#define LP_BUFSIZE		(32 * 1024)
 
 static const struct snd_pcm_hardware s3c_idma_hardware = {
 	.info = SNDRV_PCM_INFO_INTERLEAVED |
@@ -68,64 +89,56 @@ static const struct snd_pcm_hardware s3c_idma_hardware = {
 };
 
 struct lpam_i2s_pdata {
-	spinlock_t 	lock;
-	int 		state;
-	dma_addr_t	start;	
-	dma_addr_t	pos;	
-	dma_addr_t	end;	
+	spinlock_t	lock;
+	int		state;
+	dma_addr_t	start;
+	dma_addr_t	pos;
+	dma_addr_t	end;
 	dma_addr_t	period;
-
+	dma_addr_t	periodsz;
+	void		*token;
+	void		(*cb)(void *dt, int bytes_xfer);
 };
 
 	/********************
 	 * Internal DMA i/f *
 	 ********************/
 static struct s3c_idma_info {
-	void __iomem  *regs;
-	unsigned int   dma_prd;
-	unsigned int   dma_end;
-	unsigned int   period_val;	
 	spinlock_t    lock;
-	void          *token;
-	void (*cb)(void *dt, int bytes_xfer);
+	void __iomem  *regs;
 } s3c_idma;
-
-extern unsigned int ring_buf_index;
-extern unsigned int period_index;
-extern bool audio_clk_gated ; /* Made it global in s3c64xx-i2s.c */
 
 static void s3c_idma_getpos(dma_addr_t *src)
 {
-	*src = LP_TXBUFF_ADDR + (readl(s3c_idma.regs + S5P_IISTRNCNT) & 0xffffff) * 4;
+	*src = LP_TXBUFF_ADDR +
+		(readl(s3c_idma.regs + S5P_IISTRNCNT) & 0xffffff) * 4;
 }
 
-extern int i2s_trigger_stop;
 void i2sdma_getpos(dma_addr_t *src)
 {
-	if(audio_clk_gated == 0 && i2s_trigger_stop ==0)
-		*src = LP_TXBUFF_ADDR + (readl(s3c_idma.regs + S5P_IISTRNCNT) & 0xffffff) * 4;
+	if (audio_clk_stat)
+		*src = LP_TXBUFF_ADDR +
+			(readl(s3c_idma.regs + S5P_IISTRNCNT) & 0xffffff) * 4;
 	else
 		*src = LP_TXBUFF_ADDR;
-
 }
 
-static int s3c_idma_enqueue(void *token)
+static int s3c_idma_enqueue(struct snd_pcm_substream *substream)
 {
+	struct snd_pcm_runtime *runtime = substream->runtime;
+	struct lpam_i2s_pdata *prtd = substream->runtime->private_data;
 	u32 val;
-
-	spin_lock(&s3c_idma.lock);
-	s3c_idma.token = token;
-	spin_unlock(&s3c_idma.lock);
 
 	pr_debug("%s: %x@%x\n", __func__, MAX_LP_BUFF, LP_TXBUFF_ADDR);
 
-	/* Internal DMA Level0 Interrupt Address */
-	val = LP_TXBUFF_ADDR;
-	writel(val, s3c_idma.regs + S5P_IISADDR1);
+	spin_lock(&prtd->lock);
+	prtd->token = (void *) substream;
+	spin_unlock(&prtd->lock);
 
-	val += s3c_idma.dma_prd * s3c_idma.period_val;
+	/* Internal DMA Level0 Interrupt Address */
+	val = LP_TXBUFF_ADDR + prtd->periodsz;
 	writel(val, s3c_idma.regs + S5P_IISADDR0);
-	
+
 	/* Start address0 of I2S internal DMA operation. */
 	val = readl(s3c_idma.regs + S5P_IISSTR);
 	val = LP_TXBUFF_ADDR;
@@ -138,48 +151,45 @@ static int s3c_idma_enqueue(void *token)
 	val = readl(s3c_idma.regs + S5P_IISSIZE);
 	val &= ~(S5P_IISSIZE_TRNMSK << S5P_IISSIZE_SHIFT);
 
-	val |= ((((s3c_idma.dma_end & 0x1ffff) >> 2) & S5P_IISSIZE_TRNMSK) << S5P_IISSIZE_SHIFT);
+	val |= (((runtime->dma_bytes >> 2) &
+			S5P_IISSIZE_TRNMSK) << S5P_IISSIZE_SHIFT);
 	writel(val, s3c_idma.regs + S5P_IISSIZE);
 
 	return 0;
 }
 
-static void s3c_idma_setcallbk(void (*cb)(void *, int), unsigned prd)
+static void s3c_idma_setcallbk(struct snd_pcm_substream *substream,
+				void (*cb)(void *, int))
 {
-	spin_lock(&s3c_idma.lock);
-	s3c_idma.cb = cb;
-	s3c_idma.dma_prd = prd;
-	spin_unlock(&s3c_idma.lock);
+	struct lpam_i2s_pdata *prtd = substream->runtime->private_data;
 
-	pr_debug("%s:%d dma_period=%x\n", __func__, __LINE__, s3c_idma.dma_prd);
+	spin_lock(&prtd->lock);
+	prtd->cb = cb;
+	spin_unlock(&prtd->lock);
+
+	pr_debug("%s:%d dma_period=%x\n", __func__, __LINE__, prtd->periodsz);
 }
 
 static void s3c_idma_ctrl(int op)
 {
 	u32 val;
 
-	spin_lock(&s3c_idma.lock);
-
 	val = readl(s3c_idma.regs + S5P_IISAHB);
 
 	switch (op) {
-		case LPAM_DMA_START:
-			val |= S5P_IISAHB_INTENLVL0 | S5P_IISAHB_DMAEN;
-			break;
-
-		case LPAM_DMA_STOP:
-			/* Disable LVL Interrupt and DMA Operation */
-			val &= ~(S5P_IISAHB_INTENLVL0 | S5P_IISAHB_INTENLVL1 | S5P_IISAHB_DMAEN);
-			break;
-
-		default:
-			spin_unlock(&s3c_idma.lock);
-			return;
+	case LPAM_DMA_START:
+		val |= (S5P_IISAHB_INTENLVL0 | S5P_IISAHB_DMAEN);
+		break;
+	case LPAM_DMA_STOP:
+		/* Disable LVL Interrupt and DMA Operation */
+		val &= ~(S5P_IISAHB_INTENLVL0 | S5P_IISAHB_DMAEN);
+		break;
+	default:
+		spin_unlock(&s3c_idma.lock);
+		return;
 	}
 
 	writel(val, s3c_idma.regs + S5P_IISAHB);
-
-	spin_unlock(&s3c_idma.lock);
 }
 
 static void s3c_idma_done(void *id, int bytes_xfer)
@@ -189,16 +199,8 @@ static void s3c_idma_done(void *id, int bytes_xfer)
 
 	pr_debug("%s:%d\n", __func__, __LINE__);
 
-#if 0
-	/* For size of transferred data  */
-	prtd->pos += bytes_xfer;
-	if (prtd->pos >= prtd->end)
-		prtd->pos = prtd->start;
-#endif
 	if (prtd && (prtd->state & ST_RUNNING))
 		snd_pcm_period_elapsed(substream);
-	else
-		pr_debug("%s:%d\n", __func__, __LINE__);
 }
 
 static int s3c_idma_hw_params(struct snd_pcm_substream *substream,
@@ -206,30 +208,23 @@ static int s3c_idma_hw_params(struct snd_pcm_substream *substream,
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct lpam_i2s_pdata *prtd = substream->runtime->private_data;
-	unsigned long idma_totbytes;
 
 	pr_debug("Entered %s\n", __func__);
 
-	idma_totbytes = params_buffer_bytes(params) * CONFIG_ANDROID_BUF_NUM;
-	prtd->end = LP_TXBUFF_ADDR + idma_totbytes;
-	prtd->period = params_periods(params);
-	s3c_idma.dma_end    = prtd->end;
-	s3c_idma.period_val = prtd->period;
-
 	snd_pcm_set_runtime_buffer(substream, &substream->dma_buffer);
-	memset(runtime->dma_area, 0, LP_BUFSIZE);
+	runtime->dma_bytes = params_buffer_bytes(params);
+	memset(runtime->dma_area, 0, runtime->dma_bytes);
 
-	runtime->dma_bytes = idma_totbytes;
+	prtd->start = prtd->pos = runtime->dma_addr;
+	prtd->period = params_periods(params);
+	prtd->periodsz = params_period_bytes(params);
+	prtd->end = LP_TXBUFF_ADDR + runtime->dma_bytes;
 
-	s3c_idma_setcallbk(s3c_idma_done, params_period_bytes(params));
+	s3c_idma_setcallbk(substream, s3c_idma_done);
 
-	prtd->start = runtime->dma_addr;
-	prtd->pos = prtd->start;
-	prtd->end = prtd->start + idma_totbytes;
-
-	pr_debug("DmaAddr=@%x Total=%lubytes PrdSz=%u #Prds=%u..dma_area=0x%x\n",
-			prtd->start, idma_totbytes, params_period_bytes(params), prtd->period,runtime->dma_area);
-
+	pr_info("DmaAddr=@%x Total=%dbytes PrdSz=%d #Prds=%d dma_area=0x%x\n",
+			prtd->start, runtime->dma_bytes, prtd->periodsz,
+			prtd->period, (unsigned int)runtime->dma_area);
 	return 0;
 }
 
@@ -247,14 +242,12 @@ static int s3c_idma_prepare(struct snd_pcm_substream *substream)
 	struct lpam_i2s_pdata *prtd = substream->runtime->private_data;
 
 	pr_debug("Entered %s\n", __func__);
-	
+
 	prtd->pos = prtd->start;
-	ring_buf_index = 0;
-	period_index = 0;
 
 	/* flush the DMA channel */
 	s3c_idma_ctrl(LPAM_DMA_STOP);
-	s3c_idma_enqueue((void *)substream);
+	s3c_idma_enqueue(substream);
 
 	return 0;
 }
@@ -284,6 +277,7 @@ static int s3c_idma_trigger(struct snd_pcm_substream *substream, int cmd)
 		break;
 
 	default:
+		spin_unlock(&prtd->lock);
 		ret = -EINVAL;
 		break;
 	}
@@ -296,30 +290,23 @@ static int s3c_idma_trigger(struct snd_pcm_substream *substream, int cmd)
 static snd_pcm_uframes_t
 	s3c_idma_pointer(struct snd_pcm_substream *substream)
 {
-	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	struct s3c_dma_params *dma = rtd->dai->cpu_dai->dma_data;
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct lpam_i2s_pdata *prtd = runtime->private_data;
-	dma_addr_t src, dst;
+	dma_addr_t src;
 	unsigned long res;
+
 	spin_lock(&prtd->lock);
-#if 1
-	dst = dma->dma_addr;
+
 	s3c_idma_getpos(&src);
-	pr_debug("inside..%s..src=0x%x..dma_area=0x%x..@..%d..\n",__func__,src,runtime->dma_area,__LINE__);
-	res = src - runtime->dma_addr;
-#else
-	res = prtd->pos - prtd->start;
-#endif
+	res = src - prtd->start;
+
 	spin_unlock(&prtd->lock);
 
-
-	/* By Jung */
-	if (res >= snd_pcm_lib_buffer_bytes(substream) * CONFIG_ANDROID_BUF_NUM) {
-		if (res == snd_pcm_lib_buffer_bytes(substream) * CONFIG_ANDROID_BUF_NUM)
+	if (res >= snd_pcm_lib_buffer_bytes(substream)) {
+		if (res == snd_pcm_lib_buffer_bytes(substream))
 			res = 0;
 	}
-	
+
 	return bytes_to_frames(substream->runtime, res);
 }
 
@@ -346,50 +333,54 @@ static int s3c_idma_mmap(struct snd_pcm_substream *substream,
 
 static irqreturn_t s3c_iis_irq(int irqno, void *dev_id)
 {
-	u32 iiscon, iisahb, val;
+	struct lpam_i2s_pdata *prtd = (struct lpam_i2s_pdata *)dev_id;
+	u32 iiscon, iisahb, val, addr;
 
 	/* dump_i2s(); */
 	iisahb  = readl(s3c_idma.regs + S5P_IISAHB);
 	iiscon  = readl(s3c_idma.regs + S3C2412_IISCON);
 
-	if(iiscon & (1<<26)){
-		printk("RxFIFO overflow interrupt\n");
-		writel(iiscon | (1<<26),s3c_idma.regs+S3C2412_IISCON);
+	if (iiscon & (1<<26)) {
+		pr_info("RxFIFO overflow interrupt\n");
+		writel(iiscon | (1<<26), s3c_idma.regs+S3C2412_IISCON);
 	}
 	if (iiscon & S5P_IISCON_FTXSURSTAT) {
 		iiscon |= S5P_IISCON_FTXURSTATUS;
 		writel(iiscon, s3c_idma.regs + S3C2412_IISCON);
-		pr_debug("TX_S underrun interrupt IISCON = 0x%08x\n", readl(s3c_idma.regs + S3C2412_IISCON));
+		pr_debug("TX_S underrun interrupt IISCON = 0x%08x\n",
+				readl(s3c_idma.regs + S3C2412_IISCON));
 	}
 
 	if (iiscon & S5P_IISCON_FTXURSTATUS) {
 		iiscon &= ~S5P_IISCON_FTXURINTEN;
 		iiscon |= S5P_IISCON_FTXURSTATUS;
 		writel(iiscon, s3c_idma.regs + S3C2412_IISCON);
-		pr_debug("TX_P underrun interrupt IISCON = 0x%08x\n", readl(s3c_idma.regs + S3C2412_IISCON));
+		pr_debug("TX_P underrun interrupt IISCON = 0x%08x\n",
+				readl(s3c_idma.regs + S3C2412_IISCON));
 	}
 
 	/* Check internal DMA level interrupt. */
-	if (iisahb & S5P_IISAHB_LVL0INT) 
-		val = S5P_IISAHB_CLRLVL0 | S5P_IISAHB_INTENLVL1;
-	else if (iisahb & S5P_IISAHB_LVL1INT) 
-		val = S5P_IISAHB_CLRLVL1;
+	if (iisahb & S5P_IISAHB_LVL0INT)
+		val = S5P_IISAHB_CLRLVL0;
 	else
 		val = 0;
 
-	pr_debug("inside %s..val=0x%x\n",__func__,val);
 	if (val) {
 		iisahb |= val;
 		writel(iisahb, s3c_idma.regs + S5P_IISAHB);
 
+		addr = readl(s3c_idma.regs + S5P_IISADDR0);
+		addr += prtd->periodsz;
+
+		if (addr >= prtd->end)
+			addr = LP_TXBUFF_ADDR;
+
+		writel(addr, s3c_idma.regs + S5P_IISADDR0);
+
 		/* Finished dma transfer ? */
 		if (iisahb & S5P_IISLVLINTMASK) {
-			if (s3c_idma.cb) {
-				if (CONFIG_ANDROID_BUF_NUM == 1)
-					s3c_idma.cb(s3c_idma.token, s3c_idma.dma_prd);
-				else
-					s3c_idma.cb(s3c_idma.token, s3c_idma.dma_prd * s3c_idma.period_val);
-			}
+			if (prtd->cb)
+				prtd->cb(prtd->token, prtd->periodsz);
 		}
 	}
 
@@ -412,7 +403,7 @@ static int s3c_idma_open(struct snd_pcm_substream *substream)
 
 	ret = request_irq(IRQ_I2S0, s3c_iis_irq, 0, "s3c-i2s", prtd);
 	if (ret < 0) {
-		printk("fail to claim i2s irq , ret = %d\n", ret);
+		pr_err("fail to claim i2s irq , ret = %d\n", ret);
 		kfree(prtd);
 		return ret;
 	}
@@ -433,8 +424,10 @@ static int s3c_idma_close(struct snd_pcm_substream *substream)
 
 	free_irq(IRQ_I2S0, prtd);
 
-	if (prtd)
-		kfree(prtd);
+	if (!prtd)
+		pr_err("s3c_idma_close called with prtd == NULL\n");
+
+	kfree(prtd);
 
 	return 0;
 }
@@ -478,7 +471,6 @@ static int s3c_idma_preallocate_buffer(struct snd_pcm *pcm, int stream)
 	struct snd_dma_buffer *buf = &substream->dma_buffer;
 
 	pr_debug("Entered %s\n", __func__);
-
 	buf->dev.dev = pcm->card->dev;
 	buf->private_data = NULL;
 
@@ -487,7 +479,7 @@ static int s3c_idma_preallocate_buffer(struct snd_pcm *pcm, int stream)
 	buf->addr = LP_TXBUFF_ADDR;
 	buf->bytes = s3c_idma_hardware.buffer_bytes_max;
 	buf->area = (unsigned char *)ioremap(buf->addr, buf->bytes);
-	printk("%s:  VA-%p  PA-%X  %ubytes\n",
+	pr_info("%s:  VA-%p  PA-%X  %ubytes\n",
 			__func__, buf->area, buf->addr, buf->bytes);
 
 	return 0;
@@ -514,13 +506,65 @@ static int s3c_idma_pcm_new(struct snd_card *card,
 	return ret;
 }
 
-struct snd_soc_platform idma_soc_platform = {
-	.name = "s5p-lp-audio",
-	.pcm_ops = &s3c_idma_ops,
-	.pcm_new = s3c_idma_pcm_new,
-	.pcm_free = s3c_idma_pcm_free,
-};
-EXPORT_SYMBOL_GPL(idma_soc_platform);
+#ifdef CONFIG_SND_S5P_RP
+void s5p_i2s_idma_enable(unsigned long frame_size_bytes)
+{
+	u32 iisahb, iismod;
+	pr_debug("%s(): Frame Size = %lu Bytes\n", __FUNCTION__, frame_size_bytes);
+
+	iismod  = readl(s3c_idma.regs + S3C2412_IISMOD);
+	iismod |= S5P_IISMOD_TXSLP;
+	writel(iismod, s3c_idma.regs + S3C2412_IISMOD);
+
+	iisahb  = readl(s3c_idma.regs + S5P_IISAHB);
+	iisahb |= S5P_IISAHB_DMA_STRADDRRST | S5P_IISAHB_DMA_STRADDRTOG
+			| S5P_IISAHB_DMARLD | S5P_IISAHB_DISRLDINT
+			| S5P_IISAHB_DMACLR;
+
+	/* OBUF Address / Size */
+	writel(0xEEC00000, s3c_idma.regs + S5P_IISSTR);		/* OBUF0 */
+	writel(0xEED00000, s3c_idma.regs + S5P_IISSTR1);	/* OBUF1 */
+	writel(((frame_size_bytes >> 2) & S5P_IISSIZE_TRNMSK) << S5P_IISSIZE_SHIFT,
+		s3c_idma.regs + S5P_IISSIZE);
+
+	writel(iisahb, s3c_idma.regs + S5P_IISAHB);
+
+	/* Enable DMA */
+	iisahb |= S5P_IISAHB_DMAEN;
+	writel(iisahb, s3c_idma.regs + S5P_IISAHB);
+}
+EXPORT_SYMBOL(s5p_i2s_idma_enable);
+
+void s5p_i2s_idma_pause(void)
+{
+	u32 val;
+
+	val  = readl(s3c_idma.regs + S5P_IISAHB);
+	val &= ~S5P_IISAHB_DMARLD;
+	writel(val, s3c_idma.regs + S5P_IISAHB);
+}
+EXPORT_SYMBOL(s5p_i2s_idma_pause);
+
+void s5p_i2s_idma_continue(void)
+{
+	u32 val;
+
+	val  = readl(s3c_idma.regs + S5P_IISAHB);
+	val |= S5P_IISAHB_DMARLD | S5P_IISAHB_DMAEN;
+	writel(val, s3c_idma.regs + S5P_IISAHB);
+}
+EXPORT_SYMBOL(s5p_i2s_idma_continue);
+
+void s5p_i2s_idma_stop(void)
+{
+	u32 val;
+
+	val  = readl(s3c_idma.regs + S5P_IISAHB);
+	val &= ~S5P_IISAHB_DMARLD;
+	writel(val, s3c_idma.regs + S5P_IISAHB);
+}
+EXPORT_SYMBOL(s5p_i2s_idma_stop);
+#endif	/* CONFIG_SND_S5P_RP */
 
 void s5p_idma_init(void *regs)
 {
@@ -528,17 +572,12 @@ void s5p_idma_init(void *regs)
 	s3c_idma.regs = regs;
 }
 
-static int __init s5p_soc_platform_init(void)
-{
-	return snd_soc_register_platform(&idma_soc_platform);
-}
-module_init(s5p_soc_platform_init);
-
-static void __exit s5p_soc_platform_exit(void)
-{
-	snd_soc_unregister_platform(&idma_soc_platform);
-}
-module_exit(s5p_soc_platform_exit);
+struct snd_soc_platform idma_soc_platform = {
+	.name = "s5p-lp-audio",
+	.pcm_ops = &s3c_idma_ops,
+	.pcm_new = s3c_idma_pcm_new,
+	.pcm_free = s3c_idma_pcm_free,
+};
 
 MODULE_AUTHOR("Jaswinder Singh, jassi.brar@samsung.com");
 MODULE_DESCRIPTION("Samsung S5P LP-Audio DMA module");

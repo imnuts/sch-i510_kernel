@@ -25,6 +25,7 @@
 #include <linux/ctype.h>
 #include <linux/ide.h>
 #include <linux/seq_file.h>
+#include <linux/slab.h>
 
 #include <asm/io.h>
 
@@ -49,7 +50,6 @@ static int ide_imodel_proc_show(struct seq_file *m, void *v)
 	case ide_au1xxx:	name = "au1xxx";	break;
 	case ide_palm3710:      name = "palm3710";      break;
 	case ide_acorn:		name = "acorn";		break;
-	case ide_s3c:		name = "s3c-ide";	break;
 	default:		name = "(unknown)";	break;
 	}
 	seq_printf(m, "%s\n", name);

@@ -19,6 +19,14 @@
 #include <plat/devs.h>
 #include <plat/cpu.h>
 #include <plat/media.h>
+#include <mach/media.h>
+
+static struct s3c_platform_mfc s3c_mfc_pdata = {
+	.buf_phy_base[0] = 0,
+	.buf_phy_base[1] = 0,
+	.buf_phy_size[0] = 0,
+	.buf_phy_size[1] = 0,
+};
 
 static struct resource s3c_mfc_resources[] = {
 	[0] = {
@@ -38,36 +46,20 @@ struct platform_device s3c_device_mfc = {
 	.id             = -1,
 	.num_resources  = ARRAY_SIZE(s3c_mfc_resources),
 	.resource       = s3c_mfc_resources,
-};
-
-static struct s3c_platform_mfc default_mfc_data __initdata = {
-	.buf_phy_base[0] = 0,
-	.buf_phy_base[1] = 0,
-	.buf_phy_size[0] = 0,
-	.buf_phy_size[1] = 0,
+	.dev		= {
+		.platform_data = &s3c_mfc_pdata,
+	},
 };
 
 void __init s3c_mfc_set_platdata(struct s3c_platform_mfc *pd)
 {
-	struct s3c_platform_mfc *npd;
-
-	if (!pd)
-		pd = &default_mfc_data;
-
-	npd = kmemdup(pd, sizeof(struct s3c_platform_mfc), GFP_KERNEL);
-	if (!npd) {
-		printk(KERN_ERR "%s: no memory for platform data\n", __func__);
-		npd->buf_phy_base[0] = s3c_get_media_memory_bank(S3C_MDEV_MFC, 0);
-	} else {
-#if (defined(CONFIG_VIDEO_SAMSUNG_MEMSIZE_MFC) || defined(CONFIG_VIDEO_SAMSUNG_MEMSIZE_MFC0))
-		npd->buf_phy_base[0] = s3c_get_media_memory_bank(S3C_MDEV_MFC, 0);
-		npd->buf_phy_size[0] = s3c_get_media_memsize_bank(S3C_MDEV_MFC, 0);
-#endif
-#ifdef CONFIG_VIDEO_SAMSUNG_MEMSIZE_MFC1
-		npd->buf_phy_base[1] = s3c_get_media_memory_bank(S3C_MDEV_MFC, 1);
-		npd->buf_phy_size[1] = s3c_get_media_memsize_bank(S3C_MDEV_MFC, 1);
-#endif
-		s3c_device_mfc.dev.platform_data = npd;
-	}
+	s3c_mfc_pdata.buf_phy_base[0] =
+		(u32)s5p_get_media_memory_bank(S5P_MDEV_MFC, 0);
+	s3c_mfc_pdata.buf_phy_size[0] =
+		(u32)s5p_get_media_memsize_bank(S5P_MDEV_MFC, 0);
+	s3c_mfc_pdata.buf_phy_base[1] =
+		(u32)s5p_get_media_memory_bank(S5P_MDEV_MFC, 1);
+	s3c_mfc_pdata.buf_phy_size[1] =
+		(u32)s5p_get_media_memsize_bank(S5P_MDEV_MFC, 1);
 }
 

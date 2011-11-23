@@ -21,10 +21,7 @@
 #define MEM_WRITE(ADDR, VALUE)   (*(volatile unsigned int *)(ADDR) = (VALUE))
 #define MEM_READ(ADDR)           (*(volatile unsigned int *)(ADDR))
 
-enum MFC_SHARED
-{
-	//NUM_DPB                     = 0x0,
-	//ALLOCATED_DPB_SIZE          = 0x4,
+enum mfc_shared {
 	EXTENEDED_DECODE_STATUS     = 0x0,
 	SET_FRAME_TAG               = 0x4,
 	GET_FRAME_TAG_TOP           = 0x8,
@@ -54,12 +51,12 @@ enum MFC_SHARED
 	ALLOCATED_CHROMA_DPB_SIZE   = 0x68,
 	ALLOCATED_MV_SIZE           = 0x6C,
 	P_B_FRAME_QP                = 0x70,
-	RC_CONTROL_ENABLE		= 0xA0,
-	P720_LIMIT_ENABLE           = 0xB4,	
-	SHARED_MEM_MAX              = 0x1000,	
+	RC_CONTROL_ENABLE	    = 0xA0,
+	P720_LIMIT_ENABLE	    = 0xB4,
+	SHARED_MEM_MAX		    = 0x1000,
 };
 
-typedef struct tag_mfc_shared_mem {
+struct mfc_shared_mem  {
 	unsigned int num_dpb;
 	unsigned int allocated_dpb_size;
 	unsigned int extended_decode_status;
@@ -92,9 +89,9 @@ typedef struct tag_mfc_shared_mem {
 	unsigned int allocated_chroma_dpb_size;
 	unsigned int allocated_mv_size;
 	unsigned int p720_limit_enable;
-} MFC_SHARED_MEM;
+};
 
-void mfc_write_shared_mem(unsigned int host_wr_addr, MFC_SHARED_MEM *shared_mem);
-void mfc_read_shared_mem(unsigned int host_wr_addr, MFC_SHARED_MEM *shared_mem);
+void mfc_write_shared_mem(unsigned int host_wr_addr, struct mfc_shared_mem *shared_mem);
+void mfc_read_shared_mem(unsigned int host_wr_addr, struct mfc_shared_mem *shared_mem);
 void mfc_print_shared_mem(unsigned int host_wr_addr);
 #endif

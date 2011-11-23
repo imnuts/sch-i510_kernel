@@ -74,13 +74,13 @@ static struct i2c_client *max8998_rtc_i2c_client = NULL;
 unsigned short max8998_rtc_ignore[] = {I2C_CLIENT_END };
 static unsigned short max8998_rtc_normal_i2c[] = { I2C_CLIENT_END };
 static unsigned short max8998_rtc_probe[] = {6, MAX8998_RTC_SLAVE_ADDR >> 1, I2C_CLIENT_END };
-
+/*
 static struct i2c_client_address_data max8998_rtc_addr_data = {
 	.normal_i2c	= max8998_rtc_normal_i2c,
 	.ignore		= max8998_rtc_ignore,
 	.probe		= max8998_rtc_probe,
 };
-
+*/
 
 static int max8998_rtc_i2c_read(struct i2c_client *client, u8 reg, u8 *data, int len)
 {
@@ -149,47 +149,36 @@ static int max8998_rtc_i2c_write(struct i2c_client *client, u8 reg, u8 *data,int
 
 static int max8998_rtc_i2c_read_time(struct i2c_client *client, struct rtc_time *tm)
 {
-	int ret;
-	u8 regs[MAX8998_RTC_LEN], temp_reg = 0;
+        int ret;
+        u8 regs[MAX8998_RTC_LEN];
 
-	do {
-		ret = max8998_rtc_i2c_read(client, MAX8998_RTC_TIME_ADDR, regs, MAX8998_RTC_LEN);
-		if (ret < 0)
-			return ret;
-		max8998_rtc_i2c_read(client, MAX8998_RTC_TIME_ADDR, &temp_reg, 1);
-		max8998_dbg("%s : 1st %x, 2nd %x\n", __func__, regs[MAX8998_REG_SECOND], temp_reg);
-	} while (regs[MAX8998_REG_SECOND] > temp_reg);
+        ret = max8998_rtc_i2c_read(client, MAX8998_RTC_TIME_ADDR,regs,MAX8998_RTC_LEN);
+        if (ret < 0)
+                return ret;
 
-	tm->tm_sec = bcd2bin(regs[MAX8998_REG_SECOND]);
-	tm->tm_min = bcd2bin(regs[MAX8998_REG_MIN]);
-	tm->tm_hour = bcd2bin(regs[MAX8998_REG_HOUR] & 0x3f);
+        tm->tm_sec =  bcd2bin(regs[MAX8998_REG_SECOND]);
+        tm->tm_min =  bcd2bin(regs [MAX8998_REG_MIN]);
+        tm->tm_hour = bcd2bin(regs[MAX8998_REG_HOUR] & 0x3f);
+	if(regs[MAX8998_REG_HOUR] & (1 << 7))
+        	tm->tm_hour += 12;
+        tm->tm_wday = bcd2bin(regs[MAX8998_REG_WEEKDAY]);
+        tm->tm_mday = bcd2bin(regs[MAX8998_REG_DATE]);
+        tm->tm_mon =  bcd2bin(regs [MAX8998_REG_MONTH]) - 1;
+        tm->tm_year = bcd2bin(regs[MAX8998_REG_YEAR0]) +
+                      bcd2bin(regs[MAX8998_REG_YEAR1]) * 100 - 1900;
 
-	if (regs[MAX8998_REG_HOUR] & (1 << 7))
-		tm->tm_hour += 12;
 
-	tm->tm_wday = bcd2bin(regs[MAX8998_REG_WEEKDAY]);
-	tm->tm_mday = bcd2bin(regs[MAX8998_REG_DATE]);
-	tm->tm_mon = bcd2bin(regs[MAX8998_REG_MONTH]) - 1;
-#ifdef CONFIG_RTC_DRV_S3C
-    tm->tm_year = bcd2bin(regs[MAX8998_REG_YEAR0]) + bcd2bin(regs[MAX8998_REG_YEAR1]) * 100 - 2000;
-#else
-    tm->tm_year = bcd2bin(regs[MAX8998_REG_YEAR0]) + bcd2bin(regs[MAX8998_REG_YEAR1]) * 100 - 1900;
-#endif
-
-	return 0;
+	
+        return 0;
 }
 
 
 static int max8998_rtc_i2c_set_time(struct i2c_client *client, struct rtc_time *tm)
 {
-	int ret;
-	u8 regs[MAX8998_RTC_LEN + 1], temp_reg = 0;
+        int ret;
+        u8 regs[MAX8998_RTC_LEN + 1];
 
-#ifdef CONFIG_RTC_DRV_S3C
-	tm->tm_year += 2000;
-#else
 	tm->tm_year += 1900;
-#endif
 
 	regs[MAX8998_REG_SECOND + 1] = bin2bcd(tm->tm_sec);
 	regs[MAX8998_REG_MIN + 1] = bin2bcd(tm->tm_min);
@@ -198,13 +187,9 @@ static int max8998_rtc_i2c_set_time(struct i2c_client *client, struct rtc_time *
 	regs[MAX8998_REG_DATE + 1] = bin2bcd(tm->tm_mday);
 	regs[MAX8998_REG_MONTH + 1] = bin2bcd(tm->tm_mon + 1);
 	regs[MAX8998_REG_YEAR0 + 1] = bin2bcd(tm->tm_year % 100);
-	regs[MAX8998_REG_YEAR1 + 1] = bin2bcd((tm->tm_year / 100));
+	regs[MAX8998_REG_YEAR1 + 1] = bin2bcd((tm->tm_year /100) );
 
-	do {
-		ret = max8998_rtc_i2c_write(client, MAX8998_RTC_TIME_ADDR, regs, MAX8998_RTC_LEN + 1);
-		max8998_rtc_i2c_read(client, MAX8998_RTC_TIME_ADDR, &temp_reg, 1);
-		max8998_dbg("%s : 1st %x, 2nd %x\n", __func__, regs[MAX8998_REG_SECOND + 1], temp_reg);
-	} while (regs[MAX8998_REG_SECOND + 1] > temp_reg);
+        ret = max8998_rtc_i2c_write(client, MAX8998_RTC_TIME_ADDR,regs,MAX8998_RTC_LEN +1);
 
 	return ret;
 }

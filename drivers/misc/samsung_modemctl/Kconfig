@@ -1,0 +1,22 @@
+#
+#
+#
+config SAMSUNG_MODEMCTL
+	tristate "Samsung Modem Control/IO Driver"
+	default m
+
+config PHONE_ONEDRAM
+	tristate "OneDRAM"
+	default m
+
+config SAMSUNG_PHONE_SVNET
+	tristate "Samsung Virtual Network"
+	default m
+
+config SVNET_WHITELIST
+	bool "svnet uses whitelist via onedram"
+	depends on SAMSUNG_PHONE_SVNET
+	default n
+	---help---
+	  By default, n
+	  When in doubt, say N.

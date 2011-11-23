@@ -11,6 +11,7 @@
  * published by the Free Software Foundation.
 */
 
+#include <linux/gfp.h>
 #include <linux/kernel.h>
 #include <linux/string.h>
 #include <linux/platform_device.h>
@@ -42,11 +43,7 @@ static struct resource s3c_i2c_resource[] = {
 
 struct platform_device s3c_device_i2c0 = {
 	.name		  = "s3c2410-i2c",
-#ifdef CONFIG_S3C_DEV_I2C1
 	.id		  = 0,
-#else
-	.id		  = -1,
-#endif
 	.num_resources	  = ARRAY_SIZE(s3c_i2c_resource),
 	.resource	  = s3c_i2c_resource,
 };
@@ -76,7 +73,6 @@ void __init s3c_i2c0_set_platdata(struct s3c2410_platform_i2c *pd)
 
 void s3c_i2c0_force_stop()
 {
-	struct resource *ioarea;
 	void __iomem *regs;
 	struct clk *clk;
 	unsigned long iicstat;

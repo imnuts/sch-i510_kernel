@@ -13,10 +13,13 @@ config FB_S3C
 	---help---
 	  This enables support for Samsung Display Controller (FIMD)
 
+config  FB_S3C_CHIEF
+        bool "Select lcd for chief"
+        depends on FB_S3C
 config FB_S3C_SPLASH_SCREEN
         bool "SPLASH_SCREEN on LCD"
         depends on FB_S3C
-	default y
+	default n
 
 config FB_S3C_LCD_INIT
         bool "LCD init in kernel"
@@ -34,7 +37,7 @@ config FB_S3C_TRACE_UNDERRUN
 config FB_S3C_DEFAULT_WINDOW
 	int "Default Window (0-4)"
 	depends on FB_S3C
-	default "0"
+	default "2"
 	---help---
 	  This indicates the default window number, and which is used as console framebuffer
 
@@ -72,20 +75,21 @@ choice
 depends on FB_S3C
 prompt "Select LCD Type"
 default FB_S3C_LTE480WV
+default FB_S3C_S6D16A0X
+config FB_S3C_S6D16A0X
+	bool "S6D16A0X"
+	depends on FB_S3C
+	select SPI
+	select SPI_GPIO
+	select SPI_BITBANG
+	help
+	This enables support for Samsung S6D16A0X HVGA TFT LCD panel
+
 config FB_S3C_LTE480WV
 	bool "LTE480WV"
 	depends on (MACH_SMDKV210 || MACH_SMDKC110)
 	---help---
 	  This enables support for Samsung LTE480WV 4.8\" WVGA LCD panel
-
-config FB_S3C_TL2796
-        bool "TL2796"
-        depends on (MACH_SMDKC110 || MACH_S5PC110_ARIES)
-        select SPI
-        select SPI_GPIO
-        select SPI_BITBANG
-        ---help---
-          This enables support for Samsung TL2796 WVGA LCD panel
 
 config FB_S3C_HT101HD1
 	bool "HT101HD1"
@@ -94,27 +98,32 @@ config FB_S3C_HT101HD1
 	  This enables support for HT101HD1 WXVGA(1366*768) LCD panel
 endchoice
 
-config VIDEO_SAMSUNG_MEMSIZE_FIMD
-	int "Memory size in kbytes for FIMD"
-	depends on FB_S3C
-	default "3072"
+config FB_S3C_TL2796
+        bool "TL2796"
+        depends on FB_S3C
+        select SPI
+        select SPI_GPIO
+        select SPI_BITBANG
+        ---help---
+          This enables support for Samsung TL2796 WVGA LCD panel
 
+config FB_S3C_S6D05A1X12
+        bool "S6D05A1X12"
+        depends on FB_S3C
+        select SPI
+        select SPI_GPIO
+        select SPI_BITBANG
+        ---help---
+          This enables support for Samsung S6D05A1X12 HVGA LCD panel
 
-config FB_S3C_MDNIE
-	bool "Samsung MDNIE"
-	depends on FB_S3C
-	depends on (MACH_SMDKC110 || MACH_S5PC110_ARIES)
-	default "0"
-        depends on (MACH_SMDKC110 || MACH_S5PC110_ARIES || MACH_S5PC110_P1)
-	---help---
-	  This enables support for Samsung MDNIE feature
-
-config FB_S3C_MDNIE_TUNINGMODE_FOR_BACKLIGHT
-	depends on FB_S3C_MDNIE
-	bool "mDNIe tuning mode for backlights"
-	default y
-	---help---
-		  This option enables to control mDNIe tuning for backlights.
+config FB_S3C_LD9040
+        bool "LD9040"
+        depends on FB_S3C
+        select SPI
+        select SPI_GPIO
+        select SPI_BITBANG
+        ---help---
+          This enables support for Samsung LD9040 WVGA LCD panel
 
 config FB_S3C_LVDS
 	bool "LVDS"

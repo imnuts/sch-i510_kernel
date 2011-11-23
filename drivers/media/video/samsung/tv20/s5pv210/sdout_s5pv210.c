@@ -17,6 +17,9 @@
 #include <linux/io.h>
 #include <linux/uaccess.h>
 #include <linux/memory.h>
+#include <linux/slab.h>
+#include <linux/mm.h>
+
 
 #include <plat/clock.h>
 #include "tv_out_s5pv210.h"

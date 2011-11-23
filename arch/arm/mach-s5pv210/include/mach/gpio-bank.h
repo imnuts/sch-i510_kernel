@@ -456,4 +456,5 @@
 #define S5PV210_GPH1_5_HDMI_HPD		(0x4 << 20)
 #define S5PV210_GPH1_5_EXT_INT31_5	(0xf << 20)
 
+
 #endif /* __ASM_ARCH_GPIO_BANK_H */

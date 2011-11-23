@@ -24,8 +24,6 @@
 #include <mach/regs-gpio.h>
 #include <linux/io.h>
 #include <mach/map.h>
-#include <mach/pd.h>
-#include <mach/gpio-bank.h>
 
 struct platform_device; /* don't need the contents */
 
@@ -66,9 +64,8 @@ void s3cfb_cfg_gpio(struct platform_device *pdev)
 int s3cfb_clk_on(struct platform_device *pdev, struct clk **s3cfb_clk)
 {
 	struct clk *sclk = NULL;
-	struct clk *mout_fimd = NULL, *mout_mpll = NULL;
+	struct clk *mout_mpll = NULL;
 	u32 rate = 0;
-	int ret;
 
 	sclk = clk_get(&pdev->dev, "sclk_fimd");
 	if (IS_ERR(sclk)) {
@@ -79,21 +76,10 @@ int s3cfb_clk_on(struct platform_device *pdev, struct clk **s3cfb_clk)
 	mout_mpll = clk_get(&pdev->dev, "mout_mpll");
 	if (IS_ERR(mout_mpll)) {
 		dev_err(&pdev->dev, "failed to get mout_mpll\n");
-		goto err_clk1;
-	}
-
-	mout_fimd = clk_get(&pdev->dev, "mout_fimd");
-	if (IS_ERR(mout_fimd)) {
-		dev_err(&pdev->dev,
-				"failed to get mout_fimd\n");
 		goto err_clk2;
 	}
 
-	clk_set_parent(sclk, mout_fimd);
-	clk_set_parent(mout_fimd, mout_mpll);
-
-	//rate = clk_round_rate(sclk, 166750000);
-	//dev_dbg(&pdev->dev, "set fimd sclk rate to %d\n", rate);
+	clk_set_parent(sclk, mout_mpll);
 
 	if (!rate)
 		rate = 166750000;
@@ -102,13 +88,6 @@ int s3cfb_clk_on(struct platform_device *pdev, struct clk **s3cfb_clk)
 	dev_dbg(&pdev->dev, "set fimd sclk rate to %d\n", rate);
 
 	clk_put(mout_mpll);
-	clk_put(mout_fimd);
-
-	ret = s5pv210_pd_enable("fimd_pd");
-	if (ret < 0) {
-		dev_err(&pdev->dev, "failed to enable fimd power domain\n");
-		goto err_clk2;
-	}
 
 	clk_enable(sclk);
 
@@ -117,25 +96,18 @@ int s3cfb_clk_on(struct platform_device *pdev, struct clk **s3cfb_clk)
 	return 0;
 
 err_clk2:
-	clk_put(mout_mpll);
-
-err_clk1:
 	clk_put(sclk);
 
+err_clk1:
 	return -EINVAL;
 }
 
 int s3cfb_clk_off(struct platform_device *pdev, struct clk **clk)
 {
-	int ret;
-
 	clk_disable(*clk);
 	clk_put(*clk);
 
 	*clk = NULL;
-	ret = s5pv210_pd_disable("fimd_pd");
-	if (ret < 0)
-		dev_err(&pdev->dev, "failed to disable fimd power domain\n");
 
 	return 0;
 }
@@ -162,8 +134,7 @@ int s3cfb_backlight_onoff(struct platform_device *pdev, int onoff)
 		/* 2009.12.28 by icarus : added for PWM backlight */
 		s3c_gpio_cfgpin(S5PV210_GPD0(3), S5PV210_GPD_0_3_TOUT_3);
 
-	}
-	else {
+	} else {
 		gpio_direction_output(S5PV210_GPD0(3), 0);
 	}
 	gpio_free(S5PV210_GPD0(3));

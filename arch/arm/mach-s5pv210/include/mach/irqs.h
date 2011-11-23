@@ -70,7 +70,7 @@
 #define IRQ_SPI0		S5P_IRQ_VIC1(15)
 #define IRQ_SPI1		S5P_IRQ_VIC1(16)
 #define IRQ_SPI2		S5P_IRQ_VIC1(17)
-#define IRQ_IRDA		S5P_IRQ_VIC1(18)
+#define IRQ_ASS			S5P_IRQ_VIC1(18)
 #define IRQ_IIC2		S5P_IRQ_VIC1(19)
 #define IRQ_CAN1		S5P_IRQ_VIC1(20)
 #define IRQ_HSIRX		S5P_IRQ_VIC1(21)
@@ -118,6 +118,7 @@
 #define IRQ_SEC			S5P_IRQ_VIC2(27)
 #define IRQ_SECRX		S5P_IRQ_VIC2(28)
 #define IRQ_SECTX		S5P_IRQ_VIC2(29)
+#define IRQ_SECSS		S5P_IRQ_VIC2(28)
 #define IRQ_SDMIRQ		S5P_IRQ_VIC2(30)
 #define IRQ_SDMFIQ		S5P_IRQ_VIC2(31)
 
@@ -132,14 +133,26 @@
 #define IRQ_MDNIE1		S5P_IRQ_VIC3(6)
 #define IRQ_MDNIE2		S5P_IRQ_VIC3(7)
 #define IRQ_MDNIE3		S5P_IRQ_VIC3(8)
+#define IRQ_ADC1		S5P_IRQ_VIC3(9)
+#define IRQ_PENDN1		S5P_IRQ_VIC3(10)
 #define IRQ_VIC_END		S5P_IRQ_VIC3(31)
 
-#define S5P_IRQ_EINT_BASE	(IRQ_VIC_END + 1)
+#define S5P_EINT_BASE1		(S5P_IRQ_VIC0(0))
+#define S5P_EINT_BASE2		(IRQ_VIC_END + 1)
+#define S5P_IRQ_EINT_BASE   S5P_EINT_BASE2
 
-#define S5P_EINT(x)		((x) + S5P_IRQ_EINT_BASE)
-#define IRQ_EINT(x)		S5P_EINT(x)
-#define IRQ_EINT_BIT(x)		((x) < IRQ_EINT16_31 ? (x - IRQ_EINT0) :\
-				(x - S5P_IRQ_EINT_BASE))
+#define S5P_EINT(x)    ((x) + S5P_IRQ_EINT_BASE)
+
+/* GPIO interrupt */
+#define S5P_GPIOINT_GROUP_NR   22
+#define S5P_GPIOINT_BASE       (IRQ_EINT(31) + 1)
+#define S5P_IRQ_GPIOINT(x)     (S5P_GPIOINT_BASE + (x))
+
+
+/* Compatibility */
+#define IRQ_LCD_FIFO		IRQ_LCD0
+#define IRQ_LCD_VSYNC		IRQ_LCD1
+#define IRQ_LCD_SYSTEM		IRQ_LCD2
 
 /* Next the external interrupt groups. These are similar to the IRQ_EINT(x)
  * that they are sourced from the GPIO pins but with a different scheme for
@@ -202,9 +215,20 @@
 
 #define IRQ_EINT_GROUP(group, no)	(IRQ_EINT_GROUP##group##_BASE + (no))
 
-/* Set the default NR_IRQS */
+/*
+ * Set the default NR_IRQS
+ * GPIO groups is 27. Each GPIO group can have max 8 GPIO interrupts.
+ *
+ * We should include gpios of all gpio groups from GPIO_A0 until GPIO_J4 to
+ * NR_IRQS because 22 gpio groups having gpio interrupts aren't in order and
+ * are mixed with no interrupt gpio groups, then it can give simple irq
+ * computation of gpio interrupts.
+ */
+#define NR_IRQS (S5P_IRQ_GPIOINT(27 * 8) + 1)
 
-#define NR_IRQS		(IRQ_EINT_GROUP22_BASE + IRQ_EINT_GROUP22_NR + 1)
 
 #define HALL_SENSOR_IRQ		IRQ_EINT3
+
+#define FIQ_START		0
+
 #endif /* ASM_ARCH_IRQS_H */

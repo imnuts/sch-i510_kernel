@@ -15,5 +15,6 @@ struct ce147_platform_data {
 
 	/* This SoC supports Parallel & CSI-2 */
 	int is_mipi;
+	int (*power_en) (int);
 };
 

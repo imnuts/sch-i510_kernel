@@ -30,10 +30,11 @@
 #include <linux/slab.h>
 #include <linux/types.h>
 
-#include <asm/io.h>
-#include <asm/uaccess.h>
+#include <linux/io.h>
+#include <linux/uaccess.h>
 
 #include <plat/media.h>
+#include <mach/media.h>
 
 #include "mfc_buffer_manager.h"
 #include "mfc_errorno.h"
@@ -46,18 +47,17 @@ static struct list_head mfc_free_mem_head[MFC_MAX_PORT_NUM];
 void mfc_print_mem_list(void)
 {
 	struct list_head *pos;
-	mfc_alloc_mem_t *alloc_node;
-	mfc_free_mem_t *free_node;
+	struct mfc_alloc_mem *alloc_node;
+	struct mfc_free_mem *free_node;
 	int port_no;
 
-	for (port_no = 0; port_no < MFC_MAX_PORT_NUM; port_no++)
-	{
+	for (port_no = 0; port_no < MFC_MAX_PORT_NUM; port_no++) {
 		mfc_info("===== %s port%d list =====\n", __func__,  port_no);
 		list_for_each(pos, &mfc_alloc_mem_head[port_no])
 		{
-			alloc_node = list_entry(pos, mfc_alloc_mem_t, list);
+			alloc_node = list_entry(pos, struct mfc_alloc_mem, list);
 			mfc_info("[alloc_list] inst_no: %d, p_addr: 0x%08x, "
-					"u_addr: 0x%08x, size: %d\n",
+					"u_addr: 0x%p, size: %d\n",
 					alloc_node->inst_no,
 					alloc_node->p_addr,
 					alloc_node->u_addr,
@@ -66,7 +66,7 @@ void mfc_print_mem_list(void)
 
 		list_for_each(pos, &mfc_free_mem_head[port_no])
 		{
-			free_node = list_entry(pos, mfc_free_mem_t, list);
+			free_node = list_entry(pos, struct mfc_free_mem, list);
 			mfc_info("[free_list] start_addr: 0x%08x size:%d\n",
 					free_node->start_addr , free_node->size);
 		}
@@ -76,19 +76,17 @@ void mfc_print_mem_list(void)
 void mfc_merge_fragment(int inst_no)
 {
 	struct list_head *pos, *n;
-	mfc_free_mem_t *node1,*node2;
+	struct mfc_free_mem *node1, *node2;
 	int port_no;
 
-	for (port_no = 0; port_no < MFC_MAX_PORT_NUM; port_no++)
-	{
+	for (port_no = 0; port_no < MFC_MAX_PORT_NUM; port_no++) {
 		list_for_each_safe(pos, n, &mfc_free_mem_head[port_no])
 		{
-			node1 = list_entry(pos, mfc_free_mem_t, list);
-			node2 = list_entry(n, mfc_free_mem_t, list);
-			if ((node1->start_addr + node1->size) == node2->start_addr)
-			{
+			node1 = list_entry(pos, struct mfc_free_mem, list);
+			node2 = list_entry(n, struct mfc_free_mem, list);
+			if ((node1->start_addr + node1->size) == node2->start_addr) {
 				node2->start_addr = node1->start_addr;
-				node2->size += node1->size;	
+				node2->size += node1->size;
 				list_del(&(node1->list));
 				kfree(node1);
 			}
@@ -105,49 +103,41 @@ void mfc_merge_fragment(int inst_no)
 static unsigned int mfc_get_free_mem(int alloc_size, int inst_no, int port_no)
 {
 	struct list_head *pos;
-	mfc_free_mem_t *free_node, *match_node = NULL;
+	struct mfc_free_mem *free_node, *match_node = NULL;
 	unsigned int alloc_addr = 0;
 
 	mfc_debug("request Size : %d\n", alloc_size);
 
-	if (list_empty(&mfc_free_mem_head[port_no]))
-	{
+	if (list_empty(&mfc_free_mem_head[port_no])) {
 		mfc_err("all memory is gone\n");
 		return alloc_addr;
 	}
-
 	/* find best chunk of memory */
 	list_for_each(pos, &mfc_free_mem_head[port_no])
 	{
-		free_node = list_entry(pos, mfc_free_mem_t, list);
+		free_node = list_entry(pos, struct mfc_free_mem, list);
 
-		if (match_node != NULL)
-		{
+		if (match_node != NULL) {
 			if ((free_node->size >= alloc_size) &&
 				(free_node->size < match_node->size))
 				match_node = free_node;
-		}
-		else
-		{
+		} else {
 			if (free_node->size >= alloc_size)
 				match_node = free_node;
 		}
 	}
 
 
-	if (match_node != NULL)
-	{
+	if (match_node != NULL) {
 		mfc_debug("match : startAddr(0x%08x) size(%d)\n", match_node->start_addr, match_node->size);
 
 		alloc_addr = match_node->start_addr;
 		match_node->start_addr += alloc_size;
 		match_node->size -= alloc_size;
-		
+
 		if (match_node->size < 0x1)	/* delete match_node. */
 			mfc_err("there is no suitable chunk...[case 0]\n");
-	}
-	else
-	{
+	} else {
 		mfc_err("there is no suitable chunk....[case 1]\n");
 		return 0;
 	}
@@ -158,28 +148,23 @@ static unsigned int mfc_get_free_mem(int alloc_size, int inst_no, int port_no)
 
 int mfc_init_buffer(void)
 {
-	mfc_free_mem_t *free_node;
+	struct mfc_free_mem *free_node;
 	int	port_no;
 
-	for (port_no = 0; port_no < MFC_MAX_PORT_NUM; port_no++)
-	{
+	for (port_no = 0; port_no < MFC_MAX_PORT_NUM; port_no++) {
 		INIT_LIST_HEAD(&mfc_alloc_mem_head[port_no]);
 		INIT_LIST_HEAD(&mfc_free_mem_head[port_no]);
-
 		/* init free head node */
 		free_node =
-			(mfc_free_mem_t *)kmalloc(sizeof(mfc_free_mem_t), GFP_KERNEL);
-		memset(free_node, 0x00, sizeof(mfc_free_mem_t));
+			(struct mfc_free_mem *)kmalloc(sizeof(struct mfc_free_mem), GFP_KERNEL);
+		memset(free_node, 0x00, sizeof(struct mfc_free_mem));
 
-		if (port_no)
-		{
+		if (port_no) {
 			free_node->start_addr = mfc_get_port1_buff_paddr();
-			free_node->size = s3c_get_media_memsize_bank(S3C_MDEV_MFC, 1);
-		}
-		else
-		{
+			free_node->size = mfc_port1_memsize;
+		} else {
 			free_node->start_addr = mfc_get_port0_buff_paddr();
-			free_node->size = s3c_get_media_memsize_bank(S3C_MDEV_MFC, 0) -
+			free_node->size = mfc_port1_memsize -
 				(mfc_get_port0_buff_paddr() - mfc_get_fw_buff_paddr());
 		}
 
@@ -189,26 +174,23 @@ int mfc_init_buffer(void)
 #if defined(DEBUG)
 	mfc_print_mem_list();
 #endif
-
 	return 0;
 }
 
-MFC_ERROR_CODE mfc_release_buffer(unsigned char *u_addr)
+enum mfc_error_code mfc_release_buffer(unsigned char *u_addr)
 {
 	struct list_head *pos;
 	int port_no;
-	mfc_alloc_mem_t *alloc_node;
-	BOOL found = FALSE;
+	struct mfc_alloc_mem *alloc_node;
+	bool found = false;
 
-	for (port_no = 0; port_no < MFC_MAX_PORT_NUM; port_no++)
-	{
+	for (port_no = 0; port_no < MFC_MAX_PORT_NUM; port_no++) {
 		list_for_each(pos, &mfc_alloc_mem_head[port_no])
 		{
-			alloc_node = list_entry(pos, mfc_alloc_mem_t, list);
-			if (alloc_node->u_addr == u_addr)
-			{
+			alloc_node = list_entry(pos, struct mfc_alloc_mem, list);
+			if (alloc_node->u_addr == u_addr) {
 				mfc_free_alloc_mem(alloc_node, port_no);
-				found = TRUE;
+				found = true;
 				break;
 			}
 		}
@@ -228,15 +210,12 @@ void mfc_release_all_buffer(int inst_no)
 {
 	struct list_head *pos, *n;
 	int port_no;
-	mfc_alloc_mem_t *alloc_node;
+	struct mfc_alloc_mem *alloc_node;
 
-	for (port_no = 0; port_no < MFC_MAX_PORT_NUM; port_no++)
-	{
-		list_for_each_safe(pos, n, &mfc_alloc_mem_head[port_no])
-		{
-			alloc_node = list_entry(pos, mfc_alloc_mem_t, list);
-			if (alloc_node->inst_no == inst_no)
-			{
+	for (port_no = 0; port_no < MFC_MAX_PORT_NUM; port_no++) {
+		list_for_each_safe(pos, n, &mfc_alloc_mem_head[port_no]) {
+			alloc_node = list_entry(pos, struct mfc_alloc_mem, list);
+			if (alloc_node->inst_no == inst_no) {
 				mfc_free_alloc_mem(alloc_node, port_no);
 			}
 		}
@@ -247,19 +226,19 @@ void mfc_release_all_buffer(int inst_no)
 #endif
 }
 
-void mfc_free_alloc_mem(mfc_alloc_mem_t *alloc_node, int port_no)
+void mfc_free_alloc_mem(struct mfc_alloc_mem *alloc_node, int port_no)
 {
 	struct list_head *pos;
-	mfc_free_mem_t *free_node;
-	mfc_free_mem_t *target_node;
+	struct mfc_free_mem *free_node;
+	struct mfc_free_mem *target_node;
 
-	free_node = (mfc_free_mem_t	*)kmalloc(sizeof(mfc_free_mem_t), GFP_KERNEL);
+	free_node = (struct mfc_free_mem *)kmalloc(sizeof(struct mfc_free_mem), GFP_KERNEL);
 	free_node->start_addr = alloc_node->p_addr;
 	free_node->size = alloc_node->size;
 
 	list_for_each(pos, &mfc_free_mem_head[port_no])
 	{
-		target_node = list_entry(pos, mfc_free_mem_t, list);
+		target_node = list_entry(pos, struct mfc_free_mem, list);
 		if (alloc_node->p_addr < target_node->start_addr)
 			break;
 	}
@@ -273,21 +252,19 @@ void mfc_free_alloc_mem(mfc_alloc_mem_t *alloc_node, int port_no)
 	kfree(alloc_node);
 }
 
-MFC_ERROR_CODE mfc_get_phys_addr(mfc_inst_ctx *mfc_ctx, mfc_args *args)
+enum mfc_error_code mfc_get_phys_addr(struct mfc_inst_ctx *mfc_ctx, union mfc_args *args)
 {
 	int ret, port_no;
 	struct list_head *pos;
-	mfc_alloc_mem_t *alloc_node;
-	mfc_get_phys_addr_arg_t *phys_addr_arg;
+	struct mfc_alloc_mem *alloc_node;
+	struct mfc_get_phys_addr_arg *phys_addr_arg;
 
-	phys_addr_arg = (mfc_get_phys_addr_arg_t *)args;
-	for (port_no = 0; port_no < MFC_MAX_PORT_NUM; port_no++)
-	{
+	phys_addr_arg = (struct mfc_get_phys_addr_arg *)args;
+	for (port_no = 0; port_no < MFC_MAX_PORT_NUM; port_no++) {
 		list_for_each(pos, &mfc_alloc_mem_head[port_no])
 		{
-			alloc_node = list_entry(pos, mfc_alloc_mem_t, list);
-			if (alloc_node->u_addr == (unsigned char *)phys_addr_arg->u_addr)
-			{
+			alloc_node = list_entry(pos, struct mfc_alloc_mem, list);
+			if (alloc_node->u_addr == (unsigned char *)phys_addr_arg->u_addr) {
 				mfc_debug("u_addr(0x%08x), p_addr(0x%08x) is found\n",
 						alloc_node->u_addr, alloc_node->p_addr);
 				goto found;
@@ -307,31 +284,29 @@ out_getphysaddr:
 	return ret;
 }
 
-MFC_ERROR_CODE mfc_allocate_buffer(mfc_inst_ctx *mfc_ctx, mfc_args *args, int port_no)
+enum mfc_error_code mfc_allocate_buffer(struct mfc_inst_ctx *mfc_ctx, union mfc_args *args, int port_no)
 {
 	int ret;
 	int inst_no = mfc_ctx->mem_inst_no;
 	unsigned int start_paddr;
-	mfc_mem_alloc_arg_t *in_param;	
-	mfc_alloc_mem_t *alloc_node;
+	struct mfc_mem_alloc_arg *in_param;
+	struct mfc_alloc_mem *alloc_node;
 
-	in_param = (mfc_mem_alloc_arg_t *)args;
+	in_param = (struct mfc_mem_alloc_arg *)args;
 
-	alloc_node = (mfc_alloc_mem_t *)kmalloc(sizeof(mfc_alloc_mem_t), GFP_KERNEL);
-	if (!alloc_node)
-	{
+	alloc_node = (struct mfc_alloc_mem *)kmalloc(sizeof(struct mfc_alloc_mem), GFP_KERNEL);
+	if (!alloc_node) {
 		mfc_err("There is no more kernel memory");
 		ret = MFCINST_MEMORY_ALLOC_FAIL;
 		goto out_getcodecviraddr;
 	}
-	memset(alloc_node, 0x00, sizeof(mfc_alloc_mem_t));
+	memset(alloc_node, 0x00, sizeof(struct mfc_alloc_mem));
 
 	/* if user request area, allocate from reserved area */
 	start_paddr = mfc_get_free_mem((int)in_param->buff_size, inst_no, port_no);
 	mfc_debug("start_paddr = 0x%X\n\r", start_paddr);
 
-	if (!start_paddr)
-	{
+	if (!start_paddr) {
 		mfc_err("There is no more memory\n\r");
 		in_param->out_uaddr = -1;
 		ret = MFCINST_MEMORY_ALLOC_FAIL;
@@ -340,16 +315,13 @@ MFC_ERROR_CODE mfc_allocate_buffer(mfc_inst_ctx *mfc_ctx, mfc_args *args, int po
 	}
 
 	alloc_node->p_addr = start_paddr;
-	if (port_no)
-	{
+	if (port_no) {
 		alloc_node->v_addr = (unsigned char *)(mfc_get_port1_buff_vaddr() +
 			(alloc_node->p_addr - mfc_get_port1_buff_paddr()));
 		alloc_node->u_addr = (unsigned char *)(in_param->mapped_addr +
 			mfc_ctx->port0_mmap_size +
 			(alloc_node->p_addr - mfc_get_port1_buff_paddr()));
-	}
-	else
-	{
+	} else {
 		alloc_node->v_addr = (unsigned char *)(mfc_get_port0_buff_vaddr() +
 			(alloc_node->p_addr - mfc_get_port0_buff_paddr()));
 		alloc_node->u_addr = (unsigned char *)(in_param->mapped_addr +
@@ -365,7 +337,7 @@ MFC_ERROR_CODE mfc_allocate_buffer(mfc_inst_ctx *mfc_ctx, mfc_args *args, int po
 
 	alloc_node->size = (int)in_param->buff_size;
 	alloc_node->inst_no = inst_no;
- 
+
 	list_add(&(alloc_node->list), &mfc_alloc_mem_head[port_no]);
 	ret = MFCINST_RET_OK;
 

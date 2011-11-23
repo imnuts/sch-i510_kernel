@@ -1,13 +1,13 @@
-/* arch/arm/plat-samsung/include/plat/regs-rtc.h
+/* arch/arm/mach-s3c2410/include/mach/regs-rtc.h
  *
- * Copyright (c) 2010 Samsung Electronics Co., Ltd.
- *		http://www.samsung.com/
- *
- * S3C/S5P - Internal RTC register definition
+ * Copyright (c) 2003 Simtec Electronics <linux@simtec.co.uk>
+ *		      http://www.simtec.co.uk/products/SWLINUX/
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
+ *
+ * S3C2410 Internal RTC register definition
 */
 
 #ifndef __ASM_ARCH_REGS_RTC_H
@@ -20,23 +20,26 @@
 #define S3C2410_RTCCON_CLKSEL (1<<1)
 #define S3C2410_RTCCON_CNTSEL (1<<2)
 #define S3C2410_RTCCON_CLKRST (1<<3)
+#define S3C64XX_RTCCON_TICEN  (1<<8)
+
+#define S3C64XX_RTCCON_TICMSK (0xF<<7)
+#define S3C64XX_RTCCON_TICSHT (7)
 
 #if defined(CONFIG_CPU_S5PC100) || defined(CONFIG_CPU_S5PV210)
-#define S3C_MAX_CNT	32768
-#define S3C_RTCCON_TICEN	(1<<8)
-#define S3C_RTC_TICNT	S3C2410_RTCREG(0x40)
+#define S3C_MAX_CNT     32768
+#define S3C_RTCCON_TICEN        (1<<8)
+#define S3C_RTC_TICNT   S3C2410_RTCREG(0x40)
 #else
-#define S3C_INTP_ALM	(1<<1)
-#define S3C_MAX_CNT	128
+#define S3C_INTP_ALM    (1<<1)
+#define S3C_MAX_CNT     128
 #define S3C_RTCCON_TICEN  (1<<7)
-#define S3C_RTC_TICNT	S3C2410_RTCREG(0x44)
+#define S3C_RTC_TICNT   S3C2410_RTCREG(0x44)
 #endif
 
 /* Common Reg for samsung AP*/
-#define S3C_INTP	S3C2410_RTCREG(0x30)
-#define S3C_INTP_ALM	(1<<1)
-#define S3C_INTP_TIC	(1<<0)
-
+#define S3C_INTP        S3C2410_RTCREG(0x30)
+#define S3C_INTP_ALM    (1<<1)
+#define S3C_INTP_TIC    (1<<0)
 
 #define S3C2410_TICNT	      S3C2410_RTCREG(0x44)
 #define S3C2410_TICNT_ENABLE  (1<<7)
@@ -51,9 +54,9 @@
 #define S3C2410_RTCALM_SECEN  (1<<0)
 
 #define S3C2410_RTCALM_ALL \
-  (S3C2410_RTCALM_ALMEN | S3C2410_RTCALM_YEAREN | S3C2410_RTCALM_MONEN |\
+  S3C2410_RTCALM_ALMEN | S3C2410_RTCALM_YEAREN | S3C2410_RTCALM_MONEN |\
   S3C2410_RTCALM_DAYEN | S3C2410_RTCALM_HOUREN | S3C2410_RTCALM_MINEN |\
-  S3C2410_RTCALM_SECEN)
+  S3C2410_RTCALM_SECEN
 
 
 #define S3C2410_ALMSEC	      S3C2410_RTCREG(0x54)

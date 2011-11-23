@@ -40,6 +40,7 @@
 #include <linux/firmware.h>
 #include <linux/ctype.h>
 #include <linux/swab.h>
+#include <linux/slab.h>
 
 #define VERSION "0.07"
 #define PTAG "solos-pci"
@@ -142,6 +143,9 @@ MODULE_AUTHOR("Traverse Technologies <support@traverse.com.au>");
 MODULE_DESCRIPTION("Solos PCI driver");
 MODULE_VERSION(VERSION);
 MODULE_LICENSE("GPL");
+MODULE_FIRMWARE("solos-FPGA.bin");
+MODULE_FIRMWARE("solos-Firmware.bin");
+MODULE_FIRMWARE("solos-db-FPGA.bin");
 MODULE_PARM_DESC(reset, "Reset Solos chips on startup");
 MODULE_PARM_DESC(atmdebug, "Print ATM data");
 MODULE_PARM_DESC(firmware_upgrade, "Initiate Solos firmware upgrade");
@@ -528,34 +532,37 @@ static int flash_upgrade(struct solos_card *card, int chip)
 	int numblocks = 0;
 	int offset;
 
-	if (chip == 0) {
+	switch (chip) {
+	case 0:
 		fw_name = "solos-FPGA.bin";
 		blocksize = FPGA_BLOCK;
-	} 
-	
-	if (chip == 1) {
+		break;
+	case 1:
 		fw_name = "solos-Firmware.bin";
 		blocksize = SOLOS_BLOCK;
-	}
-	
-	if (chip == 2){
+		break;
+	case 2:
 		if (card->fpga_version > LEGACY_BUFFERS){
 			fw_name = "solos-db-FPGA.bin";
 			blocksize = FPGA_BLOCK;
 		} else {
-			dev_info(&card->dev->dev, "FPGA version doesn't support daughter board upgrades\n");
+			dev_info(&card->dev->dev, "FPGA version doesn't support"
+					" daughter board upgrades\n");
 			return -EPERM;
 		}
-	}
-	
-	if (chip == 3){
+		break;
+	case 3:
 		if (card->fpga_version > LEGACY_BUFFERS){
 			fw_name = "solos-Firmware.bin";
 			blocksize = SOLOS_BLOCK;
 		} else {
-		dev_info(&card->dev->dev, "FPGA version doesn't support daughter board upgrades\n");
-		return -EPERM;
+			dev_info(&card->dev->dev, "FPGA version doesn't support"
+					" daughter board upgrades\n");
+			return -EPERM;
 		}
+		break;
+	default:
+		return -ENODEV;
 	}
 
 	if (request_firmware(&fw, fw_name, &card->dev->dev))
@@ -774,7 +781,8 @@ static struct atm_vcc *find_vcc(struct atm_dev *dev, short vpi, int vci)
 	sk_for_each(s, node, head) {
 		vcc = atm_sk(s);
 		if (vcc->dev == dev && vcc->vci == vci &&
-		    vcc->vpi == vpi && vcc->qos.rxtp.traffic_class != ATM_NONE)
+		    vcc->vpi == vpi && vcc->qos.rxtp.traffic_class != ATM_NONE &&
+		    test_bit(ATM_VF_READY, &vcc->flags))
 			goto out;
 	}
 	vcc = NULL;
@@ -900,6 +908,10 @@ static void pclose(struct atm_vcc *vcc)
 	clear_bit(ATM_VF_ADDR, &vcc->flags);
 	clear_bit(ATM_VF_READY, &vcc->flags);
 
+	/* Hold up vcc_destroy_socket() (our caller) until solos_bh() in the
+	   tasklet has finished processing any incoming packets (and, more to
+	   the point, using the vcc pointer). */
+	tasklet_unlock_wait(&card->tlet);
 	return;
 }
 

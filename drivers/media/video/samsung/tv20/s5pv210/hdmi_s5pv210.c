@@ -18,6 +18,9 @@
 #include <linux/interrupt.h>
 #include <linux/delay.h>
 //#include <linux/io.h>
+#include <linux/slab.h>
+#include <linux/mm.h>
+
 
 #include <plat/clock.h>
 
@@ -2033,7 +2036,7 @@ int __init __s5p_hdmi_probe(struct platform_device *pdev,
 	struct resource *res;
 	size_t	size;
 	u32	reg;
-
+	printk("_s5P_hdmi_probe\n");
 	spin_lock_init(&lock_hdmi);
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, res_num);
@@ -2100,6 +2103,7 @@ int __init __s5p_hdmi_probe(struct platform_device *pdev,
 	reg = readb(hdmi_base+S5P_HDMI_CTRL_INTC_CON);
 	writeb(reg | (1<<HDMI_IRQ_GLOBAL), hdmi_base+S5P_HDMI_CTRL_INTC_CON);
 
+	printk("_s5P_hdmi_probe--\n");
 	return 0;
 error:
 	return -ENOENT;
@@ -2257,14 +2261,14 @@ u8 s5p_hdmi_get_hpd_status(void)
 	return reg;
 }
 EXPORT_SYMBOL(s5p_hdmi_get_hpd_status);
-
+#if 0
 void s5p_hdmi_swhpd_disable(void)
 {
 	u8 reg;
 	reg = writeb(HPD_SW_DISABLE, hdmi_base+S5P_HPD);
 }
 EXPORT_SYMBOL(s5p_hdmi_swhpd_disable);
-
+#endif
 void s5p_hdmi_hpd_gen(void)
 {
 	writeb(0xFF, hdmi_base+S5P_HDMI_HPD_GEN);

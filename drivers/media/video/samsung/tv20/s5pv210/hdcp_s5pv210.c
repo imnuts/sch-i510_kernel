@@ -1143,7 +1143,7 @@ bool __s5p_stop_hdcp(void)
 	/* disable encryption */
 	HDCPPRINTK("Stop Encryption by Stop!!\n");
 	writel(HDCP_ENC_DISABLE, hdmi_base + S5P_ENC_EN);
-	s5p_hdmi_mute_en(true);
+	//s5p_hdmi_mute_en(true);
 
 	/* clear result */
 	writel(Ri_MATCH_RESULT__NO, hdmi_base + S5P_HDCP_CHECK_RESULT);

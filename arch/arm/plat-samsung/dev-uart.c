@@ -17,32 +17,20 @@
 
 /* uart devices */
 
-static struct platform_device s3c24xx_uart_device0 = {
+struct platform_device s3c24xx_uart_device0 = {
 	.id		= 0,
-	.dev = {
-		.bus = &platform_bus_type,
-	},
 };
 
-static struct platform_device s3c24xx_uart_device1 = {
+struct platform_device s3c24xx_uart_device1 = {
 	.id		= 1,
-	.dev = {
-		.bus = &platform_bus_type,
-	},
 };
 
-static struct platform_device s3c24xx_uart_device2 = {
+struct platform_device s3c24xx_uart_device2 = {
 	.id		= 2,
-	.dev = {
-		.bus = &platform_bus_type,
-	},
 };
 
-static struct platform_device s3c24xx_uart_device3 = {
+struct platform_device s3c24xx_uart_device3 = {
 	.id		= 3,
-	.dev = {
-		.bus = &platform_bus_type,
-	},
 };
 
 struct platform_device *s3c24xx_uart_src[4] = {

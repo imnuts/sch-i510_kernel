@@ -16,7 +16,6 @@ extern void s5pv210_common_init_uarts(struct s3c2410_uartcfg *cfg, int no);
 extern void s5pv210_register_clocks(void);
 extern void s5pv210_setup_clocks(void);
 
-
 #ifdef CONFIG_CPU_S5PV210
 
 extern  int s5pv210_init(void);

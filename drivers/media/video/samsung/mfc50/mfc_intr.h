@@ -20,6 +20,6 @@
 #include <linux/interrupt.h>
 
 irqreturn_t mfc_irq(int irq, void *dev_id);
-int mfc_wait_for_done(mfc_wait_done_type command);
+int mfc_wait_for_done(enum mfc_wait_done_type command);
 int mfc_return_code(void);
 #endif

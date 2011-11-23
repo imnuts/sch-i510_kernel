@@ -13,23 +13,6 @@
 
 struct clk;
 
-#if defined(CONFIG_MACH_S5PC110_P1)
-#define USE_1DOT2GHZ 1
-#else
-#define USE_1DOT2GHZ 0
-#endif
-
-#if defined(CONFIG_CPU_S5PV210_EVT1)
-struct clkGateBlock {
-	unsigned long           gb_ctrlbit;
-	unsigned long		gb_countIP;
-	unsigned long		gb_CheckIPBits1;
-	volatile unsigned long	*gb_CheckIPReg1;
-	unsigned long           gb_CheckIPBits2;
-	volatile unsigned long	*gb_CheckIPReg2;
-};
-#endif
-
 /**
  * struct clk_ops - standard clock operations
  * @set_rate: set the clock rate, see clk_set_rate().
@@ -61,21 +44,10 @@ struct clk {
 	int		      usage;
 	unsigned long         rate;
 	unsigned long         ctrlbit;
-#if defined(CONFIG_CPU_S5PV210_EVT1)
-	int		    (*enable)(struct clk *, int enable);
-	int		    (*set_rate)(struct clk *c, unsigned long rate);
-	unsigned long	    (*get_rate)(struct clk *c);
-	unsigned long	    (*round_rate)(struct clk *c, unsigned long rate);
-	int		    (*set_parent)(struct clk *c, struct clk *parent);
-#endif
-	struct clk_ops		*ops;
 
-#if defined(CONFIG_CPU_S5PV210_EVT1)
-	unsigned int powerDomain;
-	unsigned long         srcMaskBit;
-	void __iomem         *srcMaskReg;
-	struct clkGateBlock	*gb;
-#endif
+	struct clk_ops		*ops;
+	struct device		*dev;
+	int		    (*enable)(struct clk *, int enable);
 };
 
 /* other clocks which may be registered by board support */
@@ -99,20 +71,11 @@ extern struct clk clk_epll;
 extern struct clk clk_xtal;
 extern struct clk clk_ext;
 
-#ifdef CONFIG_CPU_S5PV210_EVT1
-extern struct clk clk_vpll;
-extern struct clk clk_h200;
-extern struct clk clk_h166;
-extern struct clk clk_h133;
-extern struct clk clk_p100;
-extern struct clk clk_p83;
-extern struct clk clk_p66;
-#endif
-
 /* S3C64XX specific clocks */
 extern struct clk clk_h2;
 extern struct clk clk_27m;
 extern struct clk clk_48m;
+extern struct clk clk_xusbxti;
 
 extern int clk_default_setrate(struct clk *clk, unsigned long rate);
 extern struct clk_ops clk_ops_def_setrate;
@@ -130,6 +93,7 @@ extern int s3c24xx_register_clock(struct clk *clk);
 extern int s3c24xx_register_clocks(struct clk **clk, int nr_clks);
 
 extern void s3c_register_clocks(struct clk *clk, int nr_clks);
+extern void s3c_disable_clocks(struct clk *clkp, int nr_clks);
 
 extern int s3c24xx_register_baseclocks(unsigned long xtal);
 
@@ -147,17 +111,6 @@ extern void s3c2443_setup_clocks(void);
 /* S3C64XX specific functions and clocks */
 
 extern int s3c64xx_sclk_ctrl(struct clk *clk, int enable);
-
-#if defined(CONFIG_CPU_S5PV210_EVT1)
-extern void s5pc11x_register_clocks(void);
-extern int s5pc11x_clk_ip0_ctrl(struct clk *clk, int enable);
-extern int s5pc11x_clk_ip1_ctrl(struct clk *clk, int enable);
-extern int s5pc11x_clk_ip2_ctrl(struct clk *clk, int enable);
-extern int s5pc11x_clk_ip3_ctrl(struct clk *clk, int enable);
-extern int s5pc11x_clk_ip4_ctrl(struct clk *clk, int enable);
-extern int s5pc11x_clk_block_ctrl(struct clk *clk, int enable);
-extern int s5pc11x_audss_clkctrl(struct clk *clk, int enable);
-#endif
 
 /* Init for pwm clock code */
 

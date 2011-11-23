@@ -17,6 +17,7 @@
 #include <linux/gpio.h>
 #include <linux/gpio_event.h>
 #include <linux/interrupt.h>
+#include <linux/slab.h>
 
 struct gpio_axis_state {
 	struct gpio_event_input_devs *input_devs;

@@ -31,11 +31,6 @@ config CPU_FREQ_DEBUG
 	       2 to activate CPUfreq drivers debugging, and
 	       4 to activate CPUfreq governor debugging
 
-config CPU_FREQ_LOG
-	bool "Enable CPUfreq transition log"
-	help
-	  Say Y here to enable CPUfreq log on running
-
 config CPU_FREQ_STAT
 	tristate "CPU frequency translation statistics"
 	select CPU_FREQ_TABLE

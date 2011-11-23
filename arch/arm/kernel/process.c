@@ -16,7 +16,6 @@
 #include <linux/mm.h>
 #include <linux/stddef.h>
 #include <linux/unistd.h>
-#include <linux/slab.h>
 #include <linux/user.h>
 #include <linux/delay.h>
 #include <linux/reboot.h>
@@ -36,7 +35,6 @@
 #include <asm/thread_notify.h>
 #include <asm/stacktrace.h>
 #include <asm/mach/time.h>
-#include <mach/regs-clock.h>
 
 #ifdef CONFIG_KERNEL_DEBUG_SEC
 #include <linux/kernel_sec_common.h>
@@ -103,11 +101,14 @@ void arm_machine_restart(char mode, const char *cmd)
 	 */
 	setup_mm_for_reboot(mode);
 
+#if 1
 #ifdef CONFIG_KERNEL_DEBUG_SEC
-	kernel_sec_clear_upload_magic_number();  // Clear the magic number because it's normal reboot.
+	/* Clear the magic number because it's normal reboot */
+	kernel_sec_clear_upload_magic_number();
 #endif
-	writel(0x12345678, S5P_INFORM5);  //Reset
-	writel(0x0,        S5P_INFORM6);
+	writel(0x12345678, S5P_INFORM5);  /* Reset */
+	writel(readl(S5P_INFORM6) & 0xFFFF00FF, S5P_INFORM6);
+#endif
 
 	/*
 	 * Now call the architecture specific reboot code.
@@ -295,7 +296,8 @@ void __show_regs(struct pt_regs *regs)
 	char buf[64];
 
 	printk("CPU: %d    %s  (%s %.*s)\n",
-		smp_processor_id(), print_tainted(), init_utsname()->release,
+		raw_smp_processor_id(), print_tainted(),
+		init_utsname()->release,
 		(int)strcspn(init_utsname()->version, " "),
 		init_utsname()->version);
 	print_symbol("PC is at %s\n", instruction_pointer(regs));
@@ -315,8 +317,12 @@ void __show_regs(struct pt_regs *regs)
 		regs->ARM_r1, regs->ARM_r0);
 
 #ifdef CONFIG_KERNEL_DEBUG_SEC	
-	// Overwrite SVC context which the error just occurs from regs (tkHWANG).
-	memcpy((void*)&kernel_sec_core_ureg_dump, (void*)(regs), sizeof(kernel_sec_core_ureg_dump));
+	/*
+	 *  Overwrite SVC context which the error just occurs from regs
+	 * (tkHWANG)
+	 */
+	memcpy((void*)&kernel_sec_core_ureg_dump, (void*)(regs),
+			sizeof(kernel_sec_core_ureg_dump));
 #endif		
 	
 	flags = regs->ARM_cpsr;
@@ -364,16 +370,17 @@ void show_regs(struct pt_regs * regs)
 	__backtrace();
 }
 
+ATOMIC_NOTIFIER_HEAD(thread_notify_head);
+
+EXPORT_SYMBOL_GPL(thread_notify_head);
+
 /*
  * Free current thread data structures etc..
  */
 void exit_thread(void)
 {
+	thread_notify(THREAD_NOTIFY_EXIT, current_thread_info());
 }
-
-ATOMIC_NOTIFIER_HEAD(thread_notify_head);
-
-EXPORT_SYMBOL_GPL(thread_notify_head);
 
 void flush_thread(void)
 {
@@ -389,9 +396,6 @@ void flush_thread(void)
 
 void release_thread(struct task_struct *dead_task)
 {
-	struct thread_info *thread = task_thread_info(dead_task);
-
-	thread_notify(THREAD_NOTIFY_RELEASE, thread);
 }
 
 asmlinkage void ret_from_fork(void) __asm__("ret_from_fork");
@@ -443,23 +447,27 @@ EXPORT_SYMBOL(dump_fpu);
 
 /*
  * Shuffle the argument into the correct register before calling the
- * thread function.  r1 is the thread argument, r2 is the pointer to
- * the thread function, and r3 points to the exit function.
+ * thread function.  r4 is the thread argument, r5 is the pointer to
+ * the thread function, and r6 points to the exit function.
  */
 extern void kernel_thread_helper(void);
-asm(	".section .text\n"
+asm(	".pushsection .text\n"
 "	.align\n"
 "	.type	kernel_thread_helper, #function\n"
 "kernel_thread_helper:\n"
-"	mov	r0, r1\n"
-"	mov	lr, r3\n"
-"	mov	pc, r2\n"
+#ifdef CONFIG_TRACE_IRQFLAGS
+"	bl	trace_hardirqs_on\n"
+#endif
+"	msr	cpsr_c, r7\n"
+"	mov	r0, r4\n"
+"	mov	lr, r6\n"
+"	mov	pc, r5\n"
 "	.size	kernel_thread_helper, . - kernel_thread_helper\n"
-"	.previous");
+"	.popsection");
 
 #ifdef CONFIG_ARM_UNWIND
 extern void kernel_thread_exit(long code);
-asm(	".section .text\n"
+asm(	".pushsection .text\n"
 "	.align\n"
 "	.type	kernel_thread_exit, #function\n"
 "kernel_thread_exit:\n"
@@ -469,7 +477,7 @@ asm(	".section .text\n"
 "	nop\n"
 "	.fnend\n"
 "	.size	kernel_thread_exit, . - kernel_thread_exit\n"
-"	.previous");
+"	.popsection");
 #else
 #define kernel_thread_exit	do_exit
 #endif
@@ -483,11 +491,12 @@ pid_t kernel_thread(int (*fn)(void *), void *arg, unsigned long flags)
 
 	memset(&regs, 0, sizeof(regs));
 
-	regs.ARM_r1 = (unsigned long)arg;
-	regs.ARM_r2 = (unsigned long)fn;
-	regs.ARM_r3 = (unsigned long)kernel_thread_exit;
+	regs.ARM_r4 = (unsigned long)arg;
+	regs.ARM_r5 = (unsigned long)fn;
+	regs.ARM_r6 = (unsigned long)kernel_thread_exit;
+	regs.ARM_r7 = SVC_MODE | PSR_ENDSTATE | PSR_ISETSTATE;
 	regs.ARM_pc = (unsigned long)kernel_thread_helper;
-	regs.ARM_cpsr = SVC_MODE | PSR_ENDSTATE | PSR_ISETSTATE;
+	regs.ARM_cpsr = regs.ARM_r7 | PSR_I_BIT;
 
 	return do_fork(flags|CLONE_VM|CLONE_UNTRACED, 0, &regs, 0, NULL, NULL);
 }

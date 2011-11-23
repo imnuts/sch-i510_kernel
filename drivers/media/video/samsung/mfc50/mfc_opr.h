@@ -18,7 +18,7 @@
  * published by the Free Software Foundation.
  */
 
-#ifndef _MFC_OPR_H_ 
+#ifndef _MFC_OPR_H_
 #define _MFC_OPR_H_
 
 #include <plat/regs-mfc.h>
@@ -71,11 +71,7 @@
 
 #define BOUND_MEMORY_SIZE		921600
 
-
-
-typedef enum {FALSE, TRUE} BOOL;
-
-typedef enum {
+enum  mfc_inst_state {
 	MFCINST_STATE_NULL = 0,
 
 	/* Instance is created */
@@ -86,36 +82,36 @@ typedef enum {
 
 	MFCINST_STATE_DEC_EXE = 30,
 	MFCINST_STATE_DEC_EXE_DONE,
-	
+
 	/* Instance is initialized for encoding */
-	MFCINST_STATE_ENC_INITIALIZE = 40, 
+	MFCINST_STATE_ENC_INITIALIZE = 40,
 	MFCINST_STATE_ENC_EXE,
 	MFCINST_STATE_ENC_EXE_DONE
-} mfc_inst_state;
+};
 
-typedef enum {
+enum  mfc_mem_type {
 	MEM_STRUCT_LINEAR = 0,
 	MEM_STRUCT_TILE_ENC  = 3  /* 64x32 */
-} mfc_mem_type;
+};
 
-typedef enum {
+enum  mfc_dec_type {
 	SEQ_HEADER        = 1,
 	FRAME             = 2,
 	LAST_FRAME        = 3,
 	INIT_BUFFER       = 4,
 	FRAME_RUN_REALLOC = 5,
-} mfc_dec_type;
+};
 
-typedef enum {
+enum mfc_facade_cmd {
 	H2R_CMD_EMPTY          = 0,
 	H2R_CMD_OPEN_INSTANCE  = 1,
 	H2R_CMD_CLOSE_INSTANCE = 2,
 	H2R_CMD_SYS_INIT       = 3,
 	H2R_CMD_SLEEP          = 5,
 	H2R_CMD_WAKEUP         = 6,
-} mfc_facade_cmd;
+};
 
-typedef enum {
+enum  mfc_wait_done_type {
     R2H_CMD_EMPTY              = 0,
     R2H_CMD_OPEN_INSTANCE_RET  = 1,
     R2H_CMD_CLOSE_INSTANCE_RET = 2,
@@ -131,25 +127,24 @@ typedef enum {
     R2H_CMD_INIT_BUFFERS_RET   = 15,
     R2H_CMD_EDFU_INT_RET       = 16,
     R2H_CMD_DECODE_ERR_RET     = 32
-} mfc_wait_done_type;
+};
 
-typedef enum {
+enum  mfc_display_status {
 	DECODING_ONLY    = 0,
 	DECODING_DISPLAY = 1,
 	DISPLAY_ONLY     = 2,
 	DECODING_EMPTY   = 3
-} mfc_display_status;
+};
 
 /* In case of decoder */
-typedef enum {
+enum  mfc_frame_type {
 	MFC_RET_FRAME_NOT_SET = 0,
 	MFC_RET_FRAME_I_FRAME = 1,
 	MFC_RET_FRAME_P_FRAME = 2,
-	MFC_RET_FRAME_B_FRAME = 3	
-} mfc_frame_type;
+	MFC_RET_FRAME_B_FRAME = 3
+};
 
-typedef struct tag_mfc_inst_ctx
-{
+struct mfc_inst_ctx {
 	int InstNo;
 	unsigned int DPBCnt;
 	unsigned int totalDPBCnt;
@@ -157,52 +152,55 @@ typedef struct tag_mfc_inst_ctx
 	unsigned int displayDelay;
 	unsigned int postEnable;
 	unsigned int endOfFrame;
-	unsigned int forceSetFrameType;        
+	unsigned int forceSetFrameType;
+	unsigned int dynamic_framerate;
 	unsigned int dynamic_bitrate;
-        unsigned int dynamic_framerate;
+	unsigned int dynamic_iperoid;
 	unsigned int img_width;
 	unsigned int img_height;
-	unsigned int dwAccess;  // for Power Management.
+	unsigned int dwAccess;  /* for Power Management. */
 	unsigned int IsPackedPB;
 	unsigned int interlace_mode;
 	unsigned int sliceEnable;
 	unsigned int crcEnable;
-	unsigned int widthDivX311;
-	unsigned int heightDivX311;
+	unsigned int widthFIMV1;
+	unsigned int heightFIMV1;
 	int mem_inst_no;
-	mfc_frame_type FrameType;
-	SSBSIP_MFC_CODEC_TYPE MfcCodecType;
-	mfc_inst_state MfcState;
+	enum mfc_frame_type FrameType;
+	enum ssbsip_mfc_codec_type MfcCodecType;
+	enum mfc_inst_state MfcState;
 	unsigned int port0_mmap_size;
 	unsigned int codec_buff_paddr;
 	unsigned int pred_buff_paddr;
-	mfc_frame_buf_arg_t dec_dpb_buff_paddr;
+	struct mfc_frame_buf_arg dec_dpb_buff_paddr;
 	unsigned int shared_mem_paddr;
 	unsigned int shared_mem_vaddr;
 	unsigned int IsStartedIFrame;
-	MFC_SHARED_MEM shared_mem;
-} mfc_inst_ctx;
+	struct mfc_shared_mem shared_mem;
+	mfc_buffer_type buf_type;
+};
 
-int mfc_load_firmware(void);
-void mfc_cmd_reset(void);
+int mfc_load_firmware(const unsigned char *data, size_t size);
+bool mfc_cmd_reset(void);
 
-MFC_ERROR_CODE mfc_init_hw(void);
-MFC_ERROR_CODE mfc_init_encode(mfc_inst_ctx *mfc_ctx, mfc_args *args);
-MFC_ERROR_CODE mfc_exe_encode(mfc_inst_ctx *mfc_ctx, mfc_args *args);
-MFC_ERROR_CODE mfc_init_decode(mfc_inst_ctx *mfc_ctx, mfc_args *args);
-MFC_ERROR_CODE mfc_exe_decode(mfc_inst_ctx *mfc_ctx, mfc_args *args);
-MFC_ERROR_CODE mfc_get_config(mfc_inst_ctx *mfc_ctx, mfc_args *args);
-MFC_ERROR_CODE mfc_set_config(mfc_inst_ctx *mfc_ctx, mfc_args *args);
-MFC_ERROR_CODE mfc_deinit_hw(mfc_inst_ctx *mfc_ctx);
-MFC_ERROR_CODE mfc_set_sleep(void);
-MFC_ERROR_CODE mfc_set_wakeup(void);
+enum mfc_error_code mfc_init_hw(void);
+enum mfc_error_code mfc_init_encode(struct mfc_inst_ctx *mfc_ctx, union mfc_args *args);
+enum mfc_error_code mfc_exe_encode(struct mfc_inst_ctx *mfc_ctx, union mfc_args *args);
+enum mfc_error_code mfc_init_decode(struct mfc_inst_ctx *mfc_ctx, union mfc_args *args);
+enum mfc_error_code mfc_exe_decode(struct mfc_inst_ctx *mfc_ctx, union mfc_args *args);
+enum mfc_error_code mfc_get_config(struct mfc_inst_ctx *mfc_ctx, union mfc_args *args);
+enum mfc_error_code mfc_set_config(struct mfc_inst_ctx *mfc_ctx, union mfc_args *args);
+enum mfc_error_code mfc_deinit_hw(struct mfc_inst_ctx *mfc_ctx);
+enum mfc_error_code mfc_set_sleep(void);
+enum mfc_error_code mfc_set_wakeup(void);
 
-int mfc_return_inst_no(int inst_no, SSBSIP_MFC_CODEC_TYPE codec_type);
-int mfc_set_state(mfc_inst_ctx *ctx, mfc_inst_state state);
+int mfc_return_inst_no(int inst_no, enum ssbsip_mfc_codec_type codec_type);
+int mfc_set_state(struct mfc_inst_ctx *ctx, enum mfc_inst_state state);
 void mfc_init_mem_inst_no(void);
 int mfc_get_mem_inst_no(void);
 void mfc_return_mem_inst_no(int inst_no);
-BOOL mfc_is_running(void);
-BOOL is_dec_codec(SSBSIP_MFC_CODEC_TYPE codec_type);
+bool mfc_is_running(void);
+bool is_dec_codec(enum ssbsip_mfc_codec_type codec_type);
+
 
 #endif /* _MFC_OPR_H_ */

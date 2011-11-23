@@ -3,6 +3,7 @@
 #include <linux/init.h>
 #include <linux/uaccess.h>
 #include <linux/fs.h>
+#include <linux/slab.h>
 
 #undef DEBUG_PORT_INFO
 //#define DEBUG_PORT_INFO
@@ -46,8 +47,7 @@ typedef struct {
    unsigned short udp_port_list[MAX_GPRS_PORT_LIST_LEN];
 } __attribute__((packed)) ipc_pda_gprs_port_list_set_type ;
 
-typedef struct tagHDLCFrame
-{
+typedef struct tagHDLCFrame {
 	unsigned char	m_StartMagicCode;
 	unsigned short m_Length;
 	unsigned char	m_ChannelID;	// RAW data frame format
@@ -56,7 +56,7 @@ typedef struct tagHDLCFrame
 	unsigned char	m_EndMagicCode;
 } HDLCFrame_t;
 
-unsigned char get_control_infoid()
+static unsigned char get_control_infoid(void)
 {
 	unsigned char s_infoid = 0;
 
@@ -73,7 +73,9 @@ unsigned char get_control_infoid()
 static int readPortFromFile(const char* path,unsigned short* portList)
 {
 	int lineNum = 0;
+#ifdef DEBUG_PORT_INFO
 	int index = 0;
+#endif
 	int read_byte = 0;
 	struct file* fp = NULL;
 	char* readline = NULL;
@@ -90,9 +92,7 @@ static int readPortFromFile(const char* path,unsigned short* portList)
 	fp = filp_open(path, O_RDONLY , 00644);
 
 	if (fp == NULL)
-	{
-	    printk("\n %s open failed",path);
-	}
+		printk("\n %s open failed",path);
 
 	readline = (char*)kmalloc(4096, GFP_KERNEL);
 
@@ -103,20 +103,17 @@ static int readPortFromFile(const char* path,unsigned short* portList)
 #ifdef DEBUG_PORT_INFO
 	for ( index = 0; index < read_byte ; index++) {
 		printk("%c",*(readline+index));
-		}
+	}
 #endif	
 	// parse buffer and update port list
 
 	while (readline_offset < read_byte) {
-		if ( *(readline+readline_offset) == '\n')
-			{
+		if (*(readline+readline_offset) == '\n') {
 			sscanf(eachline,"%d: %x:%x",&lineNum, &ip, &port);		
 			dprintk("Read IP, Port : %x:%x\n",ip,port);	
 
-			if (ip != 0x0100007F && ip != 0x00000000) 
-			{
-				if ( port != 0  && ip != 0x00000000)
-				{
+			if (ip != 0x0100007F && ip != 0x00000000) {
+				if ( port != 0  && ip != 0x00000000) {
 					portList[port_index++] = (unsigned short)port;
 					printk("WHITELIST : add port %4x\n", port);
 				}
@@ -125,7 +122,7 @@ static int readPortFromFile(const char* path,unsigned short* portList)
 			//clear line buffer
 			memset(eachline, 0 , sizeof(eachline));
 			eachline_offset = 0;
-			}
+		}
 		eachline[eachline_offset++] = *(readline+readline_offset);
 		readline_offset++;
 	}
@@ -142,8 +139,7 @@ static int readPortFromFile(const char* path,unsigned short* portList)
 
 	fp = filp_open(ipv6_path, O_RDONLY , 00644);
 
-	if (fp == NULL)
-	{
+	if (fp == NULL) {
 	    printk("\n %s open failed",path);
 	    return 0;
 	}
@@ -167,14 +163,12 @@ static int readPortFromFile(const char* path,unsigned short* portList)
 	// parse buffer and update port list
 
 	while (readline_offset < read_byte) {
-		if ( *(readline+readline_offset) == '\n')
-			{
+		if (*(readline+readline_offset) == '\n') {
 			sscanf(eachline,"%d: %32x:%x",&lineNum, &ip, &port);
 			//sscanf(readLine,"%*d: %*64[0-9a-fA-F]:%X", &port);
 			dprintk("Read Port : %x:%x\n", ip, port);	
 
-			if ( port != 0  && ip != 0x00000000)
-			{
+			if (port != 0  && ip != 0x00000000) {
 				portList[port_index++] = (unsigned short)port;
 				printk("WHITELIST : add port %4x\n", port);
 			}
@@ -182,14 +176,14 @@ static int readPortFromFile(const char* path,unsigned short* portList)
 			//clear line buffer
 			memset(eachline, 0 , sizeof(eachline));
 			eachline_offset = 0;
-			}
+		}
 		eachline[eachline_offset++] = *(readline+readline_offset);
 		readline_offset++;
 	}
 	
 	kfree(readline);
 
-	if( fp != NULL ) {
+	if (fp != NULL) {
 		filp_close(fp, NULL);
 		fp = NULL;
 	}
@@ -201,11 +195,10 @@ static int activePortGet(int portType, unsigned short* portList)
 {
 	int portLen = 0;
 
-	if(portType == 1){ /* Read Tcp Port*/	
+	if (portType == 1) { /* Read Tcp Port*/	
 		portLen = readPortFromFile("/proc/net/tcp",portList);
 		//LOGD("read from tcp : %d", portLen);
-	}
-	else if(portType == 2){ /* Read Udp Port*/
+	} else if (portType == 2) { /* Read Udp Port*/
 		portLen = readPortFromFile("/proc/net/udp",portList);	
 		//LOGD("read from udp : %d", portLen);
 	}
@@ -216,7 +209,7 @@ static int activePortGet(int portType, unsigned short* portList)
 static ipc_pda_gprs_port_list_set_type port_list_packet;
 char* hdlc_frame = NULL;
 
-int TxGPRS_SetPortList()
+static int TxGPRS_SetPortList(void)
 {
 	int hdlc_size;
 	char *rawdata = NULL;
@@ -275,21 +268,22 @@ int TxGPRS_SetPortList()
 #ifdef DEBUG_PORT_INFO
 	int i = 0;
 	for ( ; i< hdlc_size; i++) {
-		if(i %16 == 0) printk("\n");
-
-		printk("%02x ",*(rawdata+i));
+		if (i % 16 == 0) {
+			printk("\n");
 		}
+		printk("%02x ",*(rawdata+i));
+	}
 #endif	
 
 	dprintk("[%s][line:%d]\n",__func__, __LINE__);
 	return hdlc_size;
 }
 
-void clear_portlist()
+static void clear_portlist(void)
 {
 	dprintk("[%s][line:%d]\n",__func__, __LINE__);
 	
-	if(hdlc_frame !=  NULL) {
+	if (hdlc_frame !=  NULL) {
 		kfree(hdlc_frame);
 		hdlc_frame = NULL;
 	}
@@ -298,7 +292,7 @@ void clear_portlist()
 //#define WHITE_LIST_PATH	"/sys/class/net/svnet0/debug"
 #define WHITE_LIST_PATH	"/sys/class/net/svnet0/whitelist"
 
-int writePacketToFile(char *abuf, int length)
+static int writePacketToFile(char *abuf, int length)
 {
 	struct file *fp = NULL;
 	int ret = 0;
@@ -309,11 +303,11 @@ int writePacketToFile(char *abuf, int length)
 		return 0;
 	}
 
-	 ret = fp->f_op->write(fp, abuf, length, &fp->f_pos);
+	ret = fp->f_op->write(fp, abuf, length, &fp->f_pos);
 
-	 printk("request byte length = %d,  return byte = %d\n",length, ret);
+	printk("request byte length = %d,  return byte = %d\n",length, ret);
 
-	if( fp != NULL ) {
+	if (fp != NULL) {
 		filp_close(fp, NULL);
 		fp = NULL;
 	}
@@ -321,7 +315,7 @@ int writePacketToFile(char *abuf, int length)
 	return ret;
 }
 
-int process_whilte_list(void)
+int process_white_list(void)
 {
 	int length = 0;
 	int ret = 0;
@@ -330,7 +324,7 @@ int process_whilte_list(void)
 	ret = writePacketToFile( hdlc_frame, length);
 	clear_portlist();
 
-	if ( length == ret )
+	if (length == ret)
 		return 0;
 
 	return 1;

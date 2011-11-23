@@ -10,11 +10,7 @@
  * published by the Free Software Foundation.
 */
 
-#define NORMAL_MODE	0
-#define LPAUDIO_MODE	1
-
-extern int previous_idle_mode;
-extern int idle2_lock_count;
-extern int s5p_setup_lpaudio(unsigned int mode);
-extern void s5p_set_lpaudio_lock(int flag);
-extern int s5p_get_lpaudio_lock(void);
+extern int  s5pv210_didle_save(unsigned long *saveblk);
+extern void s5pv210_didle_resume(void);
+extern void i2sdma_getpos(dma_addr_t *src);
+extern unsigned int get_rtc_cnt(void);

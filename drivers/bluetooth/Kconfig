@@ -195,6 +195,18 @@ config BT_MRVL_SDIO
 	  Say Y here to compile support for Marvell BT-over-SDIO driver
 	  into the kernel or say M to compile it as module.
 
+config BT_ATH3K
+	tristate "Atheros firmware download driver"
+	depends on BT_HCIBTUSB
+	select FW_LOADER
+	help
+	  Bluetooth firmware download driver.
+	  This driver loads the firmware into the Atheros Bluetooth
+	  chipset.
+
+	  Say Y here to compile support for "Atheros firmware download driver"
+	  into the kernel or say M to compile it as module (ath3k).
+
 config BT_HID
 	tristate "Bluetooth HID (Human interface device) driver"
 	default m
@@ -202,4 +214,3 @@ config BT_HID
 	  say M to compile it as module.
 	  
 endmenu
-

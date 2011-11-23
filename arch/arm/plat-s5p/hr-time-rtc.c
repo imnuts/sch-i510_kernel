@@ -46,6 +46,7 @@
 #include <plat/regs-rtc.h>
 #include <plat/regs-systimer.h>
 #include <mach/regs-irq.h>
+#include <mach/regs-clock.h>
 #include <mach/tick.h>
 
 #include <plat/clock.h>
@@ -95,21 +96,24 @@ static unsigned int s5p_systimer_write(unsigned int *reg_offset,
 
 	if (reg_offset == S5P_SYSTIMER_TCON) {
 		while (!(__raw_readl(S5P_SYSTIMER_INT_CSTAT) &
-				S5P_SYSTIMER_INT_TCON));
+			S5P_SYSTIMER_INT_TCON))
+			;
 		temp_regs = __raw_readl(S5P_SYSTIMER_INT_CSTAT);
 		temp_regs |= S5P_SYSTIMER_INT_TCON;
 		__raw_writel(temp_regs, S5P_SYSTIMER_INT_CSTAT);
 
 	} else if (reg_offset == S5P_SYSTIMER_ICNTB) {
 		while (!(__raw_readl(S5P_SYSTIMER_INT_CSTAT) &
-				S5P_SYSTIMER_INT_ICNTB));
+			S5P_SYSTIMER_INT_ICNTB))
+			;
 		temp_regs = __raw_readl(S5P_SYSTIMER_INT_CSTAT);
 		temp_regs |= S5P_SYSTIMER_INT_ICNTB;
 		__raw_writel(temp_regs, S5P_SYSTIMER_INT_CSTAT);
 
 	} else if (reg_offset == S5P_SYSTIMER_TICNTB) {
 		while (!(__raw_readl(S5P_SYSTIMER_INT_CSTAT) &
-				S5P_SYSTIMER_INT_TICNTB));
+			S5P_SYSTIMER_INT_TICNTB))
+			;
 		temp_regs = __raw_readl(S5P_SYSTIMER_INT_CSTAT);
 		temp_regs |= S5P_SYSTIMER_INT_TICNTB;
 		__raw_writel(temp_regs, S5P_SYSTIMER_INT_CSTAT);
@@ -118,25 +122,16 @@ static unsigned int s5p_systimer_write(unsigned int *reg_offset,
 	return 0;
 }
 
-#if 0 //Commenting unused API
-static void s5p_rtc_set_tick(int enabled)
-{
-	unsigned int tmp;
-
-	tmp = __raw_readl(rtc_base + S3C2410_RTCCON) & ~S3C_RTCCON_TICEN;
-	if (enabled)
-		tmp |= S3C_RTCCON_TICEN;
-	__raw_writel(tmp, rtc_base + S3C2410_RTCCON);
-}
-#endif
-
 unsigned int get_rtc_cnt(void)
 {
-        unsigned int ticcnt, current_cnt;
-        ticcnt = __raw_readl(rtc_base + S3C2410_TICNT);
-        current_cnt = __raw_readl(rtc_base + S3C2410_CURTICCNT);
-        return (ticcnt - current_cnt);
-}   
+	unsigned int ticcnt, current_cnt, rtccnt;
+
+	ticcnt = __raw_readl(rtc_base + S3C2410_TICNT);
+	current_cnt = __raw_readl(rtc_base + S3C2410_CURTICCNT);
+	rtccnt = ticcnt - current_cnt;
+
+	return rtccnt;
+}
 
 static void s5p_tick_timer_setup(void);
 
@@ -164,7 +159,6 @@ static inline void s5p_tick_timer_stop(void)
 		~(S3C_RTCCON_TICEN);
 
 	__raw_writel(tmp, rtc_base + S3C2410_RTCCON);
-
 }
 
 static void s5p_sched_timer_start(unsigned long load_val,
@@ -173,9 +167,6 @@ static void s5p_sched_timer_start(unsigned long load_val,
 	unsigned long tcon;
 	unsigned long tcnt;
 	unsigned long tcfg;
-
-	/* clock configuration setting and enable */
-	struct clk *clk;
 
 	tcnt = TICK_MAX;  /* default value for tcnt */
 
@@ -195,14 +186,6 @@ static void s5p_sched_timer_start(unsigned long load_val,
 	/* read the current timer configuration bits */
 	tcon = s5p_systimer_read(S5P_SYSTIMER_TCON);
 	tcfg = s5p_systimer_read(S5P_SYSTIMER_TCFG);
-
-	clk = clk_get(NULL, "systimer");
-	if (IS_ERR(clk))
-		panic("failed to get clock[%s] for system timer", "systimer");
-
-	clk_enable(clk);
-
-	clk_put(clk);
 
 	tcfg &= ~S5P_SYSTIMER_TCLK_MASK;
 	tcfg |= S5P_SYSTIMER_TCLK_USB;
@@ -225,7 +208,7 @@ static void s5p_sched_timer_start(unsigned long load_val,
 #else
 	/* set timer con */
 	tcon =  S5P_SYSTIMER_INT_AUTO | S5P_SYSTIMER_START |
-			S5P_SYSTIMER_AUTO_RELOAD;
+		S5P_SYSTIMER_AUTO_RELOAD;
 	s5p_systimer_write(S5P_SYSTIMER_TCON, tcon);
 
 	tcon |= S5P_SYSTIMER_INT_START;
@@ -233,8 +216,8 @@ static void s5p_sched_timer_start(unsigned long load_val,
 
 	/* Interrupt Start and Enable */
 	s5p_systimer_write(S5P_SYSTIMER_INT_CSTAT,
-				(S5P_SYSTIMER_INT_ICNTEIE |
-					S5P_SYSTIMER_INT_INTENABLE));
+			   (S5P_SYSTIMER_INT_ICNTEIE |
+			    S5P_SYSTIMER_INT_INTENABLE));
 #endif
 	sched_timer_running = 1;
 }
@@ -289,7 +272,7 @@ static struct clock_event_device clockevent_tick_timer = {
 	.set_mode	= s5p_tick_set_mode,
 };
 
-irqreturn_t s5p_tick_timer_interrupt(int irq, void *dev_id)
+static irqreturn_t s5p_tick_timer_interrupt(int irq, void *dev_id)
 {
 	struct clock_event_device *evt = &clockevent_tick_timer;
 
@@ -327,13 +310,16 @@ static void  s5p_init_dynamic_tick_timer(unsigned long rate)
 	clockevent_tick_timer.cpumask = cpumask_of(0);
 	clockevents_register_device(&clockevent_tick_timer);
 
-	printk(KERN_INFO "mult[%lu]\n", clockevent_tick_timer.mult);
-	printk(KERN_INFO "max_delta_ns[%lu]\n", clockevent_tick_timer.max_delta_ns);
-	printk(KERN_INFO "min_delta_ns[%lu]\n", clockevent_tick_timer.min_delta_ns);
-	printk(KERN_INFO "rate[%lu]\n", rate);
+	printk(KERN_INFO "mult[%lu]\n",
+			(long unsigned int)clockevent_tick_timer.mult);
+	printk(KERN_INFO "max_delta_ns[%lu]\n",
+			(long unsigned int)clockevent_tick_timer.max_delta_ns);
+	printk(KERN_INFO "min_delta_ns[%lu]\n",
+			(long unsigned int)clockevent_tick_timer.min_delta_ns);
+	printk(KERN_INFO "rate[%lu]\n",
+			(long unsigned int)rate);
 	printk(KERN_INFO "HZ[%d]\n", HZ);
 }
-
 
 /*
  * ---------------------------------------------------------------------------
@@ -342,7 +328,7 @@ static void  s5p_init_dynamic_tick_timer(unsigned long rate)
  */
 irqreturn_t s5p_sched_timer_interrupt(int irq, void *dev_id)
 {
-	volatile unsigned int temp_cstat;
+	unsigned int temp_cstat;
 
 	temp_cstat = s5p_systimer_read(S5P_SYSTIMER_INT_CSTAT);
 	temp_cstat |= S5P_SYSTIMER_INT_INTCNT;
@@ -364,7 +350,7 @@ struct irqaction s5p_systimer_irq = {
 };
 
 
-static cycle_t s5p_sched_timer_read(void)
+static cycle_t s5p_sched_timer_read(struct clocksource *cs)
 {
 
 	return (cycle_t)~__raw_readl(S5P_SYSTIMER_TICNTO);
@@ -387,7 +373,6 @@ static void s5p_init_clocksource(unsigned long rate)
 	clocksource_s5p.mult
 		= clocksource_khz2mult(rate/1000, clocksource_s5p.shift);
 
-
 	s5p_sched_timer_start(~0, 1);
 
 	if (clocksource_register(&clocksource_s5p))
@@ -398,7 +383,6 @@ static void s5p_init_clocksource(unsigned long rate)
  * Returns current time from boot in nsecs. It's OK for this to wrap
  * around for now, as it's just a relative time stamp.
  */
-#if 1
 unsigned long long sched_clock(void)
 {
 	unsigned long irq_flags;
@@ -410,18 +394,19 @@ unsigned long long sched_clock(void)
 
 	if (likely(sched_timer_running)) {
 		overflow_cnt = (s5p_sched_timer_overflows - old_overflows);
-
-		ticks = s5p_sched_timer_read();
+		ticks = s5p_sched_timer_read(&clocksource_s5p);
 
 		if (overflow_cnt) {
 			increment = (overflow_cnt - 1) *
-					(clocksource_cyc2ns(clocksource_s5p.read(&clocksource_s5p),
-					clocksource_s5p.mult, clocksource_s5p.shift));
-			elapsed_ticks = (clocksource_s5p.mask - last_ticks) + ticks;
+			(clocksource_cyc2ns(clocksource_s5p.read(&clocksource_s5p),
+				clocksource_s5p.mult, clocksource_s5p.shift));
+			elapsed_ticks =
+				(clocksource_s5p.mask - last_ticks) + ticks;
 		} else {
 			if (unlikely(last_ticks > ticks)) {
 				pending_irq = 1;
-				elapsed_ticks = (clocksource_s5p.mask - last_ticks) + ticks;
+				elapsed_ticks =
+				(clocksource_s5p.mask - last_ticks) + ticks;
 				s5p_sched_timer_overflows++;
 			} else {
 				elapsed_ticks = (ticks - last_ticks);
@@ -429,7 +414,8 @@ unsigned long long sched_clock(void)
 		}
 
 		time_stamp += (clocksource_cyc2ns(elapsed_ticks,
-					clocksource_s5p.mult, clocksource_s5p.shift) + increment);
+					clocksource_s5p.mult,
+					clocksource_s5p.shift) + increment);
 
 		old_overflows = s5p_sched_timer_overflows;
 		last_ticks = ticks;
@@ -438,13 +424,15 @@ unsigned long long sched_clock(void)
 
 	return time_stamp;
 }
-#endif
+
 /*
  *  Event/Sched Timer initialization
  */
 static void s5p_timer_setup(void)
 {
 	unsigned long rate;
+	unsigned int tmp;
+
 	/* Setup event timer using XrtcXTI */
 	if (clk_event == NULL)
 		clk_event = clk_get(NULL, "xrtcxti");
@@ -453,6 +441,13 @@ static void s5p_timer_setup(void)
 		panic("failed to get clock for event timer");
 
 	rate = clk_get_rate(clk_event);
+
+	tmp = readl(rtc_base + S3C2410_RTCCON) &
+		~(S3C_RTCCON_TICEN);
+
+	/* We only support 32768 Hz : [7:4] = 0x0 */
+	writel(tmp & ~0xf0, rtc_base + S3C2410_RTCCON);
+
 	s5p_init_dynamic_tick_timer(rate);
 
 	/* Setup sched-timer using XusbXTI */
@@ -461,6 +456,7 @@ static void s5p_timer_setup(void)
 	if (IS_ERR(clk_sched))
 		panic("failed to get clock for sched-timer");
 	rate = clk_get_rate(clk_sched);
+
 	s5p_init_clocksource(rate);
 }
 
@@ -474,6 +470,11 @@ static void s5p_tick_timer_setup(void)
 
 static void __init s5p_timer_init(void)
 {
+
+	/* clock configuration setting and enable */
+	struct clk *clk_systimer;
+	struct clk *clk_rtc;
+
 	/* Initialize variables before starting each timers */
 	last_ticks = 0;
 	s5p_sched_timer_overflows = 0;
@@ -481,6 +482,22 @@ static void __init s5p_timer_init(void)
 	time_stamp = 0;
 	sched_timer_running = 0;
 	pending_irq = 0;
+
+	/* Setup system timer */
+	clk_systimer = clk_get(NULL, "systimer");
+	if (IS_ERR(clk_systimer))
+		panic("failed to get clock[%s] for system timer", "systimer");
+
+	clk_enable(clk_systimer);
+	clk_put(clk_systimer);
+
+	/* Setup rtc timer */
+	clk_rtc = clk_get(NULL, "rtc");
+	if (IS_ERR(clk_rtc))
+		panic("failed to get clock[%s] for system timer", "rtc");
+
+	clk_enable(clk_rtc);
+	clk_put(clk_rtc);
 
 	s5p_timer_setup();
 	setup_irq(IRQ_RTC_TIC, &s5p_tick_timer_irq);

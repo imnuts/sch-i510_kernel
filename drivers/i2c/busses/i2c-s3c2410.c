@@ -34,9 +34,10 @@
 #include <linux/platform_device.h>
 #include <linux/clk.h>
 #include <linux/cpufreq.h>
+#include <linux/slab.h>
+#include <linux/io.h>
 
 #include <asm/irq.h>
-#include <asm/io.h>
 
 #include <plat/regs-iic.h>
 #include <plat/iic.h>
@@ -248,7 +249,7 @@ static inline int is_msgend(struct s3c24xx_i2c *i2c)
 	return i2c->msg_ptr >= i2c->msg->len;
 }
 
-/* i2s_s3c_irq_nextbyte
+/* i2c_s3c_irq_nextbyte
  *
  * process an interrupt and work out what to do
  */
@@ -471,7 +472,7 @@ static int s3c24xx_i2c_set_master(struct s3c24xx_i2c *i2c)
 	}
 
 	writel(iicstat & ~S3C2410_IICSTAT_TXRXEN, i2c->regs + S3C2410_IICSTAT);
-	if(!(readl(i2c->regs + S3C2410_IICSTAT) & S3C2410_IICSTAT_BUSBUSY))
+	if (!(readl(i2c->regs + S3C2410_IICSTAT) & S3C2410_IICSTAT_BUSBUSY))
 		return 0;
 
 	return -ETIMEDOUT;
@@ -487,7 +488,6 @@ static int s3c24xx_i2c_doxfer(struct s3c24xx_i2c *i2c,
 {
 	unsigned long timeout;
 	int ret;
-	struct s3c2410_platform_i2c *pdata = i2c->dev->platform_data;
 
 	if (i2c->suspended)
 		return -EIO;
@@ -525,11 +525,6 @@ static int s3c24xx_i2c_doxfer(struct s3c24xx_i2c *i2c,
 
 	/* ensure the stop has been through the bus */
 
-#ifdef CONFIG_VIDEO_ISX005
-	if(pdata->bus_num  == 0) {
-		udelay(20);
-	}
-#endif
 	udelay(10);
 
  out:
@@ -549,19 +544,24 @@ static int s3c24xx_i2c_xfer(struct i2c_adapter *adap,
 	int retry;
 	int ret;
 
+	clk_enable(i2c->clk);
+
 	for (retry = 0; retry < adap->retries; retry++) {
 
 		ret = s3c24xx_i2c_doxfer(i2c, msgs, num);
 
 		if (ret != -EAGAIN)
-			return ret;
+			goto out;
 
 		dev_dbg(i2c->dev, "Retrying transmission (%d)\n", retry);
 
 		udelay(100);
 	}
+	ret = -EREMOTEIO;
+out:
+	clk_disable(i2c->clk);
 
-	return -EREMOTEIO;
+	return ret;
 }
 
 /* declare our i2c functionality */
@@ -668,6 +668,8 @@ static int s3c24xx_i2c_cpufreq_transition(struct notifier_block *nb,
 	int delta_f;
 	int ret;
 
+	clk_enable(i2c->clk);
+
 	delta_f = clk_get_rate(i2c->clk) - i2c->clkrate;
 
 	/* if we're post-change and the input clock has slowed down
@@ -686,6 +688,8 @@ static int s3c24xx_i2c_cpufreq_transition(struct notifier_block *nb,
 		else
 			dev_info(i2c->dev, "setting freq %d\n", got);
 	}
+
+	clk_disable(i2c->clk);
 
 	return 0;
 }
@@ -891,6 +895,8 @@ static int s3c24xx_i2c_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, i2c);
 
+	clk_disable(i2c->clk);
+
 	dev_info(&pdev->dev, "%s: S3C I2C adapter\n", dev_name(&i2c->adap.dev));
 	return 0;
 
@@ -959,12 +965,15 @@ static int s3c24xx_i2c_resume(struct device *dev)
 	struct s3c24xx_i2c *i2c = platform_get_drvdata(pdev);
 
 	i2c->suspended = 0;
+
+	clk_enable(i2c->clk);
 	s3c24xx_i2c_init(i2c);
+	clk_disable(i2c->clk);
 
 	return 0;
 }
 
-static struct dev_pm_ops s3c24xx_i2c_dev_pm_ops = {
+static const struct dev_pm_ops s3c24xx_i2c_dev_pm_ops = {
 	.suspend_noirq = s3c24xx_i2c_suspend_noirq,
 	.resume = s3c24xx_i2c_resume,
 };

@@ -24,7 +24,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: wlioctl.h,v 1.601.4.15.2.14.2.61 2010/05/04 20:26:25 Exp $
+ * $Id: wlioctl.h,v 1.601.4.15.2.14.2.62.4.1 2010/11/17 03:09:28 Exp $
  */
 
 
@@ -335,23 +335,26 @@ typedef struct {
 
 
 #define WEP_ENABLED		0x0001
-#define TKIP_ENABLED		0x0002
+#define TKIP_ENABLED	0x0002
 #define AES_ENABLED		0x0004
 #define WSEC_SWFLAG		0x0008
-#define SES_OW_ENABLED		0x0040	
-#define SMS4_ENABLED		0x0100
+#define SES_OW_ENABLED	0x0040	
+#define SMS4_ENABLED	0x0100
 
 
-#define WPA_AUTH_DISABLED	0x0000	
-#define WPA_AUTH_NONE		0x0001	
+#define WPA_AUTH_DISABLED		0x0000	
+#define WPA_AUTH_NONE			0x0001	
 #define WPA_AUTH_UNSPECIFIED	0x0002	
-#define WPA_AUTH_PSK		0x0004	
-	
+#define WPA_AUTH_PSK			0x0004	
+#ifdef BCMCCX
+#define WPA_AUTH_CCKM			0x0008
+#define WPA2_AUTH_CCKM			0x0010
+#endif /* BCMCCX */
 #define WPA2_AUTH_UNSPECIFIED	0x0040	
-#define WPA2_AUTH_PSK		0x0080	
+#define WPA2_AUTH_PSK			0x0080	
 #define BRCM_AUTH_PSK           0x0100  
-#define BRCM_AUTH_DPT		0x0200	
-#define WPA_AUTH_WAPI		0x0400	
+#define BRCM_AUTH_DPT			0x0200	
+#define WPA_AUTH_WAPI			0x0400	
 
 #define WPA_AUTH_PFN_ANY	0xffffffff	
 
@@ -378,8 +381,16 @@ typedef struct _pmkid_cand_list {
 	pmkid_cand_t	pmkid_cand[1];
 } pmkid_cand_list_t;
 
-
-
+#ifdef BCMCCX
+typedef struct wl_assoc_info {
+	uint32	req_len;
+	uint32	resp_len;
+	uint32	flags;
+	struct	dot11_assoc_req req;
+	struct	ether_addr reassoc_bssid;
+	struct	dot11_assoc_resp resp;
+} wl_assoc_info_t;
+#endif /* BCMCCX */
 
 typedef struct {
 	uint32	val;
@@ -857,6 +868,7 @@ typedef struct wl_ioctl {
 #define PM_MAX	1
 #define PM_FAST 2
 
+#define LISTEN_INTERVAL			20
 
 #define	INTERFERE_NONE	0	
 #define	NON_WLAN	1	
@@ -1316,6 +1328,8 @@ enum {
 #define	AUTO_CONNECT_MASK		0x10
 
 #define PFN_VERSION			1
+
+#define MAX_PFN_LIST_COUNT	16
 
 
 typedef struct wl_pfn_param {

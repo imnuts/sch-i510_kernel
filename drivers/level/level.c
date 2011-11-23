@@ -9,7 +9,7 @@
 #include <linux/fcntl.h>
 #include <linux/kernel_sec_common.h>
 
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 #define LEVEL_DEV_NAME	"level"
 
@@ -27,8 +27,8 @@ static ssize_t show_control(struct device *d,
 		struct device_attribute *attr, char *buf);
 static ssize_t store_control(struct device *d,
 		struct device_attribute *attr, const char *buf, size_t count);
-		
-static DEVICE_ATTR(control, S_IRUGO | S_IWUGO, show_control, store_control);
+
+static DEVICE_ATTR(control, 0664, show_control, store_control);
 
 static struct attribute *levelctl_attributes[] = {
 	&dev_attr_control.attr,
@@ -46,8 +46,8 @@ static ssize_t show_control(struct device *d,
 	unsigned int val;
 
 	val = get_debug_level();
-	
-	p += sprintf(p, "0x%4x\n",val);
+
+	p += sprintf(p, "0x%4x\n", val);
 
 	return p - buf;
 }
@@ -55,107 +55,102 @@ static ssize_t show_control(struct device *d,
 static ssize_t store_control(struct device *d,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
-
-	if(!strncmp(buf, "clear", 5)) {
-		// clear upload magic number
+	if (!strncmp(buf, "clear", 5)) {
+		/* clear upload magic number */
 		kernel_sec_clear_upload_magic_number();
 		return count;
 	}
 
-	if(!strncmp(buf, "autotest", 8)) {
-		// set auto test
+	if (!strncmp(buf, "autotest", 8)) {
+		/* set auto test */
 		kernel_sec_set_autotest();
 		return count;
 	}
 
-	if(!strncmp(buf, "set", 3)) {
-		// set debug level
+	if (!strncmp(buf, "set", 3)) {
+		/* set debug level */
 		set_debug_level();
 		return count;
 	}
 
-return count;
+	return count;
 }
 
 static int level_open(struct inode *inode, struct file *filp)
 {
-	printk("level Device open\n");
+	pr_info("level Device open\n");
 
 	return 0;
 }
 
-static int level_ioctl(struct inode *inode, struct file *filp, unsigned int cmd, unsigned long arg)
+static int level_ioctl(struct inode *inode, struct file *filp,
+		unsigned int cmd, unsigned long arg)
 {
 	unsigned int val;
 
 	switch (cmd) {
-		case LEVEL_DEV_UNSET_UPLOAD:
-			kernel_sec_clear_upload_magic_number();
-			return 0;
+	case LEVEL_DEV_UNSET_UPLOAD:
+		kernel_sec_clear_upload_magic_number();
+		return 0;
 
-		case LEVEL_DEV_SET_AUTOTEST:
-			kernel_sec_set_autotest();
-			return 0;
+	case LEVEL_DEV_SET_AUTOTEST:
+		kernel_sec_set_autotest();
+		return 0;
 
-		case LEVEL_DEV_SET_DEBUGLEVEL:
-			set_debug_level();
-			return 0;
-			
-		case LEVEL_DEV_GET_DEBUGLEVEL:
-		{
-			val = get_debug_level();
-			return copy_to_user((unsigned int *)arg, &val, sizeof(val));
-		}
-		default:
-			printk("Unknown Cmd: %x\n", cmd);
-			break;
-		}
+	case LEVEL_DEV_SET_DEBUGLEVEL:
+		set_debug_level();
+		return 0;
+
+	case LEVEL_DEV_GET_DEBUGLEVEL:
+		val = get_debug_level();
+		return copy_to_user((unsigned int *)arg, &val, sizeof(val));
+	default:
+		pr_info("Unknown Cmd: %x\n", cmd);
+		break;
+	}
 	return -ENOTSUPP;
 }
 
 static void set_debug_level()
 {
-	switch(kernel_sec_get_debug_level_from_param())
-	{
-		case KERNEL_SEC_DEBUG_LEVEL_LOW:
-			kernel_sec_set_debug_level(KERNEL_SEC_DEBUG_LEVEL_MID);
-			break;
-		case KERNEL_SEC_DEBUG_LEVEL_MID:
-			kernel_sec_set_debug_level(KERNEL_SEC_DEBUG_LEVEL_HIGH);
-			break;
-		case KERNEL_SEC_DEBUG_LEVEL_HIGH:
-			kernel_sec_set_debug_level(KERNEL_SEC_DEBUG_LEVEL_LOW);
-			break;
-		default:
-			break;
+	switch (kernel_sec_get_debug_level_from_param()) {
+	case KERNEL_SEC_DEBUG_LEVEL_LOW:
+		kernel_sec_set_debug_level(KERNEL_SEC_DEBUG_LEVEL_MID);
+		break;
+	case KERNEL_SEC_DEBUG_LEVEL_MID:
+		kernel_sec_set_debug_level(KERNEL_SEC_DEBUG_LEVEL_HIGH);
+		break;
+	case KERNEL_SEC_DEBUG_LEVEL_HIGH:
+		kernel_sec_set_debug_level(KERNEL_SEC_DEBUG_LEVEL_LOW);
+		break;
+	default:
+		break;
 	}
 }
 
 static unsigned int get_debug_level()
 {
 	unsigned int val = 0;
-	
-	switch(kernel_sec_get_debug_level_from_param())
-	{
-		case KERNEL_SEC_DEBUG_LEVEL_LOW:
-			val = 0xA0A0; 
-			break;
-		case KERNEL_SEC_DEBUG_LEVEL_MID:
-			val = 0xB0B0;
-			break;
-		case KERNEL_SEC_DEBUG_LEVEL_HIGH:
-			val = 0xC0C0;
-			break;
-		default:
-			val = 0xFFFF;
-			break;
+
+	switch (kernel_sec_get_debug_level_from_param()) {
+	case KERNEL_SEC_DEBUG_LEVEL_LOW:
+		val = 0xA0A0;
+		break;
+	case KERNEL_SEC_DEBUG_LEVEL_MID:
+		val = 0xB0B0;
+		break;
+	case KERNEL_SEC_DEBUG_LEVEL_HIGH:
+		val = 0xC0C0;
+		break;
+	default:
+		val = 0xFFFF;
+		break;
 	}
 
 	return val;
 }
 
-static struct file_operations level_fops = 
-{
+static const struct file_operations level_fops = {
 	.owner = THIS_MODULE,
 	.open = level_open,
 	.ioctl = level_ioctl,
@@ -172,23 +167,23 @@ static int __init level_init(void)
 {
 	int result;
 
-	printk("level device init\n");
+	pr_info("level device init\n");
 
 	result = misc_register(&level_device);
-	if (result <0) 
+	if (result < 0)
 		return result;
-	
-  result = sysfs_create_group(&level_device.this_device->kobj, &levelctl_group);
-	if (result < 0) {
-		printk("failed to create sysfs files\n");
-	}
+
+	result = sysfs_create_group(&level_device.this_device->kobj,
+			&levelctl_group);
+	if (result < 0)
+		pr_info("failed to create sysfs files\n");
 
 	return 0;
 }
 
 static void __exit level_exit(void)
 {
-	printk("level device exit\n");
+	pr_info("level device exit\n");
 	misc_deregister(&level_device);
 }
 

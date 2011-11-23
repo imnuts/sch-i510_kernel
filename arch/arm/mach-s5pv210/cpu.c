@@ -19,7 +19,6 @@
 #include <linux/io.h>
 #include <linux/sysdev.h>
 #include <linux/platform_device.h>
-#include <linux/sched.h>
 
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
@@ -28,12 +27,13 @@
 #include <asm/proc-fns.h>
 #include <mach/map.h>
 #include <mach/regs-clock.h>
-#include <mach/idle.h>
 
 #include <plat/cpu.h>
 #include <plat/devs.h>
 #include <plat/clock.h>
 #include <plat/s5pv210.h>
+#include <plat/iic-core.h>
+#include <plat/sdhci.h>
 
 /* Initial IO mappings */
 
@@ -60,7 +60,7 @@ static struct map_desc s5pv210_iodesc[] __initdata = {
 		.type		= MT_DEVICE,
 	}, {
 		.virtual	= (unsigned long)S3C_VA_WATCHDOG,
-		.pfn		= __phys_to_pfn(S5PV210_PA_WDT),
+		.pfn		= __phys_to_pfn(S5P_PA_WDT),
 		.length 	= SZ_4K,
 		.type		= MT_DEVICE,
 	}, {
@@ -73,80 +73,40 @@ static struct map_desc s5pv210_iodesc[] __initdata = {
 		.pfn		= __phys_to_pfn(S5PV210_PA_OTGSFR),
 		.length		= SZ_1M,
 		.type		= MT_DEVICE,
-	}, {
-		.virtual	= (unsigned long)S5P_VA_AUDSS,
-		.pfn		= __phys_to_pfn(S5PV210_PA_AUDSS),
-		.length		= SZ_1M,
-		.type		= MT_DEVICE,
 	},
 #if defined(CONFIG_HRT_RTC)
-       	{
+	{
 		.virtual	= (unsigned long)S5P_VA_RTC,
 		.pfn		= __phys_to_pfn(S5PV210_PA_RTC),
 		.length		= SZ_4K,
 		.type		= MT_DEVICE,
 	},
 #endif
+	{
+		.virtual	= (unsigned long)S5P_VA_DMC0,
+		.pfn		= __phys_to_pfn(S5P_PA_DMC0),
+		.length		= SZ_4K,
+		.type		= MT_DEVICE,
+	}, {
+		.virtual	= (unsigned long)S5P_VA_DMC1,
+		.pfn		= __phys_to_pfn(S5P_PA_DMC1),
+		.length		= SZ_4K,
+		.type		= MT_DEVICE,
+	}, {
+		.virtual	= (unsigned long)S5P_VA_AUDSS,
+		.pfn		= __phys_to_pfn(S5PV210_PA_AUDSS),
+		.length		= SZ_1M,
+		.type		= MT_DEVICE,
+	},
+
 };
-
-void (*s5pv21x_idle)(void);
-
-void s5pv210_default_idle(void)
-{
-	printk("default idle function\n");
-}
 
 static void s5pv210_idle(void)
 {
-#if 0
 	if (!need_resched())
 		cpu_do_idle();
 
 	local_irq_enable();
-#else
-
-#if CONFIG_CPU_IDLE
-	unsigned int tmp;
-#if defined(CONFIG_CPU_IDLE_MONITORING)
-	set_gpio_monitor_cpuidle();
-
-	tmp = __raw_readl(S5PC11X_GPH2DAT) & ~(0x1 << 6);
-	tmp |= (0x1 << 6);
-	__raw_writel(tmp, S5PC11X_GPH2DAT);
-#endif
-/*
- * 1. Set CFG_DIDLE field of IDLE_CFG. 
- * (0x0 for IDLE and 0x1 for DEEP-IDLE)
- * 2. Set TOP_LOGIC field of IDLE_CFG to 0x2
- * 3. Set CFG_STANDBYWFI field of PWR_CFG to 2'b01.
- * 4. Set PMU_INT_DISABLE bit of OTHERS register to 1'b01 to prevent interrupts from
- *    occurring while entering IDLE mode.
- * 5. Execute Wait For Interrupt instruction (WFI).
- */
-	tmp = __raw_readl(S5P_IDLE_CFG);
-	tmp &=~ ((3<<30)|(3<<28)|(1<<0));	// No DEEP IDLE
-	tmp |= ((2<<30)|(2<<28));		// TOP logic : ON
-	__raw_writel(tmp, S5P_IDLE_CFG);
-
-	tmp = __raw_readl(S5P_PWR_CFG);
-	tmp &= S5P_CFG_WFI_CLEAN;
-	__raw_writel(tmp, S5P_PWR_CFG);
-
-	tmp = __raw_readl(S5P_OTHERS);
-	tmp &= ~(1<<0);
-	__raw_writel(tmp, S5P_OTHERS);
-	
-	cpu_do_idle();
-//	local_irq_enable();
-#if defined(CONFIG_CPU_IDLE_MONITORING)
-	tmp = __raw_readl(S5PC11X_GPH2DAT) & ~(0x1 << 6);
-	__raw_writel(tmp, S5PC11X_GPH2DAT);
-	restore_gpio_monitor();
-#endif
-#endif //CONFIG_CPU_IDLE
-	local_irq_enable();
-
-#endif //0
 }
 
 /* s5pv210_map_io
@@ -156,10 +116,21 @@ static void s5pv210_idle(void)
 
 void __init s5pv210_map_io(void)
 {
+#ifdef CONFIG_S3C_DEV_ADC
+	s3c_device_adc.name	= "s3c64xx-adc";
+#endif
+
 	iotable_init(s5pv210_iodesc, ARRAY_SIZE(s5pv210_iodesc));
 
-	/* set s5pc110 idle function */
-	s5pv21x_idle = s5pv210_idle;
+	/* initialise device information early */
+	s5pv210_default_sdhci0();
+	s5pv210_default_sdhci1();
+	s5pv210_default_sdhci2();
+
+	/* the i2c devices are directly compatible with s3c2440 */
+	s3c_i2c0_setname("s3c2440-i2c");
+	s3c_i2c1_setname("s3c2440-i2c");
+	s3c_i2c2_setname("s3c2440-i2c");
 }
 
 void __init s5pv210_init_clocks(int xtal)

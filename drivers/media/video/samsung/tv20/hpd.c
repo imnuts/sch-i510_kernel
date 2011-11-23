@@ -2,13 +2,13 @@
  *
  * hpd interface ftn file for Samsung TVOut driver
  *
- * Copyright (c) 2009 Samsung Electronics
- * 	http://www.samsungsemi.com/
+ * Copyright (c) 2010 Samsung Electronics
+ * http://www.samsungsemi.com/
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
- */
+*/
 
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -25,7 +25,7 @@
 #include <linux/wakelock.h>
 #include <mach/gpio.h>
 #include <plat/gpio-cfg.h>
-#include <mach/gpio-bank.h>
+//#include <mach/gpio-bank.h>
 #include <mach/regs-gpio.h>
 #include <mach/gpio.h>
 #include "s5p_tv.h"
@@ -39,12 +39,16 @@
 #define HPDIFPRINTK(fmt, args...)
 #endif
 
+#define S5PV210_GPH1_5_HDMI_HPD         (0x4 << 20)
+#define S5PV210_GPH1_5_EXT_INT31_5      (0xf << 20)
+
 static struct hpd_struct hpd_struct;
 struct wake_lock hpd_wake_lock;
 static int last_hpd_state;
 atomic_t hdmi_status;
 atomic_t poll_state;
 
+extern struct s5p_tv_status    s5ptv_status;
 bool hpd_sleep_state;
 
 static DECLARE_WORK(hpd_work, (void *)s5p_handle_cable);
@@ -69,7 +73,7 @@ int s5p_hpd_get_state(void)
 		irq_event = EVENT_FALLING;
 	}
 
-	return atomic_read(&hpd_struct.state);
+       return atomic_read(&hpd_struct.state);
 }
 
 int s5p_hpd_set_state(int state)
@@ -91,14 +95,14 @@ int s5p_hpd_release(struct inode *inode, struct file *file)
 }
 
 ssize_t s5p_hpd_read(struct file *file, char __user *buffer, size_t count,
-		loff_t *ppos)
+	loff_t *ppos)
 {
 	ssize_t retval;
 
 	spin_lock_irq(&hpd_struct.lock);
 
 	retval = put_user(atomic_read(&hpd_struct.state),
-			(unsigned int __user *) buffer);
+		(unsigned int __user *) buffer);
 
 	atomic_set(&poll_state, -1);
 
@@ -147,17 +151,17 @@ int s5p_hpd_set_hdmiint(void)
 
 	s3c_gpio_cfgpin(S5PV210_GPH1(5), S5PV210_GPH1_5_HDMI_HPD);
 	s3c_gpio_setpull(S5PV210_GPH1(5), S3C_GPIO_PULL_DOWN);
-	writel(readl(S5PV210_GPH1DRV)|0x3<<10, S5PV210_GPH1DRV);
+//	writel(readl(S5PV210_GPH1DRV)|0x3<<10, S5PV210_GPH1DRV);
 
 	s5p_hdmi_hpd_gen();
 
 	if (s5p_hdmi_get_hpd_status()){
 		s5p_hdmi_enable_interrupts(HDMI_IRQ_HPD_UNPLUG);
 	}
-	else{
+	else {
 		s5p_hdmi_enable_interrupts(HDMI_IRQ_HPD_PLUG);
 		schedule_work(&hpd_work);
-		printk("\n++ %d",__LINE__);
+		printk("\n++ %d", __LINE__);
 	}
 	return 0;
 }
@@ -181,7 +185,7 @@ int s5p_hpd_set_eint(void)
 	else
 		set_irq_type(IRQ_EINT13, IRQ_TYPE_EDGE_RISING);
 
-	writel(readl(S5PV210_GPH1DRV)|0x3<<10, S5PV210_GPH1DRV);
+	//writel(readl(S5PV210_GPH1DRV)|0x3<<10, S5PV210_GPH1DRV);
 
 	printk("\n++ s5p_hpd_set_eint\n"); 
 	return 0;
@@ -192,8 +196,7 @@ int irq_eint(int irq)
 {
 
 	int hpd_check;
-
-	//  if(atomic_read(&hpd_struct.state) == HPD_SLEEP)
+	//printk("irq_eint\n");
 	if( hpd_sleep_state ==1)
 	{
 		hpd_check=1;
@@ -226,7 +229,7 @@ int irq_eint(int irq)
 	schedule_work(&hpd_work);
 
 	HPDIFPRINTK("%s\n", atomic_read(&hpd_struct.state) == HPD_HI ?
-			"HPD HI" : "HPD LO");
+		"HPD HI" : "HPD LO");
 
 	return IRQ_HANDLED;
 
@@ -250,13 +253,13 @@ int irq_hdmi(int irq)
 
 
 	/* is this our interrupt? */
-
-	if (!(flag & (1 << HDMI_IRQ_HPD_PLUG | 1 << HDMI_IRQ_HPD_UNPLUG))) {
-		ret = IRQ_NONE;
-		goto out;
-	}
-
-	if (flag == (1 << HDMI_IRQ_HPD_PLUG | 1 << HDMI_IRQ_HPD_UNPLUG)) {
+	/*remove register check routine , sometimes register value is 0 when disconnect cable*/
+/*	if (!(flag & (1 << HDMI_IRQ_HPD_PLUG | 1 << HDMI_IRQ_HPD_UNPLUG))) {
+*		ret = IRQ_NONE;
+*		goto out;
+*	}
+*/
+	/*if (flag == (1 << HDMI_IRQ_HPD_PLUG | 1 << HDMI_IRQ_HPD_UNPLUG))*/ {
 
 		HPDIFPRINTK("HPD_HI && HPD_LO\n");
 
@@ -314,7 +317,6 @@ out:
    EVENT_FALLING,
    };
  */
-//static int irq_event =  EVENT_NONE;
 
 static void hpd_irq_check_timer_func(unsigned long dummy);
 
@@ -327,8 +329,7 @@ irqreturn_t s5p_hpd_irq_handler(int irq)
 	int hpd_check;
 
 	spin_lock_irqsave(&hpd_struct.lock, flags);
-
-	//    if(atomic_read(&hpd_struct.state) == HPD_SLEEP)
+	
 	if( hpd_sleep_state ==1)
 	{
 		hpd_check=1;
@@ -363,14 +364,9 @@ irqreturn_t s5p_hpd_irq_handler(int irq)
 		/* HDMI on */
 		ret = irq_hdmi(irq);
 		HPDIFPRINTK("HDMI HPD interrupt\n");
+		printk("HPD interrupt\n");
 	}
-#if 0 
-	else {
-		/* HDMI off */
-		ret = irq_eint(irq);
-		HPDIFPRINTK("EINT HPD interrupt\n");
-	}
-#endif
+	
 	spin_unlock_irqrestore(&hpd_struct.lock, flags);
 
 	return ret;
@@ -398,13 +394,13 @@ static void hpd_irq_check_timer_func(unsigned long dummy)
 
 			last_hpd_state = HPD_HI;
 			wake_up_interruptible(&hpd_struct.waitq);
-		} else {
+	} else {
 			atomic_set(&hpd_struct.state, HPD_LO);
 			atomic_set(&poll_state, 1);
 
 			last_hpd_state = HPD_LO;
 			wake_up_interruptible(&hpd_struct.waitq);
-		}
+	}
 
 		if (atomic_read(&hpd_struct.state))
 			set_irq_type(IRQ_EINT13, IRQ_TYPE_EDGE_FALLING);
@@ -429,7 +425,7 @@ static int __init s5p_hpd_probe(struct platform_device *pdev)
 {
 	if (misc_register(&hpd_misc_device)) {
 		printk(KERN_WARNING " Couldn't register device 10, %d.\n",
-				HPD_MINOR);
+			HPD_MINOR);
 		return -EBUSY;
 	}
 
@@ -443,7 +439,7 @@ static int __init s5p_hpd_probe(struct platform_device *pdev)
 
 	s3c_gpio_cfgpin(S5PV210_GPH1(5), S5PV210_GPH1_5_EXT_INT31_5);
 	s3c_gpio_setpull(S5PV210_GPH1(5), S3C_GPIO_PULL_DOWN);
-	writel(readl(S5PV210_GPH1DRV)|0x3<<10, S5PV210_GPH1DRV);
+	//writel(readl(S5PV210_GPH1DRV)|0x3<<10, S5PV210_GPH1DRV);
 
 	if (gpio_get_value(S5PV210_GPH1(5))) {
 		atomic_set(&hpd_struct.state, HPD_HI);
@@ -458,11 +454,12 @@ static int __init s5p_hpd_probe(struct platform_device *pdev)
 	set_irq_type(IRQ_EINT13, IRQ_TYPE_EDGE_BOTH);
 
 	if (request_irq(IRQ_EINT13, s5p_hpd_irq_handler, IRQF_DISABLED,
-				"hpd", s5p_hpd_irq_handler)) {
+		"hpd", s5p_hpd_irq_handler)) {
 		printk(KERN_ERR  "failed to install %s irq\n", "hpd");
 		misc_deregister(&hpd_misc_device);
 		return -EIO;
 	}
+	enable_irq_wake(IRQ_EINT13);
 	hpd_sleep_state = 0;
 	s5p_hdmi_register_isr(s5p_hpd_irq_handler, (u8)HDMI_IRQ_HPD_PLUG);
 	s5p_hdmi_register_isr(s5p_hpd_irq_handler, (u8)HDMI_IRQ_HPD_UNPLUG);
@@ -475,6 +472,7 @@ static int __init s5p_hpd_probe(struct platform_device *pdev)
  */
 static int s5p_hpd_remove(struct platform_device *pdev)
 {
+	disable_irq_wake(IRQ_EINT13);
 	return 0;
 }
 
@@ -512,7 +510,7 @@ static struct platform_driver s5p_hpd_driver = {
 };
 
 static char banner[] __initdata =
-"S5PC11X HPD Driver, (c) 2009 Samsung Electronics\n";
+	"S5P HPD Driver, (c) 2010 Samsung Electronics\n";
 
 int __init s5p_hpd_init(void)
 {

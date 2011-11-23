@@ -23,103 +23,12 @@
 #include <linux/miscdevice.h>
 #include <linux/uaccess.h>
 #include <linux/poll.h>
+#include <linux/slab.h>
 #include <linux/time.h>
 #include "logger.h"
 
 #include <asm/ioctls.h>
-#include <linux/kthread.h>
-#include <linux/delay.h>
 
-extern struct GAForensicINFO GAFINFO;
-
-
-
-static struct GAForensicHELP{
-	unsigned int real_pc_from_context_sp;
-	unsigned int task_struct_of_gaf_proc;
-	unsigned int thread_info_of_gaf_proc;
-	unsigned int cpu_context_of_gaf_proc;
-}GAFHELP;
-
-DECLARE_MUTEX(g_gaf_mutex);
-
-int gaf_proc(void* data)
-{
-	volatile int stack[2];
-	stack[0] = (int)('_fag');
-	stack[1] = (int)('corp');
-	down_interruptible(&g_gaf_mutex);
-	return 1;
-}
-
-void gaf_helper(void)
-{
-	unsigned int *ptr_task_struct;
-	unsigned int *ptr_thread_info;
-	unsigned int *ptr_cpu_cntx;
-	unsigned int ptr_sp, context_sp;
-	unsigned int fn_down_interruptible = (unsigned int)down_interruptible;
-	unsigned int fn_down = (unsigned int)down;
-
-	down_interruptible(&g_gaf_mutex);
-	ptr_task_struct = kthread_create(gaf_proc, NULL, "gaf-proc");
-	wake_up_process(ptr_task_struct);
-	msleep(100);
-
-	ptr_thread_info = *(unsigned int*)((unsigned int)ptr_task_struct + GAFINFO.task_struct_struct_stack);
-	ptr_cpu_cntx = (unsigned int)ptr_thread_info + GAFINFO.thread_info_struct_cpu_context;
-
-	GAFHELP.task_struct_of_gaf_proc = ptr_task_struct;
-	GAFHELP.thread_info_of_gaf_proc = ptr_thread_info;
-	GAFHELP.cpu_context_of_gaf_proc = ptr_cpu_cntx;
-
-	printk(KERN_ERR "\n========== kernel thread : gaf-proc ==========\n");
-	printk(KERN_INFO "task_struct at %x\n", ptr_task_struct);
-	printk(KERN_INFO "thread_info at %x\n\n", ptr_thread_info);
-
-	printk(KERN_INFO "saved_cpu_context at %x\n", ptr_cpu_cntx);
-
-	printk(KERN_INFO "%08x r4 :%08x r5 :%08x r6 :%08x r7 :%08x\n", ((unsigned int)ptr_cpu_cntx + 0x00),
-					*(unsigned int*)((unsigned int)ptr_cpu_cntx + 0x00), *(unsigned int*)((unsigned int)ptr_cpu_cntx + 0x04), 
-					*(unsigned int*)((unsigned int)ptr_cpu_cntx + 0x08), *(unsigned int*)((unsigned int)ptr_cpu_cntx + 0x0c));
-
-	printk(KERN_INFO "%08x r8 :%08x r9 :%08x r10:%08x r11:%08x\n", ((unsigned int)ptr_cpu_cntx + 0x10),
-					*(unsigned int*)((unsigned int)ptr_cpu_cntx + 0x10), *(unsigned int*)((unsigned int)ptr_cpu_cntx + 0x14), 
-					*(unsigned int*)((unsigned int)ptr_cpu_cntx + 0x18), *(unsigned int*)((unsigned int)ptr_cpu_cntx + 0x1c));
-
-	printk(KERN_INFO "%08x sp :%08x pc :%08x \n\n", ((unsigned int)ptr_cpu_cntx + 0x20),
-					*(unsigned int*)((unsigned int)ptr_cpu_cntx + 0x20), *(unsigned int*)((unsigned int)ptr_cpu_cntx + 0x24));
-	ptr_sp = context_sp = *(unsigned int*)((unsigned int)ptr_cpu_cntx + GAFINFO.cpu_context_save_struct_sp);
-
-	printk(KERN_INFO "searching saved pc which is stopped in down_interruptible() from %08x to %08x\n", ptr_sp, 
-					 (unsigned int)ptr_thread_info + THREAD_SIZE);
-	printk(KERN_INFO "down_interruptible() is from %08x to %08x\n\n", fn_down_interruptible, fn_down);
-
-	while(ptr_sp < (unsigned int)ptr_thread_info + THREAD_SIZE) {
-		if( fn_down_interruptible <= *(unsigned int*)ptr_sp && *(unsigned int*)ptr_sp < fn_down ) {
-			//printk(KERN_INFO "%08x at %08x\n", *(unsigned int*)ptr_sp, ptr_sp);
-			printk(KERN_INFO "pc (%08x) is found at %08x\n", *(unsigned int*)ptr_sp, ptr_sp);
-			break;
-		}
-		ptr_sp += 4;
-	}
-
-	if(ptr_sp < (unsigned int)ptr_thread_info + THREAD_SIZE ) {
-		GAFHELP.real_pc_from_context_sp = ptr_sp -context_sp;
-
-		printk(KERN_INFO "%08x r4 :xxxxxxxx r5 :%08x r6 :%08x r7 :%08x\n", (ptr_sp -0x2c),
-					*(unsigned int*)(ptr_sp -0x28), *(unsigned int*)(ptr_sp -0x24), *(unsigned int*)(ptr_sp -0x20));
-		printk(KERN_INFO "%08x r8 :%08x r9 :%08x r10:%08x r11:%08x\n", (ptr_sp -0x1c),
-					*(unsigned int*)(ptr_sp -0x1c), *(unsigned int*)(ptr_sp -0x18), *(unsigned int*)(ptr_sp -0x14), *(unsigned int*)(ptr_sp -0x10));
-		printk(KERN_INFO "%08x r12:%08x sp :%08x lr :%08x pc :%08x\n", (ptr_sp -0x0c),
-					*(unsigned int*)(ptr_sp -0x0c), *(unsigned int*)(ptr_sp -0x08), *(unsigned int*)(ptr_sp -0x04), *(unsigned int*)(ptr_sp -0x00));
-	} else {
-		GAFHELP.real_pc_from_context_sp = 0xFFFFFFFF;
-		printk(KERN_INFO "pc is not found\n");
-	}
-		printk(KERN_INFO "===================\n\n");
-}
-//}} Add GAForensicHELP -1/2
 /*
  *  Mark for GetLog (tkhwang)
  */ 
@@ -147,17 +56,22 @@ static struct struct_plat_log_mark plat_log_mark =  {
 };
 
 struct struct_marks_ver_mark {
-  u32 special_mark_1;
-  u32 special_mark_2;
-  u32 special_mark_3;
-  u32 special_mark_4;
-  u32 log_mark_version;
-  u32 framebuffer_mark_version;
-  void * this;                   /* 2개의 메모리를 구별하기 위해서 사용됩니다.*/
-  u32 first_size;                /* first memory block의  size */
-  u32 first_start_addr;          /* first memory  block의 Physical address */
-  u32 second_size;               /* second memory block의  size */
-  u32 second_start_addr;         /* second memory  block의 Physical address */
+	u32 special_mark_1;
+	u32 special_mark_2;
+	u32 special_mark_3;
+	u32 special_mark_4;
+	u32 log_mark_version;
+	u32 framebuffer_mark_version;
+	/* 2ê°ì ë©ëª¨ë¦¬ë¥¼ êµ¬ë³íê¸° ìí´ì ì¬ì©ë©ëë¤.*/
+	void * this;
+	/* first memory blockì  size */
+	u32 first_size;
+	/* first memory  blockì Physical address */
+	u32 first_start_addr;
+	/* second memory blockì  size */
+	u32 second_size;
+	/* second memory  blockì Physical address */
+	u32 second_start_addr;
 };
 
 static struct struct_marks_ver_mark marks_ver_mark = {
@@ -167,11 +81,11 @@ static struct struct_marks_ver_mark marks_ver_mark = {
 	.special_mark_4 = (('v' << 24) | ('e' << 16) | ('r' << 8) | ('s' << 0)),
 	.log_mark_version = 1,
 	.framebuffer_mark_version = 1,
-	.this=&marks_ver_mark,
-	.first_size=128*1024*1024,
-	.first_start_addr=0x30000000,
-	.second_size=256*1024*1024,
-	.second_start_addr=0x40000000
+	.this = &marks_ver_mark,
+	.first_size = 128 * 1024 * 1024,
+	.first_start_addr = 0x30000000,
+	.second_size = 256 * 1024 * 1024,
+	.second_start_addr = 0x40000000
 };
 
 static char klog_buf[256];
@@ -458,20 +372,19 @@ static ssize_t do_write_log_from_user(struct logger_log *log,
 		if (copy_from_user(log->buffer, buf + len, count - len))
 			return -EFAULT;
 
-#if 1
-/* [LINUSYS] added by khoonk for calculating boot-time  on 20070508  */
-	memset(klog_buf,0,255);
-
-	if(strncmp(log->buffer  + log->w_off,  "!@", 2) == 0) {
-		if (count < 255)
-			memcpy(klog_buf,log->buffer  + log->w_off, count);			
-		else
-			memcpy(klog_buf,log->buffer  + log->w_off, 255);			
-
-		klog_buf[255]=0;
-}
-/* [LINUSYS] added by khoonk for calculating boot-time  on 20070508  */
-#endif	
+	/* print as kernel log if the log string starts with "!@" */
+	if (count >= 2) {
+		if (log->buffer[log->w_off] == '!'
+		    && log->buffer[logger_offset(log->w_off + 1)] == '@') {
+			char tmp[256];
+			int i;
+			for (i = 0; i < min(count, sizeof(tmp) - 1); i++)
+				tmp[i] =
+				    log->buffer[logger_offset(log->w_off + i)];
+			tmp[i] = '\0';
+			printk("%s\n", tmp);
+		}
+	}
 
 	log->w_off = logger_offset(log->w_off + count);
 
@@ -540,15 +453,6 @@ ssize_t logger_aio_write(struct kiocb *iocb, const struct iovec *iov,
 	/* wake up any blocked readers */
 	wake_up_interruptible(&log->wq);
 
-#if 1
-/* [LINUSYS] added by khoonk for calculating boot-time  on 20070508  */
-    if(strncmp(klog_buf, "!@", 2) == 0)
-	{
-		printk("%s\n",klog_buf);
-	}		
-/* [LINUSYS] added by khoonk for calculating boot-time  on 20070508  */
-#endif	
-	
 	return ret;
 }
 
@@ -726,10 +630,18 @@ static struct logger_log VAR = { \
 	.size = SIZE, \
 };
 
-DEFINE_LOGGER_DEVICE(log_main,   LOGGER_LOG_MAIN,   512*1024)
+DEFINE_LOGGER_DEVICE(log_main, LOGGER_LOG_MAIN, 512*1024)
 DEFINE_LOGGER_DEVICE(log_events, LOGGER_LOG_EVENTS, 256*1024)
-DEFINE_LOGGER_DEVICE(log_radio,  LOGGER_LOG_RADIO,  256*1024)
-DEFINE_LOGGER_DEVICE(log_system, LOGGER_LOG_SYSTEM,  256*1024)
+
+#if defined (CONFIG_MACH_STEALTHV)
+DEFINE_LOGGER_DEVICE(log_radio, LOGGER_LOG_RADIO, 1024*1024)
+#elif defined(CONFIG_MACH_AEGIS)
+DEFINE_LOGGER_DEVICE(log_radio, LOGGER_LOG_RADIO, 1024*1024)
+#else
+DEFINE_LOGGER_DEVICE(log_radio, LOGGER_LOG_RADIO, 256*1024)
+#endif
+
+DEFINE_LOGGER_DEVICE(log_system, LOGGER_LOG_SYSTEM, 256*1024)
 
 static struct logger_log *get_log_from_minor(int minor)
 {
@@ -764,10 +676,7 @@ static int __init init_log(struct logger_log *log)
 static int __init logger_init(void)
 {
 	int ret;
-	//{( Add GAForensicHELP - 2/2
-	printk(KERN_ERR "deveg func:%s , line:%d \n",__func__,__LINE__);
-	gaf_helper();
-	//{( Add GAForensicHELP - 2/2
+
 	/*
 	 *  Mark for GetLog (tkhwang)
 	 */

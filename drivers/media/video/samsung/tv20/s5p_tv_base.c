@@ -1,9 +1,9 @@
-﻿/* linux/drivers/media/video/samsung/tv20/s5p_tv_base.c
+/* linux/drivers/media/video/samsung/tv20/s5p_tv_base.c
  *
  * Entry file for Samsung TVOut driver
  *
- * Copyright (c) 2009 Samsung Electronics
- * 	http://www.samsungsemi.com/
+ * Copyright (c) 2010 Samsung Electronics
+ * http://www.samsungsemi.com/
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -29,6 +29,7 @@
 #include <linux/irq.h>
 #include <linux/io.h>
 #include <linux/uaccess.h>
+#include <linux/regulator/consumer.h>
 
 #include <media/v4l2-common.h>
 #include <media/v4l2-ioctl.h>
@@ -37,7 +38,7 @@
 #include <mach/gpio.h>
 #include <plat/gpio-cfg.h>
 #include <mach/regs-gpio.h>
-#include <mach/max8998_function.h>
+/*#include <mach/max8998_function.h>*/
 #include <linux/earlysuspend.h>
 #if CONFIG_CPU_FREQ_S5PV210
 #include <mach/cpu-freq-v210.h>
@@ -65,10 +66,10 @@
 #ifdef CONFIG_CPU_S5PV210
 #define TVOUT_CLK_INIT(dev, clk, name)
 #else
-#define TVOUT_CLK_INIT(dev, clk, name) 					\
+#define TVOUT_CLK_INIT(dev, clk, name)					\
 	do {								\
 		clk = clk_get(dev, name);				\
-		if (clk == NULL) { 					\
+		if (clk == NULL) {					\
 			printk(KERN_ERR					\
 			"failed to find %s clock source\n", name);	\
 			return -ENOENT;					\
@@ -77,13 +78,13 @@
 	} while (0);
 #endif
 
-#define TVOUT_IRQ_INIT(x, ret, dev, num, jump, ftn, m_name) 		\
+#define TVOUT_IRQ_INIT(x, ret, dev, num, jump, ftn, m_name)		\
 	do {								\
-		x = platform_get_irq(dev, num); 			\
+		x = platform_get_irq(dev, num);				\
 		if (x < 0) {						\
 			printk(KERN_ERR					\
 			"failed to get %s irq resource\n", m_name);	\
-			ret = -ENOENT; 					\
+			ret = -ENOENT;					\
 			goto jump;					\
 		}							\
 		ret = request_irq(x, ftn, IRQF_DISABLED,		\
@@ -115,31 +116,49 @@ static ssize_t detect_cable_show(struct device *dev, struct device_attribute *at
 {
 	int count;
 
-	s3c_gpio_cfgpin(GPIO_HDMI_EN1, S3C_GPIO_OUTPUT);
-	s3c_gpio_setpin(GPIO_HDMI_EN1, 1);
-	s3c_gpio_cfgpin(GPIO_HDMI_EN2, S3C_GPIO_OUTPUT);
-	s3c_gpio_setpin(GPIO_HDMI_EN2, 1);
+#ifdef CONFIG_MACH_STEALTHV
+	printk(KERN_ERR "HDMI_EN1:%d\n",gpio_get_value(GPIO_HDMI_EN1));
 
 	if(gpio_get_value(GPIO_HD_HPD))
 		 count = sprintf(buf,"1\n");
 	else
 		 count = sprintf(buf,"0\n");
+#endif
 	return count;
 }
 
 static ssize_t detect_cable_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
 {
+	int value;
+	
+	sscanf(buf, "%d", &value);
+	if(value==1)
+		value = 1;
+	else
+		value = 0;
+#if 0
+    	printk(KERN_ERR "detect_cable_store%d\n",value);
+	printk(KERN_ERR "HDMI_EN1:%d\n",gpio_get_value(GPIO_HDMI_EN1));
+
+	s3c_gpio_cfgpin(GPIO_HDMI_EN1, S3C_GPIO_OUTPUT);
+	s3c_gpio_cfgpin(GPIO_HDMI_EN2, S3C_GPIO_OUTPUT);
+
+	s3c_gpio_setpin(GPIO_HDMI_EN1, value);
+	s3c_gpio_setpin(GPIO_HDMI_EN2, value);
+
+	printk(KERN_ERR "recheck,HDMI_EN1:%d\n",gpio_get_value(GPIO_HDMI_EN1));
+#endif
 	return size;
 }
 
-static DEVICE_ATTR(connected, S_IRUGO | S_IWUSR | S_IWOTH | S_IXOTH, detect_cable_show, detect_cable_store);
+static DEVICE_ATTR(connected, S_IRUGO | S_IWUSR, detect_cable_show, detect_cable_store);
 #endif
 
 static struct mutex	*mutex_for_fo;
 static int suspend_resume_sync;
 
-struct s5p_tv_status 	s5ptv_status;
-struct s5p_tv_vo 	s5ptv_overlay[2];
+struct s5p_tv_status	s5ptv_status;
+struct s5p_tv_vo	s5ptv_overlay[2];
 
 int Isdrv_open = 0;
 int IsPower_on = 0;
@@ -258,6 +277,7 @@ static void set_ddc_port(void)
 		/* cable removed -> inserted */
 		__s5p_set_hpd_detection(false, s5ptv_status.hdcp_en,
 			s5ptv_status.hdcp_i2c_client);
+		printk(KERN_INFO "%s cable removed\n", __func__);
 	}
 
 	mutex_unlock(mutex_for_i2c);
@@ -265,15 +285,20 @@ static void set_ddc_port(void)
 #endif
 
 #ifdef CONFIG_CPU_S5PV210
+bool is_tv_phy_enable;
+
 int tv_phy_power(bool on)
 {
 	if (on) {
-            __s5p_tv_poweron();
+		if (!is_tv_phy_enable) {
+		__s5p_tv_poweron();
 		/* on */
 		clk_enable(s5ptv_status.i2c_phy_clk);
 		__s5p_hdmi_phy_power(true);
-
+			is_tv_phy_enable = true;
+		}
 	} else {
+		if (is_tv_phy_enable) {
 		/*
 		 * for preventing hdmi hang up when restart
 		 * switch to internal clk - SCLK_DAC, SCLK_PIXEL
@@ -286,15 +311,19 @@ int tv_phy_power(bool on)
 		__s5p_hdmi_phy_power(false);
 		clk_disable(s5ptv_status.i2c_phy_clk);
 		 __s5p_tv_poweroff();
+			is_tv_phy_enable = false;
+		}
 	}
 
 	return 0;
 }
 
+bool is_tv_clk_on;
 
 int s5p_tv_clk_gate(bool on)
 {
 	if (on) {
+		if (!is_tv_clk_on) {
 #ifdef CONFIG_S5PV210_PM
 		if (s5pv210_pd_enable("vp_pd") < 0) {
 			printk(KERN_ERR "[Error]The power is not on for VP\n");
@@ -323,9 +352,10 @@ int s5p_tv_clk_gate(bool on)
 		}
 #endif
 		clk_enable(s5ptv_status.hdmi_clk);
-
+			is_tv_clk_on = true;
+		}
 	} else {
-
+		if (is_tv_clk_on) {
 		/* off */
 		clk_disable(s5ptv_status.vp_clk);
 #ifdef CONFIG_S5PV210_PM
@@ -355,6 +385,8 @@ int s5p_tv_clk_gate(bool on)
 			goto err_pm;
 		}
 #endif
+			is_tv_clk_on = false;
+		}
 	}
 
 	return 0;
@@ -370,7 +402,7 @@ EXPORT_SYMBOL(s5p_tv_clk_gate);
 		clk = clk_get(&pdev->dev, clk_name);			\
 		if (IS_ERR(clk)) {					\
 			printk(KERN_ERR					\
-			"failed to find clock \"%s\"\n", clk_name); 	\
+			"failed to find clock \"%s\"\n", clk_name);	\
 			return ENOENT;					\
 		}							\
 	} while (0);
@@ -486,29 +518,27 @@ static int s5p_tv_v_open(struct file *file)
 	TVout_LDO_ctrl(true);
 	Isdrv_open = 1;
 	mutex_lock(mutex_for_fo);
-
+	
 	if (s5ptv_status.tvout_output_enable) {
 		BASEPRINTK("tvout drv. already used !!\n");
 		ret =  -EBUSY;
 		goto drv_used;
 	}
 
-		s5p_tv_clk_gate( true );
-		
+	s5p_tv_clk_gate(true);
+
 
 #ifdef CONFIG_CPU_S5PV210
-#ifdef CONFIG_PM 
+#ifdef CONFIG_PM
 	if((s5ptv_status.hpd_status) && !(s5ptv_status.suspend_status))
 	{
 		BASEPRINTK("tv is turned on\n");
 #endif
 #ifdef CONFIG_CPU_FREQ_S5PV210
-		if((s5ptv_status.hpd_status))
+		if ((s5ptv_status.hpd_status))
 			s5pv210_set_cpufreq_level(RESTRICT_TABLE);
 #endif /* CONFIG_CPU_FREQ_S5PV210 */
-		//s5p_tv_clk_gate( true );
-		//if(s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI || s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI_RGB)
-		//tv_phy_power( true );
+
 #ifdef CONFIG_PM
 	}
 	else
@@ -536,8 +566,7 @@ static int s5p_tv_v_open(struct file *file)
 	udelay(100);
 #endif
 
-	//if(s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI || s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI_RGB)
-		tv_phy_power( true );
+	tv_phy_power( true );
 
 	return 0;
 
@@ -567,23 +596,23 @@ int s5p_tv_v_release(struct file *filp)
 {
 	TVout_LDO_ctrl(true);
 #if defined(CONFIG_CPU_S5PV210) && defined(CONFIG_PM)
-
-		if(s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI || s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI_RGB
+/*
+	if(s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI || s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI_RGB
 			|| s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_DVI)
 				tv_phy_power( false );
-
+*/
 
 	if((s5ptv_status.hpd_status) && !(s5ptv_status.suspend_status))
 	{
 #endif
-		if(s5ptv_status.vp_layer_enable)
+		if (s5ptv_status.vp_layer_enable)
 			_s5p_vlayer_stop();
-		if(s5ptv_status.tvout_output_enable)
+		if (s5ptv_status.tvout_output_enable)
 			_s5p_tv_if_stop();
 #if defined(CONFIG_CPU_S5PV210) && defined(CONFIG_PM)
-	}else
+	} else
 		s5ptv_status.vp_layer_enable = false;
-#endif 
+#endif
 
 	s5ptv_status.hdcp_en = false;
 
@@ -604,18 +633,16 @@ int s5p_tv_v_release(struct file *filp)
 	mutex_unlock(mutex_for_i2c);
 #endif
 
-		s5p_tv_clk_gate(false);
+	s5p_tv_clk_gate(false);
 
 #ifdef CONFIG_CPU_S5PV210
 #ifdef CONFIG_PM
 	if((s5ptv_status.hpd_status) && !(s5ptv_status.suspend_status))
 	{
 #endif
-		//s5p_tv_clk_gate(false);
-		//if(s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI || s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI_RGB)
-		//tv_phy_power( false );
+
 #ifdef CONFIG_CPU_FREQ_S5PV210
-		if(s5ptv_status.hpd_status)
+		if (s5ptv_status.hpd_status)
 			s5pv210_set_cpufreq_level(NORMAL_TABLE);
 #endif /* CONFIG_CPU_FREQ_S5PV210 */
 
@@ -625,6 +652,10 @@ int s5p_tv_v_release(struct file *filp)
 #endif
 
 	Isdrv_open = 0;
+	if(s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI || s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI_RGB
+			|| s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_DVI)
+				tv_phy_power( false );
+	s5p_tv_clk_gate(false);
 	TVout_LDO_ctrl(false);
 	printk("[TVOUT]s5p_tv_v_release --\n");
 	return 0;
@@ -794,8 +825,8 @@ int s5ptvfb_register_framebuffer(void)
 
 	return 0;
 }
-
 #endif
+
 /*
  * struct for video
  */
@@ -845,7 +876,6 @@ static struct v4l2_file_operations s5p_tv_vo1_fops = {
 	.release	= s5p_tv_vo1_release
 };
 #endif
-
 
 void s5p_tv_vdev_release(struct video_device *vdev)
 {
@@ -906,204 +936,215 @@ void TVout_LDO_ctrl(int enable)
 	{
 		if(!IsPower_on)
 		{
-//		max8998_ldo3_8_control(1,LDO_TV_OUT); //ldo 3,8 on
-		ldo38_control_by_tvout(1);
-		printk("%s: LDO3_8 is enabled by TV \n", __func__);
+			regulator_enable(s5ptv_status.tv_tv);
+		        regulator_enable(s5ptv_status.tv_tvout);
+		       
+			printk("%s: LDO3_8 is enabled by TV \n", __func__);
 			IsPower_on = 1;
-		msleep(120);
+			//msleep(120);
 	}
 	}
 	else if(enable == false)
 	{
-//		if(gpio_get_value(GPIO_ACCESSORY_INT)) {
-		if(s5ptv_status.suspend_status)
-			msleep(520);
-			
-			for(i;i<50;i++) {
-				if(Isdrv_open)
-					msleep(50);
-			}
-//			if((gpio_get_value(GPIO_ACCESSORY_INT))&&
-			if ((IsPower_on) && (!Isdrv_open))
+//		if(s5ptv_status.suspend_status)
+//			msleep(520);
+//			
+//			for(i;i<50;i++) {
+//				if(Isdrv_open)
+//					msleep(50);
+//			}
+			if (IsPower_on)
 			{
-//				max8998_ldo3_8_control(0,LDO_TV_OUT);
 				//ldo 3,8 off
-				ldo38_control_by_tvout(0);
+				regulator_disable(s5ptv_status.tv_tv);
+			        regulator_disable(s5ptv_status.tv_tvout);
 				printk("%s: LDO3_8 is disabled by TV \n", __func__);
 				IsPower_on = 0;
 			}
-//		}
 	}
+
+
 }
 
 EXPORT_SYMBOL(TVout_LDO_ctrl);
 
 void s5p_handle_cable(void)
 {
-    char env_buf[120];
-    char *envp[2];
-    int env_offset = 0;
+	char env_buf[120];
+	char *envp[2];
+	int env_offset = 0;
 
-	#if 0
-    if(s5ptv_status.tvout_param.out_mode != TVOUT_OUTPUT_HDMI && s5ptv_status.tvout_param.out_mode != TVOUT_OUTPUT_HDMI_RGB)
-        return;
-#endif
-   int previous_hpd_status = s5ptv_status.hpd_status;
+	msleep(200);
+	int previous_hpd_status = s5ptv_status.hpd_status;
 #ifdef CONFIG_HDMI_HPD
-    if (s5p_hpd_get_state()) {
+	if (s5p_hpd_get_state()) {
         s5ptv_status.hpd_status = 1;
         set_irq_type(IRQ_EINT13, IRQ_TYPE_EDGE_FALLING);
-        if (suspend_resume_sync == 2)
-            suspend_resume_sync = 0;
+        	if (suspend_resume_sync == 2)
+	            suspend_resume_sync = 0;
 
-    } else {
+	} else {
         s5ptv_status.hpd_status = 0;
         set_irq_type(IRQ_EINT13, IRQ_TYPE_EDGE_RISING); 
-    }
+	}
 
-//    s5ptv_status.hpd_status= gpio_get_value(S5PV210_GPH1(5));
 #else
-    return;
+	return;
 #endif
     printk(KERN_INFO "HDMI handle_cable previous status is %d and current status is %d\n",previous_hpd_status,s5ptv_status.hpd_status);
     
     memset(env_buf, 0, sizeof(env_buf));
 
-    if(previous_hpd_status == s5ptv_status.hpd_status)
-    {
-        BASEPRINTK("same hpd_status value: %d\n", previous_hpd_status);
-        return;
-    }
+	if(previous_hpd_status == s5ptv_status.hpd_status)
+	{
+		BASEPRINTK("same hpd_status value: %d\n", previous_hpd_status);
+		return;
+	}
 
-    if(s5ptv_status.hpd_status)
-    {
-        TVout_LDO_ctrl(true);
-        BASEPRINTK("\n hdmi cable is connected \n");
+	if(s5ptv_status.hpd_status)
+	{
+	        //TVout_LDO_ctrl(true);
+		BASEPRINTK("\n hdmi cable is connected \n");
 		sprintf(env_buf, "HDMI_STATE=online");
 		envp[env_offset++] = env_buf;
 		envp[env_offset] = NULL;
 		kobject_uevent_env(&(s5p_tvout[0].dev.kobj), KOBJ_CHANGE, envp);
-        
+		printk("[HDMI] s5p_handle_cable :: send uevent  connected\n");
+
         if(s5ptv_status.suspend_status)
         {
 		    printk("[TVOUT]hdmi cable is connected Before Suspend \n");
             return;
         }
+
 #ifdef CONFIG_CPU_FREQ_S5PV210
-        s5pv210_set_cpufreq_level(RESTRICT_TABLE);
+		s5pv210_set_cpufreq_level(RESTRICT_TABLE);
 #endif /* CONFIG_CPU_FREQ_S5PV210 */
+		TVout_LDO_ctrl(true);
+		s5p_tv_clk_gate(true);
+		tv_phy_power( true ); //wjyoo 0808
+		mdelay(10);
+		/* tv on */
+		if (s5ptv_status.tvout_output_enable)
+			_s5p_tv_if_start();
 
- 				s5p_tv_clk_gate( true );
-				//if(s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI || s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI_RGB)
-        	//	tv_phy_power( true );
+		/* video layer start */
+		if (s5ptv_status.vp_layer_enable)
+			_s5p_vlayer_start();
 
-    #ifdef CONFIG_PM
-    #if 0
-        s5p_tv_clk_gate( true );
-		if(s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI || s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI_RGB)
-        tv_phy_power( true );
-    #endif
-    #endif
-        /* tv on */
-        if ( s5ptv_status.tvout_output_enable )
-                _s5p_tv_if_start();
+		/* grp0 layer start */
+		if (s5ptv_status.grp_layer_enable[0])
+			_s5p_grp_start(VM_GPR0_LAYER);
 
-        /* video layer start */
-        if ( s5ptv_status.vp_layer_enable )
-                _s5p_vlayer_start();
+		/* grp1 layer start */
+		if (s5ptv_status.grp_layer_enable[1])
+			_s5p_grp_start(VM_GPR1_LAYER);
 
-        /* grp0 layer start */
-        if ( s5ptv_status.grp_layer_enable[0] )
-                _s5p_grp_start(VM_GPR0_LAYER);
 
-        /* grp1 layer start */
-        if ( s5ptv_status.grp_layer_enable[1] )
-                _s5p_grp_start(VM_GPR1_LAYER);
+	} else {
 		
-		
-		printk("[TVOUT]hdmi cable is connected\n");
-    }
-    else{
-		
-        BASEPRINTK("\n hdmi cable is disconnected \n");
+		BASEPRINTK("\n hdmi cable is disconnected \n");
 
-	#if 1
-        if(s5ptv_status.suspend_status || suspend_resume_sync == 2)
-        {
-			//if(gpio_get_value(GPIO_ACCESSORY_INT))
-			{
+		#if 1
+	        if(s5ptv_status.suspend_status || suspend_resume_sync == 2)
+        	{
+				TVout_LDO_ctrl(true);
 				s5p_tv_clk_gate( true );
 				tv_phy_power( true );
 			}
- 			//else
-            //	return;
-        }
-	#endif 
-//    if (!s5ptv_status.suspend_status) {
-    if (suspend_resume_sync == 0) {
-        if ( s5ptv_status.vp_layer_enable ) {
-            _s5p_vlayer_stop();
-            s5ptv_status.vp_layer_enable = true;
+		#endif 
 
-        }
+	 if (suspend_resume_sync == 0) {
+		if (s5ptv_status.vp_layer_enable) {
+			_s5p_vlayer_stop();
+			s5ptv_status.vp_layer_enable = true;
 
-        /* grp0 layer stop */
-        if ( s5ptv_status.grp_layer_enable[0] ) {
-            _s5p_grp_stop(VM_GPR0_LAYER);
-            s5ptv_status.grp_layer_enable[VM_GPR0_LAYER] = true;
-        }
+		}
 
-        /* grp1 layer stop */
-        if ( s5ptv_status.grp_layer_enable[1] ) {
-            _s5p_grp_stop(VM_GPR1_LAYER);
-            s5ptv_status.grp_layer_enable[VM_GPR0_LAYER] = true;
-        }
+		/* grp0 layer stop */
+		if (s5ptv_status.grp_layer_enable[0]) {
+			_s5p_grp_stop(VM_GPR0_LAYER);
+			s5ptv_status.grp_layer_enable[VM_GPR0_LAYER] = true;
+		}
 
-        /* tv off */
-        if ( s5ptv_status.tvout_output_enable ) {
-            _s5p_tv_if_stop();
+		/* grp1 layer stop */
+		if (s5ptv_status.grp_layer_enable[1]) {
+			_s5p_grp_stop(VM_GPR1_LAYER);
+			s5ptv_status.grp_layer_enable[VM_GPR0_LAYER] = true;
+		}
+
+		/* tv off */
+		if (s5ptv_status.tvout_output_enable) {
+			_s5p_tv_if_stop();
             s5ptv_status.tvout_output_enable = false;
             s5ptv_status.tvout_param_available = false;
-        }
+		}
 
-    #ifdef CONFIG_PM
-        /* clk & power off */
-        s5p_tv_clk_gate( false );
-  //if(s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI || s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI_RGB)
-    //    tv_phy_power( false );
-    #endif
-    }
+#ifdef CONFIG_PM
+		/* clk & power off */
+		tv_phy_power(false); //wjyoo 0808
+		s5p_tv_clk_gate(false);
+		TVout_LDO_ctrl(false);
+		
+#endif
+		}
 
 		sprintf(env_buf, "HDMI_STATE=offline");
 		envp[env_offset++] = env_buf;
 		envp[env_offset] = NULL;
 		kobject_uevent_env(&(s5p_tvout[0].dev.kobj), KOBJ_CHANGE, envp);
-		printk("[TVOUT]hdmi cable is disconnected\n");
+		printk("[HDMI] s5p_handle_cable :: send uevent  diconnected\n");
 
 #ifdef CONFIG_CPU_FREQ_S5PV210
-    if (suspend_resume_sync == 0)
-        s5pv210_set_cpufreq_level(NORMAL_TABLE);
+	if (suspend_resume_sync == 0)
+		s5pv210_set_cpufreq_level(NORMAL_TABLE);
 #endif /* CONFIG_CPU_FREQ_S5PV210 */
-    }
+	}
 }
 
-#define S5P_TVMAX_CTRLS 	ARRAY_SIZE(s5p_tvout)
+#define S5P_TVMAX_CTRLS		ARRAY_SIZE(s5p_tvout)
 /*
  *  Probe
  */
 
 static int __devinit s5p_tv_probe(struct platform_device *pdev)
 {
-	int 	irq_num;
-	int 	ret;
-	int 	i,retval;
+	int	irq_num;
+	int	ret;
+	int 	i;
 
 	s5ptv_status.dev_fb = &pdev->dev;
-    suspend_resume_sync = 0;
+	 suspend_resume_sync = 0;
+	is_tv_clk_on = false;
+	is_tv_phy_enable = false;
 	//enable power	
-//	max8998_ldo3_8_control(1,LDO_TV_OUT); //ldo 3,8 on
-	ldo38_control_by_tvout(1);
-	printk("%s: LDO3_8 is enabled by TV \n", __func__);
+	/* Get csis power domain regulator */
+	s5ptv_status.tv_regulator = regulator_get(&pdev->dev, "pd");
+	if (IS_ERR(s5ptv_status.tv_regulator)) {
+		printk(KERN_ERR "%s %d: failed to get resource %s\n",
+				__func__, __LINE__, "s3c-tv20 pd");
+		return PTR_ERR(s5ptv_status.tv_regulator);
+	}
+
+	s5ptv_status.tv_tvout = regulator_get(NULL, "tvout");
+	if (IS_ERR(s5ptv_status.tv_tvout)) {
+		printk(KERN_ERR "%s %d: failed to get resource %s\n",
+				__func__, __LINE__, "s3c-tv20 tvout");
+		return PTR_ERR(s5ptv_status.tv_tvout);
+	}
+
+	s5ptv_status.tv_tv = regulator_get(NULL, "hdmi");
+	if (IS_ERR(s5ptv_status.tv_tv)) {
+		printk(KERN_ERR "%s %d: failed to get resource %s\n",
+				__func__, __LINE__, "s3c-tv20 tv");
+		return PTR_ERR(s5ptv_status.tv_tv);
+	}
+	
+	regulator_enable(s5ptv_status.tv_tv);
+	regulator_enable(s5ptv_status.tv_tvout);
+	
+
+	s5ptv_status.dev_fb = &pdev->dev;
 
 	__s5p_sdout_probe(pdev, 0);
 	__s5p_vp_probe(pdev, 1);
@@ -1111,12 +1152,12 @@ static int __devinit s5p_tv_probe(struct platform_device *pdev)
 
 #ifdef CONFIG_CPU_S5PV210
 	tv_clk_get(pdev, &s5ptv_status);
-	s5p_tv_clk_gate( true );
+	s5p_tv_clk_gate(true);
 #endif
 #ifdef CONFIG_CPU_S5PV210	
 	__s5p_hdmi_probe(pdev, 3, 4);
-	__s5p_hdcp_init( );
-#endif		
+	__s5p_hdcp_init();
+#endif
 
 #ifdef FIX_27M_UNSTABLE_ISSUE /* for smdkc100 pop */
 	writel(0x1, S5PC1XX_GPA0_BASE + 0x56c);
@@ -1131,23 +1172,11 @@ static int __devinit s5p_tv_probe(struct platform_device *pdev)
 	INIT_WORK(&ws_hpd, (void *)set_ddc_port);
 #endif
 	/* check EINT init state */
-
-#ifdef CONFIG_CPU_S5PV210
-
-	//s3c_gpio_cfgpin(GPIO_HDMI_EN1, S3C_GPIO_OUTPUT);
-	//s3c_gpio_setpin(GPIO_HDMI_EN1, 1);
-	//s3c_gpio_cfgpin(GPIO_HDMI_EN2, S3C_GPIO_OUTPUT);
-	//s3c_gpio_setpin(GPIO_HDMI_EN2, 1);
-
-#ifdef CONFIG_HDMI_HPD
-//	if(0 == gpio_get_value(GPIO_ACCESSORY_INT))  //docking station attached
-//		s5ptv_status.hpd_status= s5p_hpd_get_state();
-//	else 
-		s5ptv_status.hpd_status= 0;
-#else
-    s5ptv_status.hpd_status= 0;
-#endif    
+#ifdef CONFIG_MACH_STEALTHV
+	gpio_set_value(GPIO_HDMI_EN1, 1);
 #endif
+	s5ptv_status.hpd_status= 0;
+	
 	dev_info(&pdev->dev, "hpd status is cable %s\n", 
 		s5ptv_status.hpd_status ? "inserted":"removed");
 
@@ -1157,7 +1186,6 @@ static int __devinit s5p_tv_probe(struct platform_device *pdev)
 	TVOUT_IRQ_INIT(irq_num, ret, pdev, 1, out_hdmi_irq, __s5p_hdmi_irq , "hdmi");
 	TVOUT_IRQ_INIT(irq_num, ret, pdev, 2, out_tvenc_irq, s5p_tvenc_irq, "tvenc");
 	
-
 	/* v4l2 video device registration */
 	for (i = 0; i < S5P_TVMAX_CTRLS; i++) {
 		s5ptv_status.video_dev[i] = &s5p_tvout[i];
@@ -1170,7 +1198,6 @@ static int __devinit s5p_tv_probe(struct platform_device *pdev)
 			return 0;
 		}
 	}
-
 
 #ifdef CONFIG_TV_FB
 	mutex_init(&s5ptv_status.fb_lock);
@@ -1185,7 +1212,7 @@ static int __devinit s5p_tv_probe(struct platform_device *pdev)
 	s5p_tv_clk_gate(true);
 	if(s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI || s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI_RGB
 		|| s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_DVI)
-	tv_phy_power(true);
+		tv_phy_power(true);
 	_s5p_tv_if_set_disp();
 #endif
 
@@ -1229,12 +1256,11 @@ static int __devinit s5p_tv_probe(struct platform_device *pdev)
 	clk_enable(s5ptv_status.i2c_phy_clk);
 	__s5p_hdmi_phy_power(false);
 	clk_disable(s5ptv_status.i2c_phy_clk);
-	s5p_tv_clk_gate( false );
+	s5p_tv_clk_gate(false);
 #endif
-	//disable power
-//	max8998_ldo3_8_control(0,LDO_TV_OUT);  //ldo 3,8 off
-	ldo38_control_by_tvout(0);
-	printk("%s: LDO3_8 is disabled by TV \n", __func__);
+	regulator_disable(s5ptv_status.tv_tv);
+	regulator_disable(s5ptv_status.tv_tvout);
+	printk("tv_base_probe is successfully\n");
 
 	return 0;
 
@@ -1304,75 +1330,77 @@ static int s5p_tv_remove(struct platform_device *pdev)
  */
 int s5p_tv_early_suspend(struct platform_device *dev, pm_message_t state)
 {
-    BASEPRINTK("(hpd_status = %d)++\n", s5ptv_status.hpd_status);
+	BASEPRINTK("(hpd_status = %d)++\n", s5ptv_status.hpd_status);
+	printk(KERN_INFO "s5p_tv_early suspend executing..\n");
 
-    mutex_lock(mutex_for_fo);
-    s5ptv_status.suspend_status = true;
-    suspend_resume_sync = 1;
-    printk(KERN_INFO "s5p_tv_early suspend executing..\n");
+	mutex_lock(mutex_for_fo);
+	s5ptv_status.suspend_status = true;
+	suspend_resume_sync = 1;
 #ifdef CABLE_CHECK
-          //s5p_hpd_set_state(HPD_SLEEP);
+#if 0    
     if (s5p_hpd_get_state()) {
-        hpd_sleep_state = 0;
         set_irq_type(IRQ_EINT13, IRQ_TYPE_EDGE_FALLING);
-    } else {
+        hpd_sleep_state = 0;
+	else{
+       	set_irq_type(IRQ_EINT13, IRQ_TYPE_EDGE_RISING);
         hpd_sleep_state = 1;
-        set_irq_type(IRQ_EINT13, IRQ_TYPE_EDGE_RISING);
     }
 #endif
-    if(!(s5ptv_status.hpd_status))
-    {
-        printk(KERN_INFO "s5p_tv_early_suspend returned no HDMI connected\n");
-	    mutex_unlock(mutex_for_fo);
-        return 0;
-    }
-    else
-    {
-                 IsPower_on = false;
-                 TVout_LDO_ctrl(true);
-	    /* video layer stop */
-	    if ( s5ptv_status.vp_layer_enable ) {
-		    _s5p_vlayer_stop();
-		    s5ptv_status.vp_layer_enable = true;
+       	hpd_sleep_state = 1;
+        set_irq_type(IRQ_EINT13, IRQ_TYPE_EDGE_BOTH);
+#endif
+	if(!(s5ptv_status.hpd_status))
+    	{
+	        printk(KERN_INFO "s5p_tv_early_suspend returned no HDMI connected\n");
+		mutex_unlock(mutex_for_fo);
+	        return 0;
+	}
+	else
+	{
+                //IsPower_on = false;
+                //TVout_LDO_ctrl(true);
+		/* video layer stop */
+		if (s5ptv_status.vp_layer_enable) {
+			_s5p_vlayer_stop();
+			s5ptv_status.vp_layer_enable = true;
 
-	    }
+		}
 
-	    /* grp0 layer stop */
-	    if ( s5ptv_status.grp_layer_enable[0] ) {
-		    _s5p_grp_stop(VM_GPR0_LAYER);
-		    s5ptv_status.grp_layer_enable[VM_GPR0_LAYER] = true;
-	    }
+		/* grp0 layer stop */
+		if (s5ptv_status.grp_layer_enable[0]) {
+			_s5p_grp_stop(VM_GPR0_LAYER);
+			s5ptv_status.grp_layer_enable[VM_GPR0_LAYER] = true;
+		}
 
-	    /* grp1 layer stop */
-	    if ( s5ptv_status.grp_layer_enable[1] ) {
-		    _s5p_grp_stop(VM_GPR1_LAYER);
-		    s5ptv_status.grp_layer_enable[VM_GPR0_LAYER] = true;
-	    }
+		/* grp1 layer stop */
+		if (s5ptv_status.grp_layer_enable[1]) {
+			_s5p_grp_stop(VM_GPR1_LAYER);
+			s5ptv_status.grp_layer_enable[VM_GPR0_LAYER] = true;
+		}
 
-	    if(s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI || s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI_RGB
+		/* tv off */
+		if (s5ptv_status.tvout_output_enable) {
+			_s5p_tv_if_stop();
+			s5ptv_status.tvout_output_enable = true;
+			s5ptv_status.tvout_param_available = true;
+		}
+
+		if(s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI || s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI_RGB
 			|| s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_DVI)
-		    tv_phy_power( false );
+			tv_phy_power( false );
 	    
-	   
-	    /* tv off */
-	    if ( s5ptv_status.tvout_output_enable ) {
-		    _s5p_tv_if_stop();
-		    s5ptv_status.tvout_output_enable = true;
-		    s5ptv_status.tvout_param_available = true;
-	    }
-
-	    /* clk & power off */
-	    s5p_tv_clk_gate( false );
+		/* clk & power off */
+		s5p_tv_clk_gate(false);
+		TVout_LDO_ctrl(false);
 
 
 #ifdef CONFIG_CPU_FREQ_S5PV210
-	    s5pv210_set_cpufreq_level(NORMAL_TABLE);
+		s5pv210_set_cpufreq_level(NORMAL_TABLE);
 #endif /* CONFIG_CPU_FREQ_S5PV210 */
-    }
-
-    mutex_unlock(mutex_for_fo);
-    BASEPRINTK("()--\n");
-    return 0;
+	}
+	mutex_unlock(mutex_for_fo);
+	BASEPRINTK("()--\n");
+	return 0;
 }
 
 /*
@@ -1381,23 +1409,21 @@ int s5p_tv_early_suspend(struct platform_device *dev, pm_message_t state)
 int s5p_tv_late_resume(struct platform_device *dev)
 {
     BASEPRINTK("(hpd_status = %d)++\n", s5ptv_status.hpd_status);
-    mutex_lock(mutex_for_fo);
-    s5ptv_status.suspend_status = false;
+	mutex_lock(mutex_for_fo);
+	s5ptv_status.suspend_status = false;
     suspend_resume_sync = 2;
 #ifdef CABLE_CHECK
-          //s5p_hpd_set_state(HPD_SLEEP);
-           hpd_sleep_state =0;
+    hpd_sleep_state =0;
 #endif
-
     printk(KERN_INFO "s5p_tv_late_resume executing...\n");
 	if(s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI || s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI_RGB
 		|| s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_DVI) {
 		s5p_handle_cable();
     }
-
+	
     if(!(s5ptv_status.hpd_status))
     {
-	    mutex_unlock(mutex_for_fo);
+		mutex_unlock(mutex_for_fo);
 	    return 0;
     }
     else
@@ -1406,39 +1432,39 @@ int s5p_tv_late_resume(struct platform_device *dev)
 		s5pv210_set_cpufreq_level(RESTRICT_TABLE);
 #endif /* CONFIG_CPU_FREQ_S5PV210 */
 
-	/* clk & power on */
-	s5p_tv_clk_gate( true );
+		/* clk & power on */
+		TVout_LDO_ctrl(true);
+		s5p_tv_clk_gate(true);
 	if((s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI || s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_HDMI_RGB
 		|| s5ptv_status.tvout_param.out_mode == TVOUT_OUTPUT_DVI)&&(s5ptv_status.hpd_status == HPD_HI))  
-	    tv_phy_power( true );
+			tv_phy_power(true);
 
-	/* tv on */
+		/* tv on */
 	if (s5ptv_status.tvout_output_enable) {
-		_s5p_tv_if_start();
+			_s5p_tv_if_start();
 	}
 
-	/* video layer start */
-	if (s5ptv_status.vp_layer_enable)
-		_s5p_vlayer_start();
+		/* video layer start */
+		if (s5ptv_status.vp_layer_enable)
+			_s5p_vlayer_start();
 
-	/* grp0 layer start */
-	if (s5ptv_status.grp_layer_enable[0])
-		_s5p_grp_start(VM_GPR0_LAYER);
+		/* grp0 layer start */
+		if (s5ptv_status.grp_layer_enable[0])
+			_s5p_grp_start(VM_GPR0_LAYER);
 
-	/* grp1 layer start */
-	if (s5ptv_status.grp_layer_enable[1])
-		_s5p_grp_start(VM_GPR1_LAYER);
+		/* grp1 layer start */
+		if (s5ptv_status.grp_layer_enable[1])
+			_s5p_grp_start(VM_GPR1_LAYER);
 
 #ifdef CONFIG_TV_FB
-	if (s5ptv_status.tvout_output_enable) {
-		s5ptvfb_display_on(&s5ptv_status);
-		s5ptvfb_set_par(s5ptv_status.fb);
-	}
+		if (s5ptv_status.tvout_output_enable) {
+			s5ptvfb_display_on(&s5ptv_status);
+			s5ptvfb_set_par(s5ptv_status.fb);
+		}
 #endif
-    }
-//    s5ptv_status.suspend_status = false;
-    mutex_unlock(mutex_for_fo);
-    BASEPRINTK("()--\n");
+	}
+	mutex_unlock(mutex_for_fo);
+	BASEPRINTK("()--\n");
     return 0;
 }
 #else
@@ -1459,15 +1485,15 @@ static struct early_suspend s5p_tv_early_suspend_desc = {
 static struct platform_driver s5p_tv_driver = {
 	.probe		= s5p_tv_probe,
 	.remove		= s5p_tv_remove,
-	#ifdef CONFIG_PM
-        #ifndef CONFIG_HAS_EARLYSUSPEND
+#ifdef CONFIG_PM
+#ifndef CONFIG_HAS_EARLYSUSPEND
 	.suspend	= s5p_tv_early_suspend,
 	.resume		= s5p_tv_late_resume,
-        #endif
-	#else
-	.suspend 	= NULL,
-	.resume  	= NULL,
-	#endif
+#endif
+#else
+	.suspend	= NULL,
+	.resume		= NULL,
+#endif
 	.driver		= {
 		.name	= "s5p-tvout",
 		.owner	= THIS_MODULE,
@@ -1475,7 +1501,7 @@ static struct platform_driver s5p_tv_driver = {
 };
 
 static char banner[] __initdata =
-	KERN_INFO "S5PC1XX TVOUT Driver, (c) 2009 Samsung Electronics\n";
+	KERN_INFO "S5P TVOUT Driver, (c) 2010 Samsung Electronics\n";
 
 int __init s5p_tv_init(void)
 {
@@ -1486,9 +1512,6 @@ int __init s5p_tv_init(void)
 #endif	
 
 	printk(banner);
-
-	//Set_MAX8998_PM_REG(ELDO3, 1);    //HDMI power on temp code 20100614 kyungrok
-	//Set_MAX8998_PM_REG(ELDO8, 1);
 
 	ret = platform_driver_register(&s5p_tv_driver);
 

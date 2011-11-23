@@ -35,10 +35,6 @@
 #define PMEM_GET_TOTAL_SIZE	_IOW(PMEM_IOCTL_MAGIC, 7, unsigned int)
 #define PMEM_CACHE_FLUSH	_IOW(PMEM_IOCTL_MAGIC, 8, unsigned int)
 
-// added by jamie (2009.10.20)
-// in order to provide feature to invalidate cache area
-#define PMEM_CACHE_INV _IOW(PMEM_IOCTL_MAGIC, 20, unsigned int)
-
 struct android_pmem_platform_data
 {
 	const char* name;

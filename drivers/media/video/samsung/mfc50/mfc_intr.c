@@ -42,16 +42,16 @@
 #define MFC_WAIT_5_TIME	800
 #define MFC_WAIT_6_TIME	1000
 
-#define ENABLE_MFC_INTERRUPT_DEBUG	0		//	0: Disable		1: Enable
+#define ENABLE_MFC_INTERRUPT_DEBUG	0	/* 0: Disable	1: Enable */
 
 #if defined(MFC_REQUEST_TIME)
 struct timeval mfc_wakeup_before;
 struct timeval mfc_wakeup_after;
 #endif
 
-static unsigned int mfc_int_type = 0;
-static unsigned int mfc_disp_err_status = 0;
-static unsigned int mfc_dec_err_status = 0;
+static unsigned int mfc_int_type;
+static unsigned int mfc_disp_err_status;
+static unsigned int mfc_dec_err_status;
 static bool irq_sync;
 static DECLARE_WAIT_QUEUE_HEAD(mfc_wait_queue);
 static DEFINE_SPINLOCK(mfc_irq_lock);
@@ -96,31 +96,30 @@ irqreturn_t mfc_irq(int irq, void *dev_id)
 }
 #endif
 
-void	mfc_interrupt_debug(int nCnt)
+void mfc_interrupt_debug(int nCnt)
 {
-	int nn =0;
-	for(nn = 0; nn <nCnt; nn++){
-			mdelay(100);
-			mfc_err("[%d] Timeout (0x64: 0x%08x) (0xF4: 0x%08x)\n", nn, READL(0x64), READL(0xF4));
+	int nn = 0;
+	for (nn = 0; nn < nCnt; nn++) {
+		mdelay(100);
+		mfc_err("[%d] Timeout (0x64: 0x%08x) (0xF4: 0x%08x)\n", nn, READL(0x64), READL(0xF4));
 	}
 }
 
-int mfc_wait_for_done(mfc_wait_done_type command)
+int mfc_wait_for_done(enum mfc_wait_done_type command)
 {
-	unsigned int nwait_time = 100;	
+	unsigned int nwait_time = 100;
 	unsigned int ret_val = 1;
-        unsigned long flags;
-	
-	if((command == R2H_CMD_CLOSE_INSTANCE_RET) ||
+	unsigned long flags;
+
+	if ((command == R2H_CMD_CLOSE_INSTANCE_RET) ||
 	   (command == R2H_CMD_OPEN_INSTANCE_RET) ||
-	   (command == R2H_CMD_SYS_INIT_RET) ||	   
-	   (command == R2H_CMD_SEQ_DONE_RET) ||	   	   
+	   (command == R2H_CMD_SYS_INIT_RET) ||
 	   (command == R2H_CMD_FW_STATUS_RET))
 		nwait_time = MFC_WAIT_6_TIME;
 	else
-		nwait_time = MFC_WAIT_2_TIME;	
+		nwait_time = MFC_WAIT_2_TIME;
 
-	
+
 #if defined(MFC_REQUEST_TIME)
 	long sec, msec;
 #endif
@@ -132,13 +131,10 @@ int mfc_wait_for_done(mfc_wait_done_type command)
 
 #if defined(MFC_REQUEST_TIME)
 	do_gettimeofday(&mfc_wakeup_before);
-	if (mfc_wakeup_before.tv_usec - mfc_wakeup_after.tv_usec < 0)
-	{
+	if (mfc_wakeup_before.tv_usec - mfc_wakeup_after.tv_usec < 0) {
 		msec = 1000000 + mfc_wakeup_before.tv_usec - mfc_wakeup_after.tv_usec;
 		sec = mfc_wakeup_before.tv_sec - mfc_wakeup_after.tv_sec - 1;
-	}
-	else
-	{
+	} else {
 		msec = mfc_wakeup_before.tv_usec - mfc_wakeup_after.tv_usec;
 		sec = mfc_wakeup_before.tv_sec - mfc_wakeup_after.tv_sec;
 	}
@@ -146,10 +142,8 @@ int mfc_wait_for_done(mfc_wait_done_type command)
 
 #if defined(MFC_POLLING)
 	while (time_before(jiffies, timeo))
-	{
 		ret_val = READL(MFC_RISC2HOST_COMMAND) & 0x1ffff;
-		if (ret_val != 0)
-		{
+		if (ret_val != 0) {
 			WRITEL(0, MFC_RISC_HOST_INT);
 			WRITEL(0, MFC_RISC2HOST_COMMAND);
 			WRITEL(0xffff, MFC_SI_RTN_CHID);
@@ -160,26 +154,21 @@ int mfc_wait_for_done(mfc_wait_done_type command)
 	}
 
 	if (ret_val == 0)
-	   printk("MFC timeouted!\n");
+		printk(KERN_INFO "MFC timeouted!\n");
 #else
-	if (wait_event_timeout(mfc_wait_queue, irq_sync, nwait_time) == 0) 
-	{
+	if (wait_event_timeout(mfc_wait_queue, irq_sync, nwait_time) == 0) {
 		ret_val = 0;
-		mfc_err("Interrupt Time Out(Cmd: %d)	(Ver: 0x%08x) (0x64: 0x%08x) (0xF4: 0x%08x) (0x80: 0x%08x)\n", command, READL(0x58), READL(0x64), READL(0xF4),READL(0x80));
-		
-#if	ENABLE_MFC_INTERRUPT_DEBUG		// For MFC Interrupt Debugging.
+		mfc_err("Interrupt Time Out(Cmd: %d)	(Ver: 0x%08x) (0x64: 0x%08x) (0xF4: 0x%08x) (0x80: 0x%08x)\n", command, READL(0x58), READL(0x64), READL(0xF4), READL(0x80));
+
+#if ENABLE_MFC_INTERRUPT_DEBUG	/* For MFC Interrupt Debugging. */
 		mfc_interrupt_debug(10);
 #endif
 
 		mfc_int_type = 0;
 		return ret_val;
-	}
-	else if (mfc_int_type == R2H_CMD_DECODE_ERR_RET)
-	{
-		mfc_err("Decode Error Returned Disp Error Status(%d), Dec Error Status(%d)\n", mfc_disp_err_status, mfc_dec_err_status );
-	}
-	else if (command != mfc_int_type)
-	{
+	} else if (mfc_int_type == R2H_CMD_DECODE_ERR_RET) {
+		mfc_err("Decode Error Returned Disp Error Status(%d), Dec Error Status(%d)\n", mfc_disp_err_status, mfc_dec_err_status);
+	} else if (command != mfc_int_type) {
 		mfc_err("Interrupt Error Returned (%d) waiting for (%d)\n", mfc_int_type, command);
 	}
 #endif
@@ -189,13 +178,10 @@ int mfc_wait_for_done(mfc_wait_done_type command)
 
 #if defined(MFC_REQUEST_TIME)
 	do_gettimeofday(&mfc_wakeup_after);
-	if (mfc_wakeup_after.tv_usec - mfc_wakeup_before.tv_usec < 0)
-	{
+	if (mfc_wakeup_after.tv_usec - mfc_wakeup_before.tv_usec < 0) {
 		msec = 1000000 + mfc_wakeup_after.tv_usec - mfc_wakeup_before.tv_usec;
 		sec = mfc_wakeup_after.tv_sec - mfc_wakeup_before.tv_sec - 1;
-	}
-	else
-	{
+	} else {
 		msec = mfc_wakeup_after.tv_usec - mfc_wakeup_before.tv_usec;
 		sec = mfc_wakeup_after.tv_sec - mfc_wakeup_before.tv_sec;
 	}

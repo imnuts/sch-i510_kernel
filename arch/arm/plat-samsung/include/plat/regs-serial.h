@@ -33,14 +33,14 @@
 #define __ASM_ARM_REGS_SERIAL_H
 
 #define S3C24XX_VA_UART0      (S3C_VA_UART)
-#define S3C24XX_VA_UART1      (S3C_VA_UART + 0x400 )
-#define S3C24XX_VA_UART2      (S3C_VA_UART + 0x800 )
-#define S3C24XX_VA_UART3      (S3C_VA_UART + 0xC00 )
+#define S3C24XX_VA_UART1      (S3C_VA_UART + 0x4000 )
+#define S3C24XX_VA_UART2      (S3C_VA_UART + 0x8000 )
+#define S3C24XX_VA_UART3      (S3C_VA_UART + 0xC000 )
 
 #define S3C2410_PA_UART0      (S3C24XX_PA_UART)
-#define S3C2410_PA_UART1      (S3C24XX_PA_UART + 0x400 )
-#define S3C2410_PA_UART2      (S3C24XX_PA_UART + 0x800 )
-#define S3C2443_PA_UART3      (S3C24XX_PA_UART + 0xC00 )
+#define S3C2410_PA_UART1      (S3C24XX_PA_UART + 0x4000 )
+#define S3C2410_PA_UART2      (S3C24XX_PA_UART + 0x8000 )
+#define S3C2443_PA_UART3      (S3C24XX_PA_UART + 0xC000 )
 
 #define S3C2410_URXH	  (0x24)
 #define S3C2410_UTXH	  (0x20)
@@ -277,6 +277,8 @@ struct s3c2410_uartcfg {
 
 	struct s3c24xx_uart_clksrc *clocks;
 	unsigned int		    clocks_size;
+
+	void (*wake_peer)(struct uart_port *);
 };
 
 /* s3c24xx_uart_devs

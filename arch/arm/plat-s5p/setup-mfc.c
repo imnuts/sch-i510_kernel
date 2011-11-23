@@ -1,7 +1,7 @@
 /* arch/arm/plat-s5pv2xx/setup-mfc.c
  *
  * Copyright (c) 2010 Samsung Electronics Co., Ltd.
- * 		http://www.samsung.com
+ *		http://www.samsung.com
  *
  * MFC configuration
  *

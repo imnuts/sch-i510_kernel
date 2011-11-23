@@ -246,7 +246,7 @@ static struct s3c_adc_mach_info *s3c_adc_get_platdata(struct device *dev)
  * The functions for inserting/removing us as a module.
  */
 
-static int __init s3c_adc_probe(struct platform_device *pdev)
+static int __devinit s3c_adc_probe(struct platform_device *pdev)
 {
 	struct resource	*res;
 	struct device *dev;
@@ -352,15 +352,11 @@ static int s3c_adc_suspend(struct platform_device *dev, pm_message_t state)
 	adctsc = readl(base_addr + S3C_ADCTSC);
 	adcdly = readl(base_addr + S3C_ADCDLY);
 
-	clk_disable(adc_clock);
-
 	return 0;
 }
 
 static int s3c_adc_resume(struct platform_device *pdev)
 {
-	clk_enable(adc_clock);
-
 	writel(adccon, base_addr + S3C_ADCCON);
 	writel(adctsc, base_addr + S3C_ADCTSC);
 	writel(adcdly, base_addr + S3C_ADCDLY);

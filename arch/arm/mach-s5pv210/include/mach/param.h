@@ -86,4 +86,16 @@ extern void (*sec_get_param_value)(int idx, void *value);
 #define USB_SEL_MASK	(1 << 0)
 #define UART_SEL_MASK	(1 << 1)
 
+#define USB_PATH_MASK	(3 << 0)
+#define USB_PATH_MODEM	(0 << 0)
+#define USB_PATH_PDA	(1 << 0)
+#define USB_PATH_LTE	(2 << 0)
+
+#define UART_PATH_MASK	(3 << 2)
+#define UART_PATH_MODEM	(0 << 2)
+#define UART_PATH_PDA	(1 << 2)
+#define UART_PATH_LTE	(2 << 2)
+
+#define UART_DEBUG_MASK	(1 << 23)
+
 #endif	/* ASM_MACH_PARAM_H */

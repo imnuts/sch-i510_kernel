@@ -65,6 +65,7 @@ static struct s3c2410_uartcfg smdk6442_uartcfgs[] __initdata = {
 };
 
 static struct platform_device *smdk6442_devices[] __initdata = {
+	&s5p6442_device_iis0,
 };
 
 static void __init smdk6442_map_io(void)
@@ -87,5 +88,5 @@ MACHINE_START(SMDK6442, "SMDK6442")
 	.init_irq	= s5p6442_init_irq,
 	.map_io		= smdk6442_map_io,
 	.init_machine	= smdk6442_machine_init,
-	.timer		= &s5p_systimer,
+	.timer		= &s3c24xx_timer,
 MACHINE_END

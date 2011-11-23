@@ -1,4 +1,4 @@
-/*
+﻿/*
  * wm8994_def.h  --  WM8994 ALSA Soc Audio driver
  *
  * Copyright 2010 Samsung Electronics.
@@ -2505,10 +2505,6 @@
 #define WM8994_AIF2DAC_BOOST_MASK               0x0C00  /* AIF2DAC_BOOST - [11:10] */
 #define WM8994_AIF2DAC_BOOST_SHIFT                  10  /* AIF2DAC_BOOST - [11:10] */
 #define WM8994_AIF2DAC_BOOST_WIDTH                   2  /* AIF2DAC_BOOST - [11:10] */
-#define WM8994_AIF2_MONO			0x0100  /* AIF2_MONO */
-#define WM8994_AIF2_MONO_MASK			0x0100  /* AIF2_MONO */
-#define WM8994_AIF2_MONO_SHIFT                  8  /* AIF2_MONO */
-#define WM8994_AIF2_MONO_WIDTH                  1  /* AIF2MONO */
 #define WM8994_AIF2DAC_COMP                     0x0010  /* AIF2DAC_COMP */
 #define WM8994_AIF2DAC_COMP_MASK                0x0010  /* AIF2DAC_COMP */
 #define WM8994_AIF2DAC_COMP_SHIFT                    4  /* AIF2DAC_COMP */
@@ -2724,7 +2720,7 @@
 /*
  * R1056 (0x420) - AIF1 DAC1 Filters (1)
  */
- #define WM8994_AIF1DAC1_UNMUTE                    0x0000  /* AIF1DAC1_MUTE */
+#define WM8994_AIF1DAC1_UNMUTE                  0x0000  /* AIF1DAC1_UNMUTE */
 #define WM8994_AIF1DAC1_MUTE                    0x0200  /* AIF1DAC1_MUTE */
 #define WM8994_AIF1DAC1_MUTE_MASK               0x0200  /* AIF1DAC1_MUTE */
 #define WM8994_AIF1DAC1_MUTE_SHIFT                   9  /* AIF1DAC1_MUTE */
@@ -3371,6 +3367,7 @@
 /*
  * R1312 (0x520) - AIF2 DAC Filters (1)
  */
+#define WM8994_AIF2DAC_UNMUTE                   0x0000  /* AIF2DAC_UNMUTE */
 #define WM8994_AIF2DAC_MUTE                     0x0200  /* AIF2DAC_MUTE */
 #define WM8994_AIF2DAC_MUTE_MASK                0x0200  /* AIF2DAC_MUTE */
 #define WM8994_AIF2DAC_MUTE_SHIFT                    9  /* AIF2DAC_MUTE */

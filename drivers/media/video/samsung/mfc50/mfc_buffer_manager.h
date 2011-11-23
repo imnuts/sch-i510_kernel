@@ -23,38 +23,34 @@
 #include "mfc_interface.h"
 #include "mfc_opr.h"
 
-#define MFC_MAX_PORT_NUM       2
+#define MFC_MAX_PORT_NUM 2
 
-/*================================================================================*/
-/*  Struct Definition                                                             */
-/*================================================================================*/
-typedef struct {
+/*  Struct Definition */
+struct mfc_alloc_mem  {
 	struct list_head list;     /* strcut list_head for alloc mem        */
 	unsigned int p_addr;       /* physical address                      */
 	unsigned char *v_addr;     /* virtual address                       */
 	unsigned char *u_addr;     /* virtual address for user mode process */
 	int size;                  /* memory size                           */
 	int inst_no;               /* instance no                           */
-} mfc_alloc_mem_t;
+};
 
 
-typedef struct {
+struct mfc_free_mem  {
 	struct list_head list;     /* struct list_head for free mem         */
 	unsigned int start_addr;   /* start address of free mem             */
 	unsigned int size;         /* size of free mem                      */
-} mfc_free_mem_t;
+};
 
 
-/*================================================================================*/
-/*  Function Prototype                                                            */
-/*================================================================================*/
+/* Function Prototype */
 void mfc_print_mem_list(void);
 int mfc_init_buffer(void);
 void mfc_merge_fragment(int inst_no);
 void mfc_release_all_buffer(int inst_no);
-void mfc_free_alloc_mem(mfc_alloc_mem_t *alloc_node, int port_no);
-MFC_ERROR_CODE mfc_release_buffer(unsigned char *u_addr);
-MFC_ERROR_CODE mfc_get_phys_addr(mfc_inst_ctx *mfc_ctx, mfc_args *args);
-MFC_ERROR_CODE mfc_allocate_buffer(mfc_inst_ctx *mfc_ctx, mfc_args *args, int port_no);
+void mfc_free_alloc_mem(struct mfc_alloc_mem *alloc_node, int port_no);
+enum mfc_error_code mfc_release_buffer(unsigned char *u_addr);
+enum mfc_error_code mfc_get_phys_addr(struct mfc_inst_ctx *mfc_ctx, union mfc_args *args);
+enum mfc_error_code mfc_allocate_buffer(struct mfc_inst_ctx *mfc_ctx, union mfc_args *args, int port_no);
 
 #endif /* _MFC_BUFFER_MANAGER_H_ */

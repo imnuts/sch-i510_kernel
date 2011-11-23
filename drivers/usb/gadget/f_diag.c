@@ -13,13 +13,10 @@
 
 #include <linux/kernel.h>
 #include <linux/device.h>
+#include <linux/usb/android_composite.h>
 
 #include "u_serial.h"
 #include "gadget_chips.h"
-
-#include "f_diag.h"  // by NN
-
-//#define DM_EP_TEST
 
 /*
  * This function packages a simple "generic serial" port with no real
@@ -43,9 +40,6 @@ struct f_diag {
 	struct diag_descs		fs;
 	struct diag_descs		hs;
 };
-
-
-static struct f_diag *_f_diag;
 
 static inline struct f_diag *func_to_diag(struct usb_function *f)
 {
@@ -146,11 +140,11 @@ static int diag_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 		gserial_disconnect(&diag->port);
 	} else {
 		DBG(cdev, "activate generic ttyGS%d\n", diag->port_num);
-		diag->port.in_desc = ep_choose(cdev->gadget,
-				diag->hs.in, diag->fs.in);
-		diag->port.out_desc = ep_choose(cdev->gadget,
-				diag->hs.out, diag->fs.out);
 	}
+        diag->port.in_desc = ep_choose(cdev->gadget,
+                        diag->hs.in, diag->fs.in);
+        diag->port.out_desc = ep_choose(cdev->gadget,
+                        diag->hs.out, diag->fs.out);        
 	gserial_connect(&diag->port, diag->port_num);
 	return 0;
 }
@@ -254,6 +248,29 @@ diag_unbind(struct usb_configuration *c, struct usb_function *f)
 	kfree(func_to_diag(f));
 }
 
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
+static int diag_set_interface_id(struct usb_function *f, int intf_num, int index_num)
+{
+	int ret = 0;
+	struct f_diag		*diag = func_to_diag(f);
+        
+	if (gadget_is_dualspeed(f->config->cdev->gadget)) {
+                if (usb_change_interface_num(diag_hs_function,
+                	f->hs_descriptors, &diag_interface_desc,
+                	intf_num)) {
+                	diag->data_id = intf_num;
+                }
+	} else {
+                if (usb_change_interface_num(diag_fs_function,
+                	f->descriptors, &diag_interface_desc,
+                	intf_num)) {
+                	diag->data_id = intf_num;
+                }
+	}
+	return ret;
+}
+#endif
+
 /**
  * diag_bind_config - add a generic serial function to a configuration
  * @c: the configuration to support the serial instance
@@ -270,6 +287,8 @@ int __init diag_bind_config(struct usb_configuration *c, u8 port_num)
 {
 	struct f_diag	*diag;
 	int		status;
+
+	printk(KERN_INFO "diag_bind_config\n");
 
 	/* REVISIT might want instance-specific strings to help
 	 * distinguish instances ...
@@ -296,8 +315,9 @@ int __init diag_bind_config(struct usb_configuration *c, u8 port_num)
 	diag->port.func.unbind = diag_unbind;
 	diag->port.func.set_alt = diag_set_alt;
 	diag->port.func.disable = diag_disable;
-
-	_f_diag=diag; //by NN 08.24
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
+        diag->port.func.set_intf_num = diag_set_interface_id;
+#endif        
 
 	status = usb_add_function(c, &diag->port.func);
 	if (status)
@@ -305,115 +325,25 @@ int __init diag_bind_config(struct usb_configuration *c, u8 port_num)
 	return status;
 }
 
-//changed by NN for adding DIAG 08.24 +
-int __init diag_function_add(struct usb_configuration *c)
+int diag_function_bind_config(struct usb_configuration *c)
 {
-	int ret;
-	
-	printk(KERN_INFO "diag_function_add\n");
-
-	ret = diag_bind_config(c, 1);
-	if (ret) {
-		printk("[%s] Fail to gserial_setup()\n", __func__);
-		gserial_cleanup();
-		return ret;
-	}
-
+	int ret = diag_bind_config(c, 1);
+	/*
+	if (ret == 0)
+		gserial_setup(c->cdev->gadget, 1);
+	*/
 	return ret;
 }
-//changed by NN for adding DIAG 08.24 -
 
-int diag_function_config_changed(struct usb_composite_dev *cdev,
-	struct usb_configuration *c)
+static struct android_usb_function diag_function = {
+	.name = "diag",
+	.bind_config = diag_function_bind_config,
+};
+
+static int __init init(void)
 {
-
-	struct f_diag	*diag=_f_diag;
-	int ret, status;
-#ifdef DM_EP_TEST
-	struct usb_ep		*ep;
-#endif
-	printk(KERN_INFO "diag_function_config_changed\n");
-
-	//diag->port.func.descriptors = diag_fs_function;
-	//diag->port.func.hs_descriptors = diag_hs_function;
-	diag->port.func.bind = NULL;
-
-	ret = usb_add_function(c, &diag->port.func);
-	if (ret)
-		printk("usb_add_function failed\n");
-
-
-	/* allocate instance-specific interface IDs, and patch descriptors */
-	status = usb_interface_id(c, &diag->port.func);
-	if (status < 0)
-		goto fail2;
-	diag->data_id = status;
-
-	diag_interface_desc.bInterfaceNumber = status;
-
-#ifdef DM_EP_TEST
-	/* allocate instance-specific endpoints */
-	ep = usb_ep_autoconfig_realloc(cdev->gadget, &diag_fs_in_desc);
-	if (!ep)
-		goto fail2;
-	diag->port.in = ep;
-	ep->driver_data = cdev; /* claim */
-
-	ep = usb_ep_autoconfig_realloc(cdev->gadget, &diag_fs_out_desc);
-	if (!ep)
-		goto fail2;
-	diag->port.out = ep;
-	ep->driver_data = cdev; /* claim */
-
-	printk("[%s] EP Realloc  in =0x%x , out =0x%x \n", __func__,diag->port.in ,diag->port.out );
-
-	/* copy descriptors, and track endpoint copies */
-	diag->port.func.descriptors = usb_copy_descriptors_realloc(diag_fs_function);
-	if (!diag->port.func.descriptors)
-		goto fail2;
-
-	diag->fs.in = usb_find_endpoint_realloc(diag_fs_function,
-			diag->port.func.descriptors, &diag_fs_in_desc);
-	diag->fs.out = usb_find_endpoint_realloc(diag_fs_function,
-			diag->port.func.descriptors, &diag_fs_out_desc);
-
-
-	/* support all relevant hardware speeds... we expect that when
-	 * hardware is dual speed, all bulk-capable endpoints work at
-	 * both speeds
-	 */
-	if (gadget_is_dualspeed(cdev->gadget)) {
-		diag_hs_in_desc.bEndpointAddress =
-				diag_fs_in_desc.bEndpointAddress;
-		diag_hs_out_desc.bEndpointAddress =
-				diag_fs_out_desc.bEndpointAddress;
-
-		/* copy descriptors, and track endpoint copies */
-		diag->port.func.hs_descriptors = usb_copy_descriptors_realloc(diag_hs_function);
-
-		diag->hs.in = usb_find_endpoint_realloc(diag_hs_function,
-				diag->port.func.hs_descriptors, &diag_hs_in_desc);
-		diag->hs.out = usb_find_endpoint_realloc(diag_hs_function,
-				diag->port.func.hs_descriptors, &diag_hs_out_desc);
-	}
-#else
-	printk("[%s] Skip EP Realloc   in =0x%x , out =0x%x \n", __func__,diag->port.in ,diag->port.out );
-
-#endif
-
-return 0;
-	
-fail2:
-
-	/* we might as well release our claims on endpoints */
-	if (diag->port.out)
-		diag->port.out->driver_data = NULL;
-	if (diag->port.in)
-		diag->port.in->driver_data = NULL;
-
-	ERROR(cdev, "%s: can't bind, err %d\n", diag->port.func.name, status);
-
-	return status;
-	
+	printk(KERN_INFO "f_diag init\n");
+	android_register_function(&diag_function);
+	return 0;
 }
-
+module_init(init);

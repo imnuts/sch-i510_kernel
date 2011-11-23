@@ -10,7 +10,7 @@ obj-m				:=
 obj-n				:=
 obj-				:=
 
-obj-$(CONFIG_VIDEO_G2D) += fimg2d3x.o
+obj-$(CONFIG_VIDEO_G2D) += fimg2d_3x.o
 
 ifeq ($(CONFIG_VIDEO_G2D_DEBUG),y)
 EXTRA_CFLAGS += -DDEBUG

@@ -18,6 +18,9 @@
 #include <mach/regs-clock.h>
 #include "regs/regs-cec.h"
 
+#include <linux/slab.h>
+#include <linux/mm.h>
+
 #include "../cec.h"
 
 #ifdef CECDEBUG

@@ -2,6 +2,7 @@
  *
  * Copyright (c) 2010 Samsung Electronics Co., Ltd.
  * 		http://www.samsung.com/
+ *
  * S5PV210 - Platform header file for MIPI-CSI2 driver
  *
  * This program is free software; you can redistribute it and/or modify
@@ -9,8 +10,8 @@
  * published by the Free Software Foundation.
  */
 
-#ifndef _CSIS_H
-#define _CSIS_H
+#ifndef __ASM_PLAT_CSIS_H
+#define __ASM_PLAT_CSIS_H __FILE__
 
 struct platform_device;
 
@@ -27,5 +28,4 @@ extern void s3c_csis_set_platdata(struct s3c_platform_csis *csis);
 extern void s3c_csis_cfg_gpio(void);
 extern void s3c_csis_cfg_phy_global(int on);
 
-#endif /* _CSIS_H */
-
+#endif /* __ASM_PLAT_CSIS_H */

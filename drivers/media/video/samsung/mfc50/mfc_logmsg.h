@@ -22,7 +22,7 @@
 	do {                                            \
 		printk(KERN_DEBUG                           \
 			"%s: " fmt, __func__, ##__VA_ARGS__);   \
-	} while(0)
+	} while (0)
 
 #define MFC_ERROR(fmt, ...)                         \
 	do {                                            \
@@ -54,12 +54,8 @@
 #define mfc_debug_L0(fmt, ...)     MFC_INFO(fmt, ##__VA_ARGS__)
 #else
 #define mfc_debug(fmt, ...)
-#define mfc_debug_L0(fmt, ...) 
+#define mfc_debug_L0(fmt, ...)
 #endif
-
-//#define DEBUG_LEVEL_0				0
-//#define DEBUG_LEVEL_1				1
-
 
 #if	defined(DEBUG_LEVEL_0)
 #define mfc_debug_L0(fmt, ...)     MFC_INFO(fmt, ##__VA_ARGS__)

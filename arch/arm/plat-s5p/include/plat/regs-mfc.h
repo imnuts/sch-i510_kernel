@@ -138,8 +138,8 @@
 #define MFC_SI_CH0_ES_ADDR            MFC_REG(0x2044) /* start addr of stream buf                     */
 #define MFC_SI_CH0_ES_DEC_UNIT_SIZE   MFC_REG(0x2048) /* size of stream buf                           */
 #define MFC_SI_CH0_DESC_ADDR          MFC_REG(0x204c) /* addr of descriptor buf                       */
-#define MFC_SI_CH0_DIVX311_VRESOL     MFC_REG(0x2050) /* horizontal resolution                        */
-#define MFC_SI_CH0_DIVX311_HRESOL     MFC_REG(0x2054) /* vertical resolution                          */
+#define MFC_SI_CH0_FIMV1_VRESOL       MFC_REG(0x2050) /* horizontal resolution                        */
+#define MFC_SI_CH0_FIMV1_HRESOL       MFC_REG(0x2054) /* vertical resolution                          */
 #define MFC_SI_CH0_CPB_SIZE           MFC_REG(0x2058) /* max size of coded pic. buf                   */
 #define MFC_SI_CH0_DESC_SIZE          MFC_REG(0x205c) /* max size of descriptor buf                   */
 #define MFC_SI_CH0_RELEASE_BUFFER     MFC_REG(0x2060) /* specifices the availability of each DPB      */
@@ -150,8 +150,8 @@
 #define MFC_SI_CH1_ES_ADDR            MFC_REG(0x2084) /* start addr of stream buf                     */
 #define MFC_SI_CH1_ES_DEC_UNIT_SIZE   MFC_REG(0x2088) /* size of stream buf                           */
 #define MFC_SI_CH1_DESC_ADDR          MFC_REG(0x208c) /* addr of descriptor buf                       */
-#define MFC_SI_CH1_DIVX311_VRESOL     MFC_REG(0x2090) /* horizontal resolution                        */
-#define MFC_SI_CH1_DIVX311_HRESOL     MFC_REG(0x2094) /* vertical resolution                          */
+#define MFC_SI_CH1_FIMV1_VRESOL       MFC_REG(0x2090) /* horizontal resolution                        */
+#define MFC_SI_CH1_FIMV1_HRESOL       MFC_REG(0x2094) /* vertical resolution                          */
 #define MFC_SI_CH1_CPB_SIZE           MFC_REG(0x2098) /* max size of coded pic. buf                   */
 #define MFC_SI_CH1_DESC_SIZE          MFC_REG(0x209c) /* max size of descriptor buf                   */
 #define MFC_SI_CH1_RELEASE_BUFFER     MFC_REG(0x20a0) /* specifices the availability of each DPB      */

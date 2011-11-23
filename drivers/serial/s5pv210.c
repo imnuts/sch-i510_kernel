@@ -32,7 +32,7 @@ static int s5pv210_serial_setsource(struct uart_port *port,
 
 	if (strcmp(clk->name, "pclk") == 0)
 		ucon &= ~S5PV210_UCON_CLKMASK;
-	else if (strcmp(clk->name, "sclk_uart") == 0)
+	else if (strcmp(clk->name, "sclk") == 0)
 		ucon |= S5PV210_UCON_CLKMASK;
 	else {
 		printk(KERN_ERR "unknown clock source %s\n", clk->name);
@@ -56,7 +56,7 @@ static int s5pv210_serial_getsource(struct uart_port *port,
 		clk->name = "pclk";
 		break;
 	case S5PV210_UCON_UCLK:
-		clk->name = "sclk_uart";
+		clk->name = "sclk";
 		break;
 	}
 
@@ -119,7 +119,7 @@ static int s5p_serial_probe(struct platform_device *pdev)
 	return s3c24xx_serial_probe(pdev, s5p_uart_inf[pdev->id]);
 }
 
-static struct platform_driver s5p_serial_drv = {
+static struct platform_driver s5p_serial_driver = {
 	.probe		= s5p_serial_probe,
 	.remove		= __devexit_p(s3c24xx_serial_remove),
 	.driver		= {
@@ -130,19 +130,19 @@ static struct platform_driver s5p_serial_drv = {
 
 static int __init s5pv210_serial_console_init(void)
 {
-	return s3c24xx_serial_initconsole(&s5p_serial_drv, s5p_uart_inf);
+	return s3c24xx_serial_initconsole(&s5p_serial_driver, s5p_uart_inf);
 }
 
 console_initcall(s5pv210_serial_console_init);
 
 static int __init s5p_serial_init(void)
 {
-	return s3c24xx_serial_init(&s5p_serial_drv, *s5p_uart_inf);
+	return s3c24xx_serial_init(&s5p_serial_driver, *s5p_uart_inf);
 }
 
 static void __exit s5p_serial_exit(void)
 {
-	platform_driver_unregister(&s5p_serial_drv);
+	platform_driver_unregister(&s5p_serial_driver);
 }
 
 module_init(s5p_serial_init);

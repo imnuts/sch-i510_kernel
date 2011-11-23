@@ -39,7 +39,11 @@
 
 #define GPT_HEADER_SIGNATURE 0x5452415020494645ULL
 #define GPT_HEADER_REVISION_V1 0x00010000
+#if defined(CONFIG_MACH_VIPER) || defined(CONFIG_MACH_CHIEF)
+#define GPT_PRIMARY_PARTITION_TABLE_LBA 25 
+#else
 #define GPT_PRIMARY_PARTITION_TABLE_LBA 1
+#endif
 
 #define PARTITION_SYSTEM_GUID \
     EFI_GUID( 0xC12A7328, 0xF81F, 0x11d2, \
@@ -110,7 +114,7 @@ typedef struct _legacy_mbr {
 } __attribute__ ((packed)) legacy_mbr;
 
 /* Functions */
-extern int efi_partition(struct parsed_partitions *state, struct block_device *bdev);
+extern int efi_partition(struct parsed_partitions *state);
 
 #endif
 

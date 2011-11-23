@@ -23,6 +23,7 @@
 
 #include <linux/kernel.h>
 #include <linux/fs.h>
+#include <linux/slab.h>
 #include <linux/errno.h>
 #include <linux/hdreg.h>
 #include <linux/kdev_t.h>
@@ -85,11 +86,7 @@ static void mmc_blk_put(struct mmc_blk_data *md)
 	mutex_lock(&open_lock);
 	md->usage--;
 	if (md->usage == 0) {
-		int devmaj = MAJOR(disk_devt(md->disk));
-		int devidx = MINOR(disk_devt(md->disk)) >> MMC_SHIFT;
-
-		if (!devmaj)
-			devidx = md->disk->first_minor >> MMC_SHIFT;
+		int devidx = md->disk->first_minor >> MMC_SHIFT;
 
 		blk_cleanup_queue(md->queue.queue);
 
@@ -267,13 +264,14 @@ mmc_blk_set_blksize(struct mmc_blk_data *md, struct mmc_card *card)
 	return 0;
 }
 
-
+#define BUSY_TIMEOUT_MS (16 * 1024)
 static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 {
 	struct mmc_blk_data *md = mq->data;
 	struct mmc_card *card = md->queue.card;
 	struct mmc_blk_request brq;
 	int ret = 1, disable_multi = 0;
+	unsigned long timeout = 0;
 
 #ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
 	if (mmc_bus_needs_resume(card->host)) {
@@ -370,21 +368,7 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 		mmc_wait_for_req(card->host, &brq.mrq);
 
 		mmc_queue_bounce_post(mq);
-#if defined(CONFIG_ARIES_NTT) // Modify NTTS1
-#ifdef	MMC_SECTOR_DEBUG_JAPAN_SYSTEM
-		if(!strcmp(md->disk->disk_name, "mmcblk0")) // mmcblk0 : movinand , mmcblk1 : sdcard
-		{
-			printk(" ==================================== \n ");
-			printk("%s  ,  %s ", md->disk->disk_name, __func__);
-			if(rq_data_dir(req) == READ)
-				printk(" :: READ  \n ");
-			else
-				printk(" :: \t WRITE \n ");
-			printk( "\t pos_sec [ %x ], nr_sector [ %x ] \n",
-					(unsigned int)blk_rq_pos(req), (unsigned int)blk_rq_sectors(req));
-		}
-#endif
-#endif
+
 		/*
 		 * Check for errors here, but don't jump to cmd_err
 		 * until later as we need to wait for the card to leave
@@ -393,7 +377,7 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 		if (brq.cmd.error || brq.data.error || brq.stop.error) {
 			if (brq.data.blocks > 1 && rq_data_dir(req) == READ) {
 				/* Redo read one sector at a time */
-				printk(KERN_DEBUG "%s: retrying using single "
+				printk(KERN_WARNING "%s: retrying using single "
 				       "block read\n", req->rq_disk->disk_name);
 				if(brq.data.error == -EILSEQ) {
 					mq->rx_retries++;
@@ -439,7 +423,9 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 			       brq.stop.resp[0], status);
 		}
 
-		if (!mmc_host_is_spi(card->host) && rq_data_dir(req) != READ) {
+		if (!mmc_host_is_spi(card->host) && rq_data_dir(req) != READ &&
+				!brq.cmd.error && !brq.data.error && !brq.stop.error) {
+			timeout = jiffies + msecs_to_jiffies(BUSY_TIMEOUT_MS);
 			do {
 				int err;
 
@@ -452,13 +438,23 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 					       req->rq_disk->disk_name, err);
 					goto cmd_err;
 				}
+
+				if (cmd.resp[0] & R1_ERROR_MASK) {
+					printk(KERN_ERR "%s: card err %#x\n",
+							req->rq_disk->disk_name,
+							cmd.resp[0]);
+					goto cmd_err;
+				}
 				/*
 				 * Some cards mishandle the status bits,
 				 * so make sure to check both the busy
 				 * indication and the card state.
 				 */
-			} while (!(cmd.resp[0] & R1_READY_FOR_DATA) ||
-				(R1_CURRENT_STATE(cmd.resp[0]) == 7));
+				if ((cmd.resp[0] & R1_READY_FOR_DATA) &&
+						(R1_CURRENT_STATE(cmd.resp[0]) != 7))
+					break;
+			} while (time_before(jiffies, timeout));
+			/* Ignore timeout out */
 
 #if 0
 			if (cmd.resp[0] & ~0x00000900)
@@ -537,6 +533,15 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 		ret = __blk_end_request(req, -EIO, blk_rq_cur_bytes(req));
 	spin_unlock_irq(&md->lock);
 
+	card->err_count++;
+	if (card->err_count >= ERR_TRIGGER_REINIT) {
+		printk(KERN_DEBUG "%s: %s err_count = %d.\n", __func__, mmc_card_name(card), card->err_count);
+#if 0	/* It's for removing card if the card doesn't work */
+		printk(KERN_WARNING "%s: re-init the card due to error\n",
+				req->rq_disk->disk_name);
+		mmc_detect_change(card->host, 0);
+#endif
+	}
 	return 0;
 }
 
@@ -592,6 +597,7 @@ static struct mmc_blk_data *mmc_blk_alloc(struct mmc_card *card)
 	md->disk->private_data = md;
 	md->disk->queue = md->queue.queue;
 	md->disk->driverfs_dev = &card->dev;
+	md->disk->flags = GENHD_FL_EXT_DEVT;
 
 	/*
 	 * As discussed on lkml, GENHD_FL_REMOVABLE should:

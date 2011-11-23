@@ -25,12 +25,13 @@
 #define	MTP_DISABLE		2
 #define	MTP_CLEAR_HALT		3
 #define	MTP_WRITE_INT_DATA	4
-#define SET_MTP_USER_PID 5
-#define GET_SETUP_DATA 6
-#define SET_SETUP_DATA 7
+#define SET_MTP_USER_PID	5
+#define GET_SETUP_DATA		6
+#define SET_SETUP_DATA		7
+#define SEND_RESET_ACK		8
 #define SET_ZLP_DATA 		9
 #define GET_HIGH_FULL_SPEED 	10
-#define SIG_SETUP 44
+#define SIG_SETUP		44
 
 /*PIMA15740-2000 spec*/
 #define USB_PTPREQUEST_CANCELIO   0x64    /* Cancel request */
@@ -44,10 +45,8 @@
 
 int mtp_function_add(struct usb_configuration *c);
 int mtp_function_config_changed(struct usb_composite_dev *cdev,	struct usb_configuration *c);
-//int mtp_enable();
-
+int mtp_enable(void);
 void mtp_function_enable(int enable);
-
 
 struct usb_mtp_ctrlrequest {
 	struct usb_ctrlrequest	setup;

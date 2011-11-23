@@ -1,6 +1,6 @@
 #################################################
 # Makefile for TVOut for S5PC100
-# 2009 (C) Samsung Electronics
+# 2010 (C) Samsung Electronics
 # Author : sangpil moon <sangpil.moon@samsung.com>
 #################################################
 

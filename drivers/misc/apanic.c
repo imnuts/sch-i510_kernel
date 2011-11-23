@@ -592,7 +592,9 @@ DEFINE_SIMPLE_ATTRIBUTE(panic_dbg_fops, panic_dbg_get, panic_dbg_set, "%llu\n");
 
 int __init apanic_init(void)
 {
+#ifdef CONFIG_MTD
 	register_mtd_user(&mtd_panic_notifier);
+#endif
 	atomic_notifier_chain_register(&panic_notifier_list, &panic_blk);
 	debugfs_create_file("apanic", 0644, NULL, NULL, &panic_dbg_fops);
 	memset(&drv_ctx, 0, sizeof(drv_ctx));

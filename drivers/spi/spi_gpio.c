@@ -88,7 +88,7 @@ struct spi_gpio {
 
 /*----------------------------------------------------------------------*/
 
-static inline const struct spi_gpio_platform_data * __pure
+static inline const struct spi_gpio_platform_data *__pure
 spi_to_pdata(const struct spi_device *spi)
 {
 	const struct spi_bitbang	*bang;
@@ -120,26 +120,6 @@ static inline int getmiso(const struct spi_device *spi)
 		return 0;
 }
 
-static inline int getmosi(const struct spi_device *spi)
-{
-	if (gpio_is_valid(SPI_MOSI_GPIO))
-		return !!gpio_get_value(SPI_MOSI_GPIO);
-    else
-		return 0;
-}
-
-static inline void set_mosi_input(const struct spi_device *spi)
-{
-    if( gpio_direction_input(SPI_MOSI_GPIO) < 0)
-        dev_dbg(&spi->dev, "SPI_MOSI_GPIO direction change failed\n");
-}
-
-static inline void set_mosi_output(const struct spi_device *spi)
-{
-    if(gpio_direction_output(SPI_MOSI_GPIO,1) < 0)
-        dev_dbg(&spi->dev, "SPI_MOSI_GPIO direction change failed\n");
-}
-
 #undef pdata
 
 /*
@@ -150,8 +130,7 @@ static inline void set_mosi_output(const struct spi_device *spi)
  */
 #define spidelay(nsecs)	do {} while (0)
 
-#define	EXPAND_BITBANG_TXRX
-#include <linux/spi/spi_bitbang.h>
+#include "spi_bitbang_txrx.h"
 
 /*
  * These functions can leverage inline expansion of GPIO calls to shrink

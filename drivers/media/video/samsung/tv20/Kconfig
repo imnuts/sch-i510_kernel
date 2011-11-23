@@ -1,5 +1,5 @@
 #
-# Configuration for Post Porcessor
+# Configuration for TV-OUT/HDMI
 #
 
 config VIDEO_TV20
@@ -12,7 +12,7 @@ config VIDEO_TV20
 config HDMI_CEC
 	bool "HDMI CEC driver support."
 	depends on VIDEO_TV20 && CPU_S5PV210
-	default y
+	default n
 	---help---
 	  This is a HDMI CEC driver for Samsung SMDK_S5PV210
 	  Check dev node (major 10, minor 242)

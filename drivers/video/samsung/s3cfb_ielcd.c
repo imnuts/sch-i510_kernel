@@ -58,7 +58,7 @@ static char banner[] __initdata = KERN_INFO "S3C IELCD Driver, (c) 2010 Samsung 
 
 int s3c_ielcd_hw_init(void)
 {
-//	printk("IELCD  INIT ..........\n");
+	printk("IELCD  INIT ..........\n");
 
 	printk(banner);
 
@@ -74,7 +74,7 @@ int s3c_ielcd_hw_init(void)
                 return -ENOENT;
         }
 
-//	printk("IELCD  INIT SUCCESS Addr : 0x%p\n",s3c_ielcd_base);
+	printk("IELCD  INIT SUCCESS Addr : 0x%p\n",s3c_ielcd_base);
 
 	ielcd_fbdev = &ielcd_fb;
 

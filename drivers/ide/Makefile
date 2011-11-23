@@ -64,7 +64,6 @@ obj-$(CONFIG_BLK_DEV_SIIMAGE)		+= siimage.o
 obj-$(CONFIG_BLK_DEV_SIS5513)		+= sis5513.o
 obj-$(CONFIG_BLK_DEV_SL82C105)		+= sl82c105.o
 obj-$(CONFIG_BLK_DEV_SLC90E66)		+= slc90e66.o
-obj-$(CONFIG_BLK_DEV_IDE_S3C)		+= s3c-ide.o
 obj-$(CONFIG_BLK_DEV_TC86C001)		+= tc86c001.o
 obj-$(CONFIG_BLK_DEV_TRIFLEX)		+= triflex.o
 obj-$(CONFIG_BLK_DEV_TRM290)		+= trm290.o

@@ -428,7 +428,8 @@ static int __netlink_create(struct net *net, struct socket *sock,
 	return 0;
 }
 
-static int netlink_create(struct net *net, struct socket *sock, int protocol)
+static int netlink_create(struct net *net, struct socket *sock, int protocol,
+			  int kern)
 {
 	struct module *module = NULL;
 	struct mutex *cb_mutex;
@@ -454,8 +455,13 @@ static int netlink_create(struct net *net, struct socket *sock, int protocol)
 	if (nl_table[protocol].registered &&
 	    try_module_get(nl_table[protocol].module))
 		module = nl_table[protocol].module;
+	else
+		err = -EPROTONOSUPPORT;
 	cb_mutex = nl_table[protocol].cb_mutex;
 	netlink_unlock_table();
+
+	if (err < 0)
+		goto out;
 
 	err = __netlink_create(net, sock, cb_mutex, protocol);
 	if (err < 0)
@@ -497,7 +503,7 @@ static int netlink_release(struct socket *sock)
 
 	skb_queue_purge(&sk->sk_write_queue);
 
-	if (nlk->pid && !nlk->subscriptions) {
+	if (nlk->pid) {
 		struct netlink_notify n = {
 						.net = sock_net(sk),
 						.protocol = sk->sk_protocol,
@@ -539,7 +545,7 @@ static int netlink_autobind(struct socket *sock)
 	struct hlist_head *head;
 	struct sock *osk;
 	struct hlist_node *node;
-	s32 pid = current->tgid;
+	s32 pid = task_tgid_vnr(current);
 	int err;
 	static s32 rover = -4097;
 
@@ -677,6 +683,9 @@ static int netlink_connect(struct socket *sock, struct sockaddr *addr,
 	struct netlink_sock *nlk = nlk_sk(sk);
 	struct sockaddr_nl *nladdr = (struct sockaddr_nl *)addr;
 
+	if (alen < sizeof(addr->sa_family))
+		return -EINVAL;
+
 	if (addr->sa_family == AF_UNSPEC) {
 		sk->sk_state	= NETLINK_UNCONNECTED;
 		nlk->dst_pid	= 0;
@@ -707,7 +716,7 @@ static int netlink_getname(struct socket *sock, struct sockaddr *addr,
 {
 	struct sock *sk = sock->sk;
 	struct netlink_sock *nlk = nlk_sk(sk);
-	struct sockaddr_nl *nladdr = (struct sockaddr_nl *)addr;
+	DECLARE_SOCKADDR(struct sockaddr_nl *, nladdr, addr);
 
 	nladdr->nl_family = AF_NETLINK;
 	nladdr->nl_pad = 0;
@@ -969,6 +978,8 @@ struct netlink_broadcast_data {
 	int delivered;
 	gfp_t allocation;
 	struct sk_buff *skb, *skb2;
+	int (*tx_filter)(struct sock *dsk, struct sk_buff *skb, void *data);
+	void *tx_data;
 };
 
 static inline int do_one_broadcast(struct sock *sk,
@@ -1011,6 +1022,9 @@ static inline int do_one_broadcast(struct sock *sk,
 		p->failure = 1;
 		if (nlk->flags & NETLINK_BROADCAST_SEND_ERROR)
 			p->delivery_failure = 1;
+	} else if (p->tx_filter && p->tx_filter(sk, p->skb2, p->tx_data)) {
+		kfree_skb(p->skb2);
+		p->skb2 = NULL;
 	} else if (sk_filter(sk, p->skb2)) {
 		kfree_skb(p->skb2);
 		p->skb2 = NULL;
@@ -1029,8 +1043,10 @@ out:
 	return 0;
 }
 
-int netlink_broadcast(struct sock *ssk, struct sk_buff *skb, u32 pid,
-		      u32 group, gfp_t allocation)
+int netlink_broadcast_filtered(struct sock *ssk, struct sk_buff *skb, u32 pid,
+	u32 group, gfp_t allocation,
+	int (*filter)(struct sock *dsk, struct sk_buff *skb, void *data),
+	void *filter_data)
 {
 	struct net *net = sock_net(ssk);
 	struct netlink_broadcast_data info;
@@ -1050,6 +1066,8 @@ int netlink_broadcast(struct sock *ssk, struct sk_buff *skb, u32 pid,
 	info.allocation = allocation;
 	info.skb = skb;
 	info.skb2 = NULL;
+	info.tx_filter = filter;
+	info.tx_data = filter_data;
 
 	/* While we sleep in clone, do not allow to change socket list */
 
@@ -1074,6 +1092,14 @@ int netlink_broadcast(struct sock *ssk, struct sk_buff *skb, u32 pid,
 	}
 	return -ESRCH;
 }
+EXPORT_SYMBOL(netlink_broadcast_filtered);
+
+int netlink_broadcast(struct sock *ssk, struct sk_buff *skb, u32 pid,
+		      u32 group, gfp_t allocation)
+{
+	return netlink_broadcast_filtered(ssk, skb, pid, group, allocation,
+		NULL, NULL);
+}
 EXPORT_SYMBOL(netlink_broadcast);
 
 struct netlink_set_err_data {
@@ -1087,21 +1113,27 @@ static inline int do_one_set_err(struct sock *sk,
 				 struct netlink_set_err_data *p)
 {
 	struct netlink_sock *nlk = nlk_sk(sk);
+	int ret = 0;
 
 	if (sk == p->exclude_sk)
 		goto out;
 
-	if (sock_net(sk) != sock_net(p->exclude_sk))
+	if (!net_eq(sock_net(sk), sock_net(p->exclude_sk)))
 		goto out;
 
 	if (nlk->pid == p->pid || p->group - 1 >= nlk->ngroups ||
 	    !test_bit(p->group - 1, nlk->groups))
 		goto out;
 
+	if (p->code == ENOBUFS && nlk->flags & NETLINK_RECV_NO_ENOBUFS) {
+		ret = 1;
+		goto out;
+	}
+
 	sk->sk_err = p->code;
 	sk->sk_error_report(sk);
 out:
-	return 0;
+	return ret;
 }
 
 /**
@@ -1110,12 +1142,16 @@ out:
  * @pid: the PID of a process that we want to skip (if any)
  * @groups: the broadcast group that will notice the error
  * @code: error code, must be negative (as usual in kernelspace)
+ *
+ * This function returns the number of broadcast listeners that have set the
+ * NETLINK_RECV_NO_ENOBUFS socket option.
  */
-void netlink_set_err(struct sock *ssk, u32 pid, u32 group, int code)
+int netlink_set_err(struct sock *ssk, u32 pid, u32 group, int code)
 {
 	struct netlink_set_err_data info;
 	struct hlist_node *node;
 	struct sock *sk;
+	int ret = 0;
 
 	info.exclude_sk = ssk;
 	info.pid = pid;
@@ -1126,9 +1162,10 @@ void netlink_set_err(struct sock *ssk, u32 pid, u32 group, int code)
 	read_lock(&nl_table_lock);
 
 	sk_for_each_bound(sk, node, &nl_table[ssk->sk_protocol].mc_list)
-		do_one_set_err(sk, &info);
+		ret += do_one_set_err(sk, &info);
 
 	read_unlock(&nl_table_lock);
+	return ret;
 }
 EXPORT_SYMBOL(netlink_set_err);
 
@@ -1363,7 +1400,7 @@ static int netlink_recvmsg(struct kiocb *kiocb, struct socket *sock,
 	struct netlink_sock *nlk = nlk_sk(sk);
 	int noblock = flags&MSG_DONTWAIT;
 	size_t copied;
-	struct sk_buff *skb, *frag __maybe_unused = NULL;
+	struct sk_buff *skb, *data_skb;
 	int err;
 
 	if (flags&MSG_OOB)
@@ -1375,45 +1412,35 @@ static int netlink_recvmsg(struct kiocb *kiocb, struct socket *sock,
 	if (skb == NULL)
 		goto out;
 
+	data_skb = skb;
+
 #ifdef CONFIG_COMPAT_NETLINK_MESSAGES
 	if (unlikely(skb_shinfo(skb)->frag_list)) {
-		bool need_compat = !!(flags & MSG_CMSG_COMPAT);
-
 		/*
-		 * If this skb has a frag_list, then here that means that
-		 * we will have to use the frag_list skb for compat tasks
-		 * and the regular skb for non-compat tasks.
+		 * If this skb has a frag_list, then here that means that we
+		 * will have to use the frag_list skb's data for compat tasks
+		 * and the regular skb's data for normal (non-compat) tasks.
 		 *
-		 * The skb might (and likely will) be cloned, so we can't
-		 * just reset frag_list and go on with things -- we need to
-		 * keep that. For the compat case that's easy -- simply get
-		 * a reference to the compat skb and free the regular one
-		 * including the frag. For the non-compat case, we need to
-		 * avoid sending the frag to the user -- so assign NULL but
-		 * restore it below before freeing the skb.
+		 * If we need to send the compat skb, assign it to the
+		 * 'data_skb' variable so that it will be used below for data
+		 * copying. We keep 'skb' for everything else, including
+		 * freeing both later.
 		 */
-		if (need_compat) {
-			struct sk_buff *compskb = skb_shinfo(skb)->frag_list;
-			skb_get(compskb);
-			kfree_skb(skb);
-			skb = compskb;
-		} else {
-			frag = skb_shinfo(skb)->frag_list;
-			skb_shinfo(skb)->frag_list = NULL;
-		}
+		if (flags & MSG_CMSG_COMPAT)
+			data_skb = skb_shinfo(skb)->frag_list;
 	}
 #endif
 
 	msg->msg_namelen = 0;
 
-	copied = skb->len;
+	copied = data_skb->len;
 	if (len < copied) {
 		msg->msg_flags |= MSG_TRUNC;
 		copied = len;
 	}
 
-	skb_reset_transport_header(skb);
-	err = skb_copy_datagram_iovec(skb, 0, msg->msg_iov, copied);
+	skb_reset_transport_header(data_skb);
+	err = skb_copy_datagram_iovec(data_skb, 0, msg->msg_iov, copied);
 
 	if (msg->msg_name) {
 		struct sockaddr_nl *addr = (struct sockaddr_nl *)msg->msg_name;
@@ -1433,11 +1460,7 @@ static int netlink_recvmsg(struct kiocb *kiocb, struct socket *sock,
 	}
 	siocb->scm->creds = *NETLINK_CREDS(skb);
 	if (flags & MSG_TRUNC)
-		copied = skb->len;
-
-#ifdef CONFIG_COMPAT_NETLINK_MESSAGES
-	skb_shinfo(skb)->frag_list = frag;
-#endif
+		copied = data_skb->len;
 
 	skb_free_datagram(sk, skb);
 
@@ -1972,12 +1995,12 @@ static int netlink_seq_show(struct seq_file *seq, void *v)
 	if (v == SEQ_START_TOKEN)
 		seq_puts(seq,
 			 "sk       Eth Pid    Groups   "
-			 "Rmem     Wmem     Dump     Locks     Drops\n");
+			 "Rmem     Wmem     Dump     Locks     Drops     Inode\n");
 	else {
 		struct sock *s = v;
 		struct netlink_sock *nlk = nlk_sk(s);
 
-		seq_printf(seq, "%p %-3d %-6d %08x %-8d %-8d %p %-8d %-8d\n",
+		seq_printf(seq, "%p %-3d %-6d %08x %-8d %-8d %p %-8d %-8d %-8lu\n",
 			   s,
 			   s->sk_protocol,
 			   nlk->pid,
@@ -1986,7 +2009,8 @@ static int netlink_seq_show(struct seq_file *seq, void *v)
 			   sk_wmem_alloc_get(s),
 			   nlk->cb,
 			   atomic_read(&s->sk_refcnt),
-			   atomic_read(&s->sk_drops)
+			   atomic_read(&s->sk_drops),
+			   sock_i_ino(s)
 			);
 
 	}
@@ -2050,7 +2074,7 @@ static const struct proto_ops netlink_ops = {
 	.sendpage =	sock_no_sendpage,
 };
 
-static struct net_proto_family netlink_family_ops = {
+static const struct net_proto_family netlink_family_ops = {
 	.family = PF_NETLINK,
 	.create = netlink_create,
 	.owner	= THIS_MODULE,	/* for consistency 8) */

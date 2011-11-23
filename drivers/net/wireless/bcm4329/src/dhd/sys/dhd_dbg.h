@@ -21,26 +21,27 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_dbg.h,v 1.5.6.2.4.2.14.9 2010/04/20 05:27:52 Exp $
+ * $Id: dhd_dbg.h,v 1.5.6.2.4.2.14.10 2010/05/21 21:49:38 Exp $
  */
 
 #ifndef _dhd_dbg_
 #define _dhd_dbg_
 
-#if 0 || (defined DHD_DEBUG)
+#ifdef DHD_DEBUG
 
 #define DHD_ERROR(args)	    do {if (dhd_msg_level & DHD_ERROR_VAL) printf args;} while (0)
 #define DHD_TRACE(args)		do {if (dhd_msg_level & DHD_TRACE_VAL) printf args;} while (0)
-#define DHD_INFO(args)		do {if (dhd_msg_level & DHD_INFO_VAL) printf args;} while (0)
-#define DHD_DATA(args)		do {if (dhd_msg_level & DHD_DATA_VAL) printf args;} while (0)
-#define DHD_CTL(args)		do {if (dhd_msg_level & DHD_CTL_VAL) printf args;} while (0)
+#define DHD_INFO(args)		do {if (dhd_msg_level & DHD_INFO_VAL)  printf args;} while (0)
+#define DHD_DATA(args)		do {if (dhd_msg_level & DHD_DATA_VAL)  printf args;} while (0)
+#define DHD_CTL(args)		do {if (dhd_msg_level & DHD_CTL_VAL)   printf args;} while (0)
 #define DHD_TIMER(args)		do {if (dhd_msg_level & DHD_TIMER_VAL) printf args;} while (0)
-#define DHD_HDRS(args)		do {if (dhd_msg_level & DHD_HDRS_VAL) printf args;} while (0)
+#define DHD_HDRS(args)		do {if (dhd_msg_level & DHD_HDRS_VAL)  printf args;} while (0)
 #define DHD_BYTES(args)		do {if (dhd_msg_level & DHD_BYTES_VAL) printf args;} while (0)
-#define DHD_INTR(args)		do {if (dhd_msg_level & DHD_INTR_VAL) printf args;} while (0)
-#define DHD_GLOM(args)		do {if (dhd_msg_level & DHD_GLOM_VAL) printf args;} while (0)
+#define DHD_INTR(args)		do {if (dhd_msg_level & DHD_INTR_VAL)  printf args;} while (0)
+#define DHD_GLOM(args)		do {if (dhd_msg_level & DHD_GLOM_VAL)  printf args;} while (0)
 #define DHD_EVENT(args)		do {if (dhd_msg_level & DHD_EVENT_VAL) printf args;} while (0)
-#define DHD_BTA(args)		do {if (dhd_msg_level & DHD_BTA_VAL) printf args;} while (0)
+#define DHD_BTA(args)		do {if (dhd_msg_level & DHD_BTA_VAL)   printf args;} while (0)
+#define DHD_ISCAN(args)		do {if (dhd_msg_level & DHD_ISCAN_VAL) printf args;} while (0)
 
 #define DHD_ERROR_ON()		(dhd_msg_level & DHD_ERROR_VAL)
 #define DHD_TRACE_ON()		(dhd_msg_level & DHD_TRACE_VAL)
@@ -54,6 +55,7 @@
 #define DHD_GLOM_ON()		(dhd_msg_level & DHD_GLOM_VAL)
 #define DHD_EVENT_ON()		(dhd_msg_level & DHD_EVENT_VAL)
 #define DHD_BTA_ON()		(dhd_msg_level & DHD_BTA_VAL)
+#define DHD_ISCAN_ON()		(dhd_msg_level & DHD_ISCAN_VAL)
 
 #else /* (defined BCMDBG) || (defined DHD_DEBUG) */
 
@@ -69,6 +71,7 @@
 #define DHD_GLOM(args)
 #define DHD_EVENT(args)
 #define DHD_BTA(args)
+#define DHD_ISCAN(args)
 
 #define DHD_ERROR_ON()		0
 #define DHD_TRACE_ON()		0
@@ -82,7 +85,7 @@
 #define DHD_GLOM_ON()		0
 #define DHD_EVENT_ON()		0
 #define DHD_BTA_ON()		0
-
+#define DHD_ISCAN_ON()		0
 #endif 
 
 #define DHD_LOG(args)

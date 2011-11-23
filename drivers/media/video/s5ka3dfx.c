@@ -1,6 +1,6 @@
 /*
  * Driver for S5KA3DFX (UXGA camera) from Samsung Electronics
- * 
+ *
  * 1/4" 2.0Mp CMOS Image Sensor SoC with an Embedded Image Processor
  *
  * Copyright (C) 2009, Jinsung Yang <jsgood.yang@samsung.com>
@@ -24,27 +24,25 @@
 #endif
 
 #include "s5ka3dfx.h"
-#include <mach/gpio.h>
-#include <plat/gpio-cfg.h>
-#include <mach/regs-gpio.h>
-#include <mach/max8998_function.h>
 
-//#define VGA_CAM_DEBUG
+#define S5KA3DFX_DRIVER_NAME	"S5KA3DFX"
+
+/* #define VGA_CAM_DEBUG */
 
 #ifdef VGA_CAM_DEBUG
 #define dev_dbg	dev_err
 #endif
 
-#define S5KA3DFX_DRIVER_NAME	"S5KA3DFX"
-
 /* Default resolution & pixelformat. plz ref s5ka3dfx_platform.h */
-#define DEFAULT_RES			WVGA				/* Index of resoultion */
+#define DEFAULT_RESOLUTION	WVGA		/* Index of resoultion */
 #define DEFAUT_FPS_INDEX	S5KA3DFX_15FPS
-#define DEFAULT_FMT			V4L2_PIX_FMT_UYVY	/* YUV422 */
+#define DEFUALT_MCLK            24000000		/* 24MHz default */
+#define DEFAULT_FMT		V4L2_PIX_FMT_UYVY	/* YUV422 */
+#define POLL_TIME_MS		10
 
 /*
  * Specification
- * Parallel : ITU-R. 656/601 YUV422, RGB565, RGB888 (Up to VGA), RAW10 
+ * Parallel : ITU-R. 656/601 YUV422, RGB565, RGB888 (Up to VGA), RAW10
  * Serial : MIPI CSI2 (single lane) YUV422, RGB565, RGB888 (Up to VGA), RAW10
  * Resolution : 1280 (H) x 1024 (V)
  * Image control : Brightness, Contrast, Saturation, Sharpness, Glamour
@@ -54,11 +52,11 @@
  * Internal PLL (6MHz to 27MHz input frequency)
  */
 
-static int s5ka3dfx_init(struct v4l2_subdev *sd, u32 val);		//for fixing build error	//s1_camera [ Defense process by ESD input ]
+static int s5ka3dfx_init(struct v4l2_subdev *sd, u32 val);
 
 /* Camera functional setting values configured by user concept */
 struct s5ka3dfx_userset {
-	signed int exposure_bias;	/* V4L2_CID_EXPOSURE */
+	int exposure_bias;	/* V4L2_CID_EXPOSURE */
 	unsigned int ae_lock;
 	unsigned int awb_lock;
 	unsigned int auto_wb;	/* V4L2_CID_AUTO_WHITE_BALANCE */
@@ -67,7 +65,7 @@ struct s5ka3dfx_userset {
 	unsigned int effect;	/* Color FX (AKA Color tone) */
 	unsigned int contrast;	/* V4L2_CID_CONTRAST */
 	unsigned int saturation;	/* V4L2_CID_SATURATION */
-	unsigned int sharpness;		/* V4L2_CID_SHARPNESS */
+	unsigned int sharpness;	/* V4L2_CID_SHARPNESS */
 	unsigned int glamour;
 };
 
@@ -77,29 +75,32 @@ struct s5ka3dfx_state {
 	struct v4l2_pix_format pix;
 	struct v4l2_fract timeperframe;
 	struct s5ka3dfx_userset userset;
+	struct v4l2_streamparm strm;
 	int framesize_index;
-	int freq;	/* MCLK in KHz */
+	int freq;		/* MCLK in KHz */
 	int is_mipi;
 	int isize;
 	int ver;
 	int fps;
-	int vt_mode; /*For VT camera*/
+	int vt_mode;		/*For VT camera */
 	int check_dataline;
 	int check_previewdata;
 };
 
 enum {
+	S5KA3DFX_PREVIEW_QCIF,
 	S5KA3DFX_PREVIEW_VGA,
-} S5KA3DFX_FRAME_SIZE;
+};
 
 struct s5ka3dfx_enum_framesize {
 	unsigned int index;
 	unsigned int width;
-	unsigned int height;	
+	unsigned int height;
 };
 
 struct s5ka3dfx_enum_framesize s5ka3dfx_framesize_list[] = {
-	{S5KA3DFX_PREVIEW_VGA, 640, 480}
+	{ S5KA3DFX_PREVIEW_QCIF, 176, 144 },
+	{ S5KA3DFX_PREVIEW_VGA, 640, 480 }
 };
 
 static inline struct s5ka3dfx_state *to_state(struct v4l2_subdev *sd)
@@ -107,398 +108,267 @@ static inline struct s5ka3dfx_state *to_state(struct v4l2_subdev *sd)
 	return container_of(sd, struct s5ka3dfx_state, sd);
 }
 
-//s1_camera [ Defense process by ESD input ] _[
-static int s5ka3dfx_power_on(void)
-{
-	int err;
+struct s5ka3dfx_regset_table {
+	struct s5ka3dfx_reg	*regset;
+	int			array_size;
+};
 
-	printk(KERN_DEBUG "s5ka3dfx_power_on\n");
-
-	/* CAM_VGA_nSTBY - GPB(0)  */
-	err = gpio_request(GPIO_CAM_VGA_nSTBY, "GPB0");
-
-	if (err) {
-		printk(KERN_ERR "failed to request GPB0 for camera control\n");
-
-		return err;
+#define S5KA3DFX_REGSET_TABLE_ELEMENT(x, y)		\
+	[(x)] = {					\
+		.regset		= (y),			\
+		.array_size	= ARRAY_SIZE((y)),	\
 	}
 
-	/* CAM_VGA_nRST - GPB(2) */
-	err = gpio_request(GPIO_CAM_VGA_nRST, "GPB2");
+static struct s5ka3dfx_regset_table brightness_vt[] = {
+	S5KA3DFX_REGSET_TABLE_ELEMENT(EV_MINUS_4, s5ka3dfx_ev_vt_m4),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(EV_MINUS_3, s5ka3dfx_ev_vt_m3),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(EV_MINUS_2, s5ka3dfx_ev_vt_m2),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(EV_MINUS_1, s5ka3dfx_ev_vt_m1),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(EV_DEFAULT, s5ka3dfx_ev_vt_default),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(EV_PLUS_1, s5ka3dfx_ev_vt_p1),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(EV_PLUS_2, s5ka3dfx_ev_vt_p2),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(EV_PLUS_3, s5ka3dfx_ev_vt_p3),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(EV_PLUS_4, s5ka3dfx_ev_vt_p4),
+};
 
-	if (err) {
-		printk(KERN_ERR "failed to request GPB2 for camera control\n");
+static struct s5ka3dfx_regset_table brightness[] = {
+	S5KA3DFX_REGSET_TABLE_ELEMENT(EV_MINUS_4, s5ka3dfx_ev_m4),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(EV_MINUS_3, s5ka3dfx_ev_m3),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(EV_MINUS_2, s5ka3dfx_ev_m2),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(EV_MINUS_1, s5ka3dfx_ev_m1),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(EV_DEFAULT, s5ka3dfx_ev_default),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(EV_PLUS_1, s5ka3dfx_ev_p1),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(EV_PLUS_2, s5ka3dfx_ev_p2),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(EV_PLUS_3, s5ka3dfx_ev_p3),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(EV_PLUS_4, s5ka3dfx_ev_p4),
+};
 
-		return err;
-	}
+static struct s5ka3dfx_regset_table white_balance[] = {
+	S5KA3DFX_REGSET_TABLE_ELEMENT(WHITE_BALANCE_AUTO,
+						s5ka3dfx_wb_auto),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(WHITE_BALANCE_SUNNY,
+						s5ka3dfx_wb_sunny),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(WHITE_BALANCE_CLOUDY,
+						s5ka3dfx_wb_cloudy),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(WHITE_BALANCE_TUNGSTEN,
+						s5ka3dfx_wb_tungsten),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(WHITE_BALANCE_FLUORESCENT,
+						s5ka3dfx_wb_fluorescent),
+};
 
-	/* CAM_IO_EN - GPB(7) */
-	err = gpio_request(GPIO_GPB7, "GPB7");
+static struct s5ka3dfx_regset_table effects[] = {
+	S5KA3DFX_REGSET_TABLE_ELEMENT(IMAGE_EFFECT_NONE,
+						s5ka3dfx_effect_none),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(IMAGE_EFFECT_BNW,
+						s5ka3dfx_effect_gray),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(IMAGE_EFFECT_SEPIA,
+						s5ka3dfx_effect_sepia),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(IMAGE_EFFECT_NEGATIVE,
+						s5ka3dfx_effect_negative),
+};
 
-	if(err) {
-		printk(KERN_ERR "failed to request GPB7 for camera control\n");
+static struct s5ka3dfx_regset_table fps_vt_table[] = {
+	S5KA3DFX_REGSET_TABLE_ELEMENT(0, s5ka3dfx_vt_fps_7),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(1, s5ka3dfx_vt_fps_10),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(2, s5ka3dfx_vt_fps_15),
+};
 
-		return err;
-	}
+static struct s5ka3dfx_regset_table fps_table[] = {
+	S5KA3DFX_REGSET_TABLE_ELEMENT(0, s5ka3dfx_fps_7),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(1, s5ka3dfx_fps_10),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(2, s5ka3dfx_fps_15),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(3, s5ka3dfx_fps_auto),
+};
 
-	// Turn CAM_ISP_SYS_2.8V on
-	gpio_direction_output(GPIO_GPB7, 0);
-	gpio_set_value(GPIO_GPB7, 1);
+static struct s5ka3dfx_regset_table blur_vt[] = {
+	S5KA3DFX_REGSET_TABLE_ELEMENT(BLUR_LEVEL_0, s5ka3dfx_blur_vt_none),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(BLUR_LEVEL_1, s5ka3dfx_blur_vt_p1),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(BLUR_LEVEL_2, s5ka3dfx_blur_vt_p2),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(BLUR_LEVEL_3, s5ka3dfx_blur_vt_p3),
+};
 
-	mdelay(1);
+static struct s5ka3dfx_regset_table blur[] = {
+	S5KA3DFX_REGSET_TABLE_ELEMENT(BLUR_LEVEL_0, s5ka3dfx_blur_none),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(BLUR_LEVEL_1, s5ka3dfx_blur_p1),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(BLUR_LEVEL_2, s5ka3dfx_blur_p2),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(BLUR_LEVEL_3, s5ka3dfx_blur_p3),
+};
 
-	// Turn CAM_SENSOR_A2.8V on
-	Set_MAX8998_PM_OUTPUT_Voltage(LDO13, VCC_2p800);
-	Set_MAX8998_PM_REG(ELDO13, 1);
+static struct s5ka3dfx_regset_table dataline[] = {
+	S5KA3DFX_REGSET_TABLE_ELEMENT(0, s5ka3dfx_dataline),
+};
 
-	mdelay(1);
+static struct s5ka3dfx_regset_table dataline_stop[] = {
+	S5KA3DFX_REGSET_TABLE_ELEMENT(0, s5ka3dfx_dataline_stop),
+};
 
-	// Turn CAM_ISP_HOST_2.8V on
-	Set_MAX8998_PM_OUTPUT_Voltage(LDO15, VCC_2p800);
-	Set_MAX8998_PM_REG(ELDO15, 1);
+static struct s5ka3dfx_regset_table init_reg[] = {
+	S5KA3DFX_REGSET_TABLE_ELEMENT(0, s5ka3dfx_init_reg),
+};
 
-	mdelay(1);
+static struct s5ka3dfx_regset_table init_vt_reg[] = {
+	S5KA3DFX_REGSET_TABLE_ELEMENT(0, s5ka3dfx_init_vt_reg),
+};
 
-	// Turn CAM_ISP_RAM_1.8V on
-	Set_MAX8998_PM_OUTPUT_Voltage(LDO14, VCC_1p800);
-	Set_MAX8998_PM_REG(ELDO14, 1);
-
-	mdelay(1);
-	
-	gpio_free(GPIO_GPB7);	
-	mdelay(1);
-
-	// CAM_VGA_nSTBY  HIGH		
-	gpio_direction_output(GPIO_CAM_VGA_nSTBY, 0);
-	gpio_set_value(GPIO_CAM_VGA_nSTBY, 1);
-
-	mdelay(1);
-
-	// Mclk enable
-	s3c_gpio_cfgpin(GPIO_CAM_MCLK, S5PV210_GPE1_3_CAM_A_CLKOUT);
-
-	mdelay(1);
-
-	// CAM_VGA_nRST  HIGH		
-	gpio_direction_output(GPIO_CAM_VGA_nRST, 0);
-	gpio_set_value(GPIO_CAM_VGA_nRST, 1);		
-
-	mdelay(4);
-
-	gpio_free(GPIO_CAM_VGA_nSTBY);
-	gpio_free(GPIO_CAM_VGA_nRST);	
-
-	return 0;
-}
-
-
-static int s5ka3dfx_power_off(void)
-{
-	int err;
-
-	printk(KERN_DEBUG "s5ka3dfx_power_off\n");
-
-	/* CAM_VGA_nSTBY - GPB(0)  */
-	err = gpio_request(GPIO_CAM_VGA_nSTBY, "GPB0");
-
-	if (err) {
-		printk(KERN_ERR "failed to request GPB for camera control\n");
-
-		return err;
-	}
-
-	/* CAM_VGA_nRST - GPB(2) */
-	err = gpio_request(GPIO_CAM_VGA_nRST, "GPB2");
-
-	if (err) {
-		printk(KERN_ERR "failed to request GPB for camera control\n");
-
-		return err;
-	}
-
-
-	// CAM_VGA_nRST  LOW		
-	gpio_direction_output(GPIO_CAM_VGA_nRST, 1);
-	gpio_set_value(GPIO_CAM_VGA_nRST, 0);
-
-	mdelay(1);
-
-	// Mclk disable
-	s3c_gpio_cfgpin(GPIO_CAM_MCLK, 0);
-
-	mdelay(1);
-
-	// CAM_VGA_nSTBY  LOW		
-	gpio_direction_output(GPIO_CAM_VGA_nSTBY, 1);
-	gpio_set_value(GPIO_CAM_VGA_nSTBY, 0);
-
-	mdelay(1);
-
-	/* CAM_IO_EN - GPB(7) */
-	err = gpio_request(GPIO_GPB7, "GPB7");
-
-	if(err) {
-		printk(KERN_ERR "failed to request GPB for camera control\n");
-
-		return err;
-	}
-
-	// Turn CAM_ISP_HOST_2.8V off
-	Set_MAX8998_PM_REG(ELDO15, 0);
-
-	mdelay(1);
-
-	// Turn CAM_SENSOR_A2.8V off
-	Set_MAX8998_PM_REG(ELDO13, 0);
-
-	// Turn CAM_ISP_RAM_1.8V off
-	Set_MAX8998_PM_REG(ELDO14, 0);
-
-	// Turn CAM_ISP_SYS_2.8V off
-	gpio_direction_output(GPIO_GPB7, 1);
-	gpio_set_value(GPIO_GPB7, 0);
-	
-	gpio_free(GPIO_GPB7);
-
-	gpio_free(GPIO_CAM_VGA_nSTBY);
-	gpio_free(GPIO_CAM_VGA_nRST);	
-
-	return 0;
-}
-
-
-static int s5ka3dfx_power_en(int onoff)
-{
-	if(onoff){
-		s5ka3dfx_power_on();
-	} else {
-		s5ka3dfx_power_off();
-	}
-
-	return 0;
-}
+static struct s5ka3dfx_regset_table frame_size[] = {
+	S5KA3DFX_REGSET_TABLE_ELEMENT(0, s5ka3dfx_QCIF),
+	S5KA3DFX_REGSET_TABLE_ELEMENT(1, s5ka3dfx_Return_VGA),
+};
 static int s5ka3dfx_reset(struct v4l2_subdev *sd)
 {
-	s5ka3dfx_power_en(0);
-	mdelay(5);
-	s5ka3dfx_power_en(1);
-	mdelay(5);
-	s5ka3dfx_init(sd, 0);
+	struct i2c_client *client = v4l2_get_subdevdata(sd);
+	struct s5ka3dfx_platform_data *pdata;
+
+	pdata = client->dev.platform_data;
+
+	if (pdata->cam_power) {
+		pdata->cam_power(0);
+		msleep(5);
+		pdata->cam_power(1);
+		msleep(5);
+		s5ka3dfx_init(sd, 0);
+	}
+
 	return 0;
 }
-// _]
 
-/*
- * S5KA3DFX register structure : 2bytes address, 2bytes value
- * retry on write failure up-to 5 times
- */
-static inline int s5ka3dfx_write(struct v4l2_subdev *sd, u8 addr, u8 val)
+static int s5ka3dfx_i2c_write_multi(struct i2c_client *client,
+				    unsigned short addr, unsigned int w_data)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(sd);
-	struct i2c_msg msg[1];
-	unsigned char reg[2];
-	int err = 0;
-	int retry = 0;
+	int retry_count = 5;
+	unsigned char buf[2];
+	struct i2c_msg msg = { client->addr, 0, 2, buf };
+	int ret;
 
+	buf[0] = addr;
+	buf[1] = w_data;
 
-	if (!client->adapter)
-		return -ENODEV;
-
-again:
-	msg->addr = client->addr;
-	msg->flags = 0;
-	msg->len = 2;
-	msg->buf = reg;
-
-	reg[0] = addr & 0xff;
-	reg[1] = val & 0xff;
-
-	err = i2c_transfer(client->adapter, msg, 1);
-	if (err >= 0)
-		return err;	/* Returns here on success */
-
-	/* abnormal case: retry 5 times */
-	if (retry < 5) {
-		dev_err(&client->dev, "%s: address: 0x%02x%02x, " \
-			"value: 0x%02x%02x\n", __func__, \
-			reg[0], reg[1], reg[2], reg[3]);
-		retry++;
-		goto again;
-	}
-
-	return err;
-}
-
-static int s5ka3dfx_i2c_write(struct v4l2_subdev *sd, unsigned char i2c_data[],
-				unsigned char length)
-{
-	int ret = -1;
-	int retry_count = 1;
-	
-	struct i2c_client *client = v4l2_get_subdevdata(sd);
-	unsigned char buf[length], i;
-	struct i2c_msg msg = {client->addr, 0, length, buf};
-
-	for (i = 0; i < length; i++) {
-		buf[i] = i2c_data[i];
-	}
-	
 #ifdef VGA_CAM_DEBUG
-	printk("i2c cmd Length : %d\n", length);
-	for (i = 0; i < length; i++) {
-		printk("buf[%d] = %x  ", i, buf[i]);
-		if(i == length)
-			printk("\n");
+	int i;
+	for (i = 0; i < 2; i++) {
+		dev_err(&client->dev, "buf[%d] = %x  ", i, buf[i]);
+		if (i == 1)
+			dev_err(&client->dev, "\n");
 	}
 #endif
 
-	while(retry_count--){
-		ret  = i2c_transfer(client->adapter, &msg, 1);
-		if(ret == 1)
+	while (retry_count--) {
+		ret = i2c_transfer(client->adapter, &msg, 1);
+		if (likely(ret == 1))
 			break;
-		msleep(10);
+		msleep(POLL_TIME_MS);
 	}
+	if (ret != 1)
+		dev_err(&client->dev, "I2C is not working.\n");
 
 	return (ret == 1) ? 0 : -EIO;
 }
-#if 0	/* unused functions */
-static int s5ka3dfx_write_regs(struct v4l2_subdev *sd, unsigned char regs[], 
-				int size)
+
+static int s5ka3dfx_write_regs(struct v4l2_subdev *sd,
+			       struct s5ka3dfx_reg regs[], int size)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	int i, err;
 
 	for (i = 0; i < size; i++) {
-		err = s5ka3dfx_i2c_write(sd, &regs[i], sizeof(regs[i]));
-		if (err < 0)
-		{
-			v4l_info(client, "%s: register set failed\n", \
-			__func__);
-			
+		err = s5ka3dfx_i2c_write_multi(client,
+					       regs[i].addr, regs[i].val);
+		if (err < 0) {
+			v4l_info(client, "%s: register set failed\n", __func__);
 			break;
 		}
 	}
-	if(err < 0)
-		return -EIO;	
+	if (err < 0)
+		return -EIO;
 
-	return 0;	/* FIXME */
+	return 0;
 }
-#endif	/* unused functions */
-#if 0	// temporary delete
-static const char *s5ka3dfx_querymenu_wb_preset[] = {
-	"WB Tungsten", "WB Fluorescent", "WB sunny", "WB cloudy", NULL
-};
 
-static const char *s5ka3dfx_querymenu_effect_mode[] = {
-	"Effect Sepia", "Effect Aqua", "Effect Monochrome",
-	"Effect Negative", "Effect Sketch", NULL
-};
+static int s5ka3dfx_write_regset_table(struct v4l2_subdev *sd,
+				struct s5ka3dfx_regset_table *regset_table)
+{
+	int err;
 
-static const char *s5ka3dfx_querymenu_ev_bias_mode[] = {
-	"-3EV",	"-2,1/2EV", "-2EV", "-1,1/2EV",
-	"-1EV", "-1/2EV", "0", "1/2EV",
-	"1EV", "1,1/2EV", "2EV", "2,1/2EV",
-	"3EV", NULL
-};
-#endif
+	if (regset_table->regset)
+		err = s5ka3dfx_write_regs(sd, regset_table->regset,
+						regset_table->array_size);
+	else
+		err = -EINVAL;
 
+	return err;
+}
+
+static int s5ka3dfx_set_from_table(struct v4l2_subdev *sd,
+				const char *setting_name,
+				const struct s5ka3dfx_regset_table *table,
+				int table_size, int index)
+{
+	struct i2c_client *client = v4l2_get_subdevdata(sd);
+	dev_dbg(&client->dev, "%s: set %s index %d\n",
+		__func__, setting_name, index);
+
+	if ((index < 0) || (index >= table_size)) {
+		dev_err(&client->dev,
+			"%s: index(%d) out of range[0:%d] for table for %s\n",
+			__func__, index, table_size, setting_name);
+		return -EINVAL;
+	}
+	table += index;
+	if (table == NULL)
+		return -EINVAL;
+	return s5ka3dfx_write_regset_table(sd, table);
+}
+
+static int s5ka3dfx_set_parameter(struct v4l2_subdev *sd,
+				int *current_value_ptr,
+				int new_value,
+				const char *setting_name,
+				const struct s5ka3dfx_regset_table *table,
+				int table_size)
+{
+	int err;
+
+	if (*current_value_ptr == new_value)
+		return 0;
+
+	err = s5ka3dfx_set_from_table(sd, setting_name, table,
+				table_size, new_value);
+
+	if (!err)
+		*current_value_ptr = new_value;
+
+	return err;
+}
+static int s5ka3dfx_set_preview_start(struct v4l2_subdev *sd)
+{
+	int err;
+	struct s5ka3dfx_state *state =
+		container_of(sd, struct s5ka3dfx_state, sd);
+	struct i2c_client *client = v4l2_get_subdevdata(sd);
+
+	if (!state->pix.width || !state->pix.height)
+		return -EINVAL;
+
+	err = s5ka3dfx_set_from_table(sd, "frame_size", frame_size,
+			ARRAY_SIZE(frame_size), state->framesize_index);
+	if (err < 0) {
+		dev_err(&client->dev,
+				"%s: failed: Could not set preview size\n",
+				__func__);
+		return -EIO;
+	}
+
+	return 0;
+}
 static struct v4l2_queryctrl s5ka3dfx_controls[] = {
-#if 0	// temporary delete
-	{
-		/*
-		 * For now, we just support in preset type
-		 * to be close to generic WB system,
-		 * we define color temp range for each preset
-		 */
-		.id = V4L2_CID_WHITE_BALANCE_TEMPERATURE,
-		.type = V4L2_CTRL_TYPE_INTEGER,
-		.name = "White balance in kelvin",
-		.minimum = 0,
-		.maximum = 10000,
-		.step = 1,
-		.default_value = 0,	/* FIXME */
-	},
-	{
-		.id = V4L2_CID_WHITE_BALANCE_PRESET,
-		.type = V4L2_CTRL_TYPE_MENU,
-		.name = "White balance preset",
-		.minimum = 0,
-		.maximum = ARRAY_SIZE(s5ka3dfx_querymenu_wb_preset) - 2,
-		.step = 1,
-		.default_value = 0,
-	},
-	{
-		.id = V4L2_CID_AUTO_WHITE_BALANCE,
-		.type = V4L2_CTRL_TYPE_BOOLEAN,
-		.name = "Auto white balance",
-		.minimum = 0,
-		.maximum = 1,
-		.step = 1,
-		.default_value = 0,
-	},
-	{
-		.id = V4L2_CID_EXPOSURE,
-		.type = V4L2_CTRL_TYPE_MENU,
-		.name = "Exposure bias",
-		.minimum = 0,
-		.maximum = ARRAY_SIZE(s5ka3dfx_querymenu_ev_bias_mode) - 2,
-		.step = 1,
-		.default_value = (ARRAY_SIZE(s5ka3dfx_querymenu_ev_bias_mode) - 2) / 2,	/* 0 EV */
-	},
-	{
-		.id = V4L2_CID_COLORFX,
-		.type = V4L2_CTRL_TYPE_MENU,
-		.name = "Image Effect",
-		.minimum = 0,
-		.maximum = ARRAY_SIZE(s5ka3dfx_querymenu_effect_mode) - 2,
-		.step = 1,
-		.default_value = 0,
-	},
-	{
-		.id = V4L2_CID_CONTRAST,
-		.type = V4L2_CTRL_TYPE_INTEGER,
-		.name = "Contrast",
-		.minimum = 0,
-		.maximum = 4,
-		.step = 1,
-		.default_value = 2,
-	},
-	{
-		.id = V4L2_CID_SATURATION,
-		.type = V4L2_CTRL_TYPE_INTEGER,
-		.name = "Saturation",
-		.minimum = 0,
-		.maximum = 4,
-		.step = 1,
-		.default_value = 2,
-	},
-	{
-		.id = V4L2_CID_SHARPNESS,
-		.type = V4L2_CTRL_TYPE_INTEGER,
-		.name = "Sharpness",
-		.minimum = 0,
-		.maximum = 4,
-		.step = 1,
-		.default_value = 2,
-	},
-#endif	
+	/* Add here if needed */
 };
 
 const char **s5ka3dfx_ctrl_get_menu(u32 id)
 {
-	printk(KERN_DEBUG "s5ka3dfx_ctrl_get_menu is called... id : %d \n", id);
+	pr_debug("%s is called... id : %d\n", __func__, id);
 
 	switch (id) {
-#if 0	// temporary delete
-	case V4L2_CID_WHITE_BALANCE_PRESET:
-		return s5ka3dfx_querymenu_wb_preset;
-
-	case V4L2_CID_COLORFX:
-		return s5ka3dfx_querymenu_effect_mode;
-
-	case V4L2_CID_EXPOSURE:
-		return s5ka3dfx_querymenu_ev_bias_mode;
-#endif
 	default:
 		return v4l2_ctrl_get_menu(id);
 	}
@@ -508,7 +378,7 @@ static inline struct v4l2_queryctrl const *s5ka3dfx_find_qctrl(int id)
 {
 	int i;
 
-	printk(KERN_DEBUG "s5ka3dfx_find_qctrl is called...  id : %d \n", id);
+	pr_debug("%s is called... id : %d\n", __func__, id);
 
 	for (i = 0; i < ARRAY_SIZE(s5ka3dfx_controls); i++)
 		if (s5ka3dfx_controls[i].id == id)
@@ -521,12 +391,12 @@ static int s5ka3dfx_queryctrl(struct v4l2_subdev *sd, struct v4l2_queryctrl *qc)
 {
 	int i;
 
-	printk(KERN_DEBUG "s5ka3dfx_queryctrl is called... \n");
+	pr_debug("%s is called...\n", __func__);
 
 	for (i = 0; i < ARRAY_SIZE(s5ka3dfx_controls); i++) {
 		if (s5ka3dfx_controls[i].id == qc->id) {
-			memcpy(qc, &s5ka3dfx_controls[i], \
-				sizeof(struct v4l2_queryctrl));
+			memcpy(qc, &s5ka3dfx_controls[i],
+			       sizeof(struct v4l2_queryctrl));
 			return 0;
 		}
 	}
@@ -538,7 +408,7 @@ static int s5ka3dfx_querymenu(struct v4l2_subdev *sd, struct v4l2_querymenu *qm)
 {
 	struct v4l2_queryctrl qctrl;
 
-	printk(KERN_DEBUG "s5ka3dfx_querymenu is called... \n");
+	pr_debug("%s is called...\n", __func__);
 
 	qctrl.id = qm->id;
 	s5ka3dfx_queryctrl(sd, &qctrl);
@@ -550,14 +420,14 @@ static int s5ka3dfx_querymenu(struct v4l2_subdev *sd, struct v4l2_querymenu *qm)
  * Clock configuration
  * Configure expected MCLK from host and return EINVAL if not supported clock
  * frequency is expected
- * 	freq : in Hz
- * 	flag : not supported for now
+ * freq : in Hz
+ * flag : not supported for now
  */
 static int s5ka3dfx_s_crystal_freq(struct v4l2_subdev *sd, u32 freq, u32 flags)
 {
 	int err = -EINVAL;
 
-	printk(KERN_DEBUG "s5ka3dfx_s_crystal_freq is called... \n");
+	pr_debug("%s is called...\n", __func__);
 
 	return err;
 }
@@ -566,44 +436,99 @@ static int s5ka3dfx_g_fmt(struct v4l2_subdev *sd, struct v4l2_format *fmt)
 {
 	int err = 0;
 
-	printk(KERN_DEBUG "s5ka3dfx_g_fmt is called... \n");
+	pr_debug("%s is called...\n", __func__);
 
 	return err;
 }
 
+static void s5ka3dfx_set_framesize(struct v4l2_subdev *sd,
+				const struct s5ka3dfx_enum_framesize *frmsize,
+				int frmsize_count)
+{
+	struct s5ka3dfx_state *state =
+		container_of(sd, struct s5ka3dfx_state, sd);
+	struct i2c_client *client = v4l2_get_subdevdata(sd);
+	const struct s5ka3dfx_enum_framesize *last_frmsize =
+		&frmsize[frmsize_count - 1];
+
+	dev_dbg(&client->dev, "%s: Requested Res: %dx%d\n", __func__,
+			state->pix.width, state->pix.height);
+
+	do {
+		if (frmsize->width == state->pix.width &&
+				frmsize->height == state->pix.height) {
+			break;
+		}
+
+		frmsize++;
+	} while (frmsize <= last_frmsize);
+
+	if (frmsize > last_frmsize)
+		frmsize = last_frmsize;
+
+	state->pix.width = frmsize->width;
+	state->pix.height = frmsize->height;
+	state->framesize_index = frmsize->index;
+
+	dev_dbg(&client->dev, "%s: Preview Res Set: %dx%d, index %d\n",
+			__func__, state->pix.width, state->pix.height,
+			state->framesize_index);
+}
 static int s5ka3dfx_s_fmt(struct v4l2_subdev *sd, struct v4l2_format *fmt)
 {
+	struct s5ka3dfx_state *state =
+		container_of(sd, struct s5ka3dfx_state, sd);
+	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	int err = 0;
 
-	printk(KERN_DEBUG "s5ka3dfx_s_fmt is called... \n");
+	if (fmt->fmt.pix.pixelformat == V4L2_PIX_FMT_JPEG &&
+			fmt->fmt.pix.colorspace != V4L2_COLORSPACE_JPEG) {
+		dev_dbg(&client->dev,
+				"%s: mismatch in pixelformat and colorspace\n",
+				__func__);
+		return -EINVAL;
+	}
+
+	state->pix.width = fmt->fmt.pix.width;
+	state->pix.height = fmt->fmt.pix.height;
+	state->pix.pixelformat = fmt->fmt.pix.pixelformat;
+
+	s5ka3dfx_set_framesize(sd, s5ka3dfx_framesize_list,
+			ARRAY_SIZE(s5ka3dfx_framesize_list));
 
 	return err;
 }
-static int s5ka3dfx_enum_framesizes(struct v4l2_subdev *sd, \
-					struct v4l2_frmsizeenum *fsize)
+
+static int s5ka3dfx_enum_framesizes(struct v4l2_subdev *sd,
+				    struct v4l2_frmsizeenum *fsize)
 {
-	struct  s5ka3dfx_state *state = to_state(sd);
-	int num_entries = sizeof(s5ka3dfx_framesize_list)/sizeof(struct s5ka3dfx_enum_framesize);	
-	struct s5ka3dfx_enum_framesize *elem;	
+	struct s5ka3dfx_state *state =
+		container_of(sd, struct s5ka3dfx_state, sd);
+	int num_entries = sizeof(s5ka3dfx_framesize_list) /
+				sizeof(struct s5ka3dfx_enum_framesize);
+	struct s5ka3dfx_enum_framesize *elem;
 	int index = 0;
 	int i = 0;
 
-	printk(KERN_DEBUG "s5ka3dfx_enum_framesizes is called... \n");
+	pr_debug("%s is called...\n", __func__);
 
 	/* The camera interface should read this value, this is the resolution
- 	 * at which the sensor would provide framedata to the camera i/f
- 	 *
- 	 * In case of image capture, this returns the default camera resolution (WVGA)
- 	 */
+	 * at which the sensor would provide framedata to the camera i/f
+	 *
+	 * In case of image capture,
+	 * this returns the default camera resolution (WVGA)
+	 */
 	fsize->type = V4L2_FRMSIZE_TYPE_DISCRETE;
 
 	index = state->framesize_index;
 
-	for(i = 0; i < num_entries; i++){
+	for (i = 0; i < num_entries; i++) {
 		elem = &s5ka3dfx_framesize_list[i];
-		if(elem->index == index){
-			fsize->discrete.width = s5ka3dfx_framesize_list[index].width;
-			fsize->discrete.height = s5ka3dfx_framesize_list[index].height;
+		if (elem->index == index) {
+			fsize->discrete.width =
+			    s5ka3dfx_framesize_list[index].width;
+			fsize->discrete.height =
+			    s5ka3dfx_framesize_list[index].height;
 			return 0;
 		}
 	}
@@ -611,22 +536,22 @@ static int s5ka3dfx_enum_framesizes(struct v4l2_subdev *sd, \
 	return -EINVAL;
 }
 
-
-static int s5ka3dfx_enum_frameintervals(struct v4l2_subdev *sd, 
+static int s5ka3dfx_enum_frameintervals(struct v4l2_subdev *sd,
 					struct v4l2_frmivalenum *fival)
 {
 	int err = 0;
 
-	printk(KERN_DEBUG "s5ka3dfx_enum_frameintervals is called... \n");
-	
+	pr_debug("%s is called...\n", __func__);
+
 	return err;
 }
 
-static int s5ka3dfx_enum_fmt(struct v4l2_subdev *sd, struct v4l2_fmtdesc *fmtdesc)
+static int s5ka3dfx_enum_fmt(struct v4l2_subdev *sd,
+			     struct v4l2_fmtdesc *fmtdesc)
 {
 	int err = 0;
 
-	printk(KERN_DEBUG "s5ka3dfx_enum_fmt is called... \n");
+	pr_debug("%s is called...\n", __func__);
 
 	return err;
 }
@@ -635,429 +560,214 @@ static int s5ka3dfx_try_fmt(struct v4l2_subdev *sd, struct v4l2_format *fmt)
 {
 	int err = 0;
 
-	printk(KERN_DEBUG "s5ka3dfx_enum_fmt is called... \n");
+	pr_debug("%s is called...\n", __func__);
 
 	return err;
 }
 
-static int s5ka3dfx_g_parm(struct v4l2_subdev *sd, struct v4l2_streamparm *param)
+static int s5ka3dfx_g_parm(struct v4l2_subdev *sd,
+			   struct v4l2_streamparm *param)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
-	int err = 0;
+	struct s5ka3dfx_state *state =
+		container_of(sd, struct s5ka3dfx_state, sd);
 
 	dev_dbg(&client->dev, "%s\n", __func__);
+	state->strm.parm.capture.timeperframe.numerator = 1;
+	state->strm.parm.capture.timeperframe.denominator = state->fps;
+	memcpy(param, &state->strm, sizeof(param));
 
-	return err;
+	return 0;
 }
 
-static int s5ka3dfx_s_parm(struct v4l2_subdev *sd, struct v4l2_streamparm *param)
+static int s5ka3dfx_s_parm(struct v4l2_subdev *sd,
+			   struct v4l2_streamparm *param)
 {
-	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	int err = 0;
+	struct i2c_client *client = v4l2_get_subdevdata(sd);
+	struct s5ka3dfx_state *state =
+		container_of(sd, struct s5ka3dfx_state, sd);
+	struct sec_cam_parm *new_parms =
+		(struct sec_cam_parm *)&param->parm.raw_data;
+	struct sec_cam_parm *parms =
+		(struct sec_cam_parm *)&state->strm.parm.raw_data;
 
-	dev_dbg(&client->dev, "%s: numerator %d, denominator: %d\n", \
-		__func__, param->parm.capture.timeperframe.numerator, \
-		param->parm.capture.timeperframe.denominator);
+	dev_dbg(&client->dev, "%s: start\n", __func__);
+
+	/* we return an error if one happened but don't stop trying to
+	 * set all parameters passed
+	 */
+
+	err = s5ka3dfx_set_parameter(sd, &parms->brightness,
+				new_parms->brightness, "brightness",
+				brightness, ARRAY_SIZE(brightness));
+	err |= s5ka3dfx_set_parameter(sd, &parms->effects, new_parms->effects,
+				"effects", effects,
+				ARRAY_SIZE(effects));
+	err |= s5ka3dfx_set_parameter(sd, &parms->white_balance,
+				new_parms->white_balance,
+				"white_balance", white_balance,
+				ARRAY_SIZE(white_balance));
+
+	dev_dbg(&client->dev, "%s: returning %d\n", __func__, err);
 
 	return err;
 }
-#if 0	/* unused functions */
-static int s5ka3dfx_get_framesize_index(struct v4l2_subdev *sd)
-{
-	int i = 0;
-	struct s5ka3dfx_state *state = to_state(sd);
-	struct s5ka3dfx_enum_framesize *frmsize;
-	struct i2c_client *client = v4l2_get_subdevdata(sd);
 
-	/* Check for video/image mode */
-	for(i = 0; i < (sizeof(s5ka3dfx_framesize_list)/sizeof(struct s5ka3dfx_enum_framesize)); i++)
-	{
-		frmsize = &s5ka3dfx_framesize_list[i];
-		if(frmsize->width >= state->pix.width && frmsize->height >= state->pix.height){
-			return frmsize->index;
-		} 
-	}
-	
-	v4l_info(client, "%s: s5ka3dfx_framesize_list[%d].index = %d\n", __func__, i - 1, s5ka3dfx_framesize_list[i].index);
-	
-	/* FIXME: If it fails, return the last index. */
-	return s5ka3dfx_framesize_list[i-1].index;
-}
-#endif	/* unused functions */
-#if 0	/* unused function */
-/* This function is called from the s_ctrl api
- * Given the index, it checks if it is a valid index.
- * On success, it returns 0.
- * On Failure, it returns -EINVAL
- */
-static int s5ka3dfx_set_framesize_index(struct v4l2_subdev *sd, unsigned int index)
-{
-	int i = 0;
-	struct s5ka3dfx_state *state = to_state(sd);
-	struct i2c_client *client = v4l2_get_subdevdata(sd);
-
-	v4l_info(client, "%s: index = %d\n", __func__, index);
-
-	/* Check for video/image mode */
-	for(i = 0; i < (sizeof(s5ka3dfx_framesize_list)/sizeof(struct s5ka3dfx_enum_framesize)); i++)
-	{
-		if(s5ka3dfx_framesize_list[i].index == index){
-			state->framesize_index = index; 
-			state->pix.width = s5ka3dfx_framesize_list[i].width;
-			state->pix.height = s5ka3dfx_framesize_list[i].height;
-			return 0;
-		} 
-	} 
-	
-	return -EINVAL;
-}
-#endif	/* unused functions */
 /* set sensor register values for adjusting brightness */
-static int s5ka3dfx_set_brightness(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
+static int s5ka3dfx_set_brightness(struct v4l2_subdev *sd,
+				   struct v4l2_control *ctrl)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
-	struct s5ka3dfx_state *state = to_state(sd);
-
+	struct s5ka3dfx_state *state =
+		container_of(sd, struct s5ka3dfx_state, sd);
+	struct s5ka3dfx_regset_table *ev;
 	int err = -EINVAL;
-	int ev_value = 0;
+	int ev_index;
+	int array_size;
 
-	dev_dbg(&client->dev, "%s: value : %d state->vt_mode %d \n", __func__, ctrl->value, state->vt_mode);
+	dev_dbg(&client->dev, "%s: value : %d state->vt_mode %d\n",
+			__func__, ctrl->value, state->vt_mode);
 
-	ev_value = ctrl->value;
+	pr_debug("state->vt_mode : %d\n", state->vt_mode);
 
-	printk(KERN_DEBUG "state->vt_mode : %d \n", state->vt_mode);
-	if(state->vt_mode == 1)
-	{
-		switch(ev_value)
-		{	
-			case EV_MINUS_4:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_m4[0], sizeof(s5ka3dfx_ev_vt_m4[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_m4[1], sizeof(s5ka3dfx_ev_vt_m4[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_m4[2], sizeof(s5ka3dfx_ev_vt_m4[2]));
-			break;
-
-			case EV_MINUS_3:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_m3[0], sizeof(s5ka3dfx_ev_vt_m3[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_m3[1], sizeof(s5ka3dfx_ev_vt_m3[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_m3[2], sizeof(s5ka3dfx_ev_vt_m3[2]));
-			break;
-
-			
-			case EV_MINUS_2:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_m2[0], sizeof(s5ka3dfx_ev_vt_m2[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_m2[1], sizeof(s5ka3dfx_ev_vt_m2[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_m2[2], sizeof(s5ka3dfx_ev_vt_m2[2]));
-			break;
-			
-			case EV_MINUS_1:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_m1[0], sizeof(s5ka3dfx_ev_vt_m1[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_m1[1], sizeof(s5ka3dfx_ev_vt_m1[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_m1[2], sizeof(s5ka3dfx_ev_vt_m1[2]));
-			break;
-
-			case EV_DEFAULT:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_default[0], sizeof(s5ka3dfx_ev_vt_default[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_default[1], sizeof(s5ka3dfx_ev_vt_default[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_default[2], sizeof(s5ka3dfx_ev_vt_default[2]));
-			break;
-
-			case EV_PLUS_1:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_p1[0], sizeof(s5ka3dfx_ev_vt_p1[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_p1[1], sizeof(s5ka3dfx_ev_vt_p1[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_p1[2], sizeof(s5ka3dfx_ev_vt_p1[2]));
-			break;
-
-			case EV_PLUS_2:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_p2[0], sizeof(s5ka3dfx_ev_vt_p2[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_p2[1], sizeof(s5ka3dfx_ev_vt_p2[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_p2[2], sizeof(s5ka3dfx_ev_vt_p2[2]));
-			break;
-
-			case EV_PLUS_3:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_p3[0], sizeof(s5ka3dfx_ev_vt_p3[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_p3[1], sizeof(s5ka3dfx_ev_vt_p3[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_p3[2], sizeof(s5ka3dfx_ev_vt_p3[2]));
-			break;
-
-			case EV_PLUS_4:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_p4[0], sizeof(s5ka3dfx_ev_vt_p4[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_p4[1], sizeof(s5ka3dfx_ev_vt_p4[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_p4[2], sizeof(s5ka3dfx_ev_vt_p4[2]));
-			break;	
-			
-			default:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_default[0], sizeof(s5ka3dfx_ev_vt_default[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_default[1], sizeof(s5ka3dfx_ev_vt_default[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_vt_default[2], sizeof(s5ka3dfx_ev_vt_default[2]));				
-			break;
-		}
-	}
+	if ((ctrl->value < 0) || (ctrl->value >= EV_MAX))
+		ev_index = EV_DEFAULT;
 	else
-	{
-		switch(ev_value)
-		{	
-			case EV_MINUS_4:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_m4[0], sizeof(s5ka3dfx_ev_m4[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_m4[1], sizeof(s5ka3dfx_ev_m4[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_m4[2], sizeof(s5ka3dfx_ev_m4[2]));
-			break;
+		ev_index = ctrl->value;
 
-			case EV_MINUS_3:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_m3[0], sizeof(s5ka3dfx_ev_m3[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_m3[1], sizeof(s5ka3dfx_ev_m3[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_m3[2], sizeof(s5ka3dfx_ev_m3[2]));
-			break;
-
-			
-			case EV_MINUS_2:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_m2[0], sizeof(s5ka3dfx_ev_m2[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_m2[1], sizeof(s5ka3dfx_ev_m2[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_m2[2], sizeof(s5ka3dfx_ev_m2[2]));
-			break;
-			
-			case EV_MINUS_1:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_m1[0], sizeof(s5ka3dfx_ev_m1[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_m1[1], sizeof(s5ka3dfx_ev_m1[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_m1[2], sizeof(s5ka3dfx_ev_m1[2]));
-			break;
-
-			case EV_DEFAULT:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_default[0], sizeof(s5ka3dfx_ev_default[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_default[1], sizeof(s5ka3dfx_ev_default[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_default[2], sizeof(s5ka3dfx_ev_default[2]));
-			break;
-
-			case EV_PLUS_1:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_p1[0], sizeof(s5ka3dfx_ev_p1[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_p1[1], sizeof(s5ka3dfx_ev_p1[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_p1[2], sizeof(s5ka3dfx_ev_p1[2]));
-			break;
-
-			case EV_PLUS_2:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_p2[0], sizeof(s5ka3dfx_ev_p2[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_p2[1], sizeof(s5ka3dfx_ev_p2[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_p2[2], sizeof(s5ka3dfx_ev_p2[2]));
-			break;
-
-			case EV_PLUS_3:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_p3[0], sizeof(s5ka3dfx_ev_p3[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_p3[1], sizeof(s5ka3dfx_ev_p3[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_p3[2], sizeof(s5ka3dfx_ev_p3[2]));
-			break;
-
-			case EV_PLUS_4:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_p4[0], sizeof(s5ka3dfx_ev_p4[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_p4[1], sizeof(s5ka3dfx_ev_p4[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_p4[2], sizeof(s5ka3dfx_ev_p4[2]));
-			break;	
-			
-			default:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_default[0], sizeof(s5ka3dfx_ev_default[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_default[1], sizeof(s5ka3dfx_ev_default[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_ev_default[2], sizeof(s5ka3dfx_ev_default[2]));				
-			break;
-		}
+	if (state->vt_mode == 1) {
+		ev = brightness_vt;
+		array_size = ARRAY_SIZE(brightness_vt);
+	} else {
+		ev = brightness;
+		array_size = ARRAY_SIZE(brightness);
 	}
-	if (err < 0)
-	{
-		v4l_info(client, "%s: register set failed\n", __func__);
-		return -EIO;
-	}
+
+	if (ev_index >= array_size)
+		ev_index = EV_DEFAULT;
+
+	ev += ev_index;
+
+	err = s5ka3dfx_write_regset_table(sd, ev);
+
+	if (err)
+		dev_dbg(&client->dev, "%s: register set failed\n", __func__);
+
 	return err;
 }
 
-/* set sensor register values for adjusting whitebalance, both auto and manual */
+/*
+ * set sensor register values for
+ * adjusting whitebalance, both auto and manual
+ */
 static int s5ka3dfx_set_wb(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
+	struct s5ka3dfx_regset_table *wb = white_balance;
 	int err = -EINVAL;
 
-	dev_dbg(&client->dev, "%s:  value : %d \n", __func__, ctrl->value);
+	dev_dbg(&client->dev, "%s: value : %d\n", __func__, ctrl->value);
 
-	switch(ctrl->value)
-	{
-	case WHITE_BALANCE_AUTO:
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_auto[0], sizeof(s5ka3dfx_wb_auto[0]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_auto[1], sizeof(s5ka3dfx_wb_auto[1]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_auto[2], sizeof(s5ka3dfx_wb_auto[2]));	
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_auto[3], sizeof(s5ka3dfx_wb_auto[3]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_auto[4], sizeof(s5ka3dfx_wb_auto[4]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_auto[5], sizeof(s5ka3dfx_wb_auto[5]));			
-		break;
-
-	case WHITE_BALANCE_SUNNY:
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_sunny[0], sizeof(s5ka3dfx_wb_sunny[0]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_sunny[1], sizeof(s5ka3dfx_wb_sunny[1]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_sunny[2], sizeof(s5ka3dfx_wb_sunny[2]));	
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_sunny[3], sizeof(s5ka3dfx_wb_sunny[3]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_sunny[4], sizeof(s5ka3dfx_wb_sunny[4]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_sunny[5], sizeof(s5ka3dfx_wb_sunny[5]));		
-		break;
-
-	case WHITE_BALANCE_CLOUDY:
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_cloudy[0], sizeof(s5ka3dfx_wb_cloudy[0]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_cloudy[1], sizeof(s5ka3dfx_wb_cloudy[1]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_cloudy[2], sizeof(s5ka3dfx_wb_cloudy[2]));	
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_cloudy[3], sizeof(s5ka3dfx_wb_cloudy[3]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_cloudy[4], sizeof(s5ka3dfx_wb_cloudy[4]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_cloudy[5], sizeof(s5ka3dfx_wb_cloudy[5]));		
-		break;
-
-	case WHITE_BALANCE_TUNGSTEN:
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_tungsten[0], sizeof(s5ka3dfx_wb_tungsten[0]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_tungsten[1], sizeof(s5ka3dfx_wb_tungsten[1]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_tungsten[2], sizeof(s5ka3dfx_wb_tungsten[2]));	
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_tungsten[3], sizeof(s5ka3dfx_wb_tungsten[3]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_tungsten[4], sizeof(s5ka3dfx_wb_tungsten[4]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_tungsten[5], sizeof(s5ka3dfx_wb_tungsten[5]));		
-		break;
-
-	case WHITE_BALANCE_FLUORESCENT:
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_fluorescent[0], sizeof(s5ka3dfx_wb_fluorescent[0]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_fluorescent[1], sizeof(s5ka3dfx_wb_fluorescent[1]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_fluorescent[2], sizeof(s5ka3dfx_wb_fluorescent[2]));	
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_fluorescent[3], sizeof(s5ka3dfx_wb_fluorescent[3]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_fluorescent[4], sizeof(s5ka3dfx_wb_fluorescent[4]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_wb_fluorescent[5], sizeof(s5ka3dfx_wb_fluorescent[5]));		
-		break;
-
-	default:
-		dev_dbg(&client->dev, "%s: Not Support value \n", __func__);
-		err = 0;
-		break;
-
+	if ((ctrl->value < WHITE_BALANCE_BASE) ||
+		(ctrl->value > WHITE_BALANCE_MAX) ||
+		(ctrl->value >= ARRAY_SIZE(white_balance))) {
+		dev_dbg(&client->dev, "%s: Value(%d) out of range([%d:%d])\n",
+			__func__, ctrl->value,
+			WHITE_BALANCE_BASE, WHITE_BALANCE_MAX);
+		dev_dbg(&client->dev, "%s: Value out of range\n", __func__);
+		goto out;
 	}
+
+	wb += ctrl->value;
+
+	err = s5ka3dfx_write_regset_table(sd, wb);
+
+	if (err)
+		dev_dbg(&client->dev, "%s: register set failed\n", __func__);
+out:
 	return err;
 }
 
 /* set sensor register values for adjusting color effect */
-static int s5ka3dfx_set_effect(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
+static int s5ka3dfx_set_effect(struct v4l2_subdev *sd,
+			       struct v4l2_control *ctrl)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
+	struct s5ka3dfx_regset_table *effect = effects;
 	int err = -EINVAL;
 
-	dev_dbg(&client->dev, "%s: value : %d \n", __func__, ctrl->value);
+	dev_dbg(&client->dev, "%s: value : %d\n", __func__, ctrl->value);
 
-	switch(ctrl->value)
-	{
-	case IMAGE_EFFECT_NONE:
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_none[0], sizeof(s5ka3dfx_effect_none[0]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_none[1], sizeof(s5ka3dfx_effect_none[1]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_none[2], sizeof(s5ka3dfx_effect_none[2]));	
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_none[3], sizeof(s5ka3dfx_effect_none[3]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_none[4], sizeof(s5ka3dfx_effect_none[4]));		
-		break;
-
-	case IMAGE_EFFECT_BNW:		//Gray
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_gray[0], sizeof(s5ka3dfx_effect_gray[0]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_gray[1], sizeof(s5ka3dfx_effect_gray[1]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_gray[2], sizeof(s5ka3dfx_effect_gray[2]));	
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_gray[3], sizeof(s5ka3dfx_effect_gray[3]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_gray[4], sizeof(s5ka3dfx_effect_gray[4]));
-		break;
-
-	case IMAGE_EFFECT_SEPIA:
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_sepia[0], sizeof(s5ka3dfx_effect_sepia[0]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_sepia[1], sizeof(s5ka3dfx_effect_sepia[1]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_sepia[2], sizeof(s5ka3dfx_effect_sepia[2]));	
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_sepia[3], sizeof(s5ka3dfx_effect_sepia[3]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_sepia[4], sizeof(s5ka3dfx_effect_sepia[4]));
-		break;
-
-	case IMAGE_EFFECT_AQUA:
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_aqua[0], sizeof(s5ka3dfx_effect_aqua[0]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_aqua[1], sizeof(s5ka3dfx_effect_aqua[1]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_aqua[2], sizeof(s5ka3dfx_effect_aqua[2]));	
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_aqua[3], sizeof(s5ka3dfx_effect_aqua[3]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_aqua[4], sizeof(s5ka3dfx_effect_aqua[4]));
-		break;
-
-	case IMAGE_EFFECT_NEGATIVE:
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_negative[0], sizeof(s5ka3dfx_effect_negative[0]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_negative[1], sizeof(s5ka3dfx_effect_negative[1]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_negative[2], sizeof(s5ka3dfx_effect_negative[2]));	
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_negative[3], sizeof(s5ka3dfx_effect_negative[3]));
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_effect_negative[4], sizeof(s5ka3dfx_effect_negative[4]));
-		break;
-
-	default:
-		dev_dbg(&client->dev, "%s: Not Support value \n", __func__);
-		err = 0;
-		break;
-
+	if ((ctrl->value < IMAGE_EFFECT_BASE) ||
+		(ctrl->value > IMAGE_EFFECT_MAX) ||
+		(ctrl->value >= ARRAY_SIZE(effects))) {
+		dev_dbg(&client->dev, "%s: Value(%d) out of range([%d:%d])\n",
+			__func__, ctrl->value,
+			IMAGE_EFFECT_BASE, IMAGE_EFFECT_MAX);
+		goto out;
 	}
-	
+
+	effect += ctrl->value;
+
+	err = s5ka3dfx_write_regset_table(sd, effect);
+
+	if (err)
+		dev_dbg(&client->dev, "%s: register set failed\n", __func__);
+out:
 	return err;
 }
 
 /* set sensor register values for frame rate(fps) setting */
-static int s5ka3dfx_set_frame_rate(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
+static int s5ka3dfx_set_frame_rate(struct v4l2_subdev *sd,
+				   int state_fps)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
-	struct s5ka3dfx_state *state = to_state(sd);
+	struct s5ka3dfx_state *state =
+		container_of(sd, struct s5ka3dfx_state, sd);
+	struct s5ka3dfx_regset_table *fps;
 
 	int err = -EINVAL;
-	int i = 0;
+	int fps_index;
 
-	dev_dbg(&client->dev, "%s: value : %d \n", __func__, ctrl->value);
-	
-	printk(KERN_DEBUG "state->vt_mode : %d \n", state->vt_mode);
-	if(state->vt_mode == 1)
-	{
-		switch(ctrl->value)
-		{
-		case 7:
-			for (i = 0; i < S5KA3DFX_VT_FPS; i++) {
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_vt_fps_7[i], sizeof(s5ka3dfx_vt_fps_7[i]));
-			}
-			break;
+	dev_dbg(&client->dev, "%s: value : %d\n", __func__, state_fps);
 
-		case 10:
-			for (i = 0; i < S5KA3DFX_VT_FPS; i++) {
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_vt_fps_10[i], sizeof(s5ka3dfx_vt_fps_10[i]));
-			}
-			break;
-			
-		case 15:
-			for (i = 0; i < S5KA3DFX_VT_FPS; i++) {
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_vt_fps_15[i], sizeof(s5ka3dfx_vt_fps_15[i]));
-			}
-			break;
+	pr_debug("state->vt_mode : %d\n", state->vt_mode);
 
-		default:
-			dev_dbg(&client->dev, "%s: Not Support value \n", __func__);
-			err = 0;
-			break;
-		}
+	switch (state_fps) {
+	case 0:
+		fps_index = 3;
+		break; 
+
+	case 7:
+		fps_index = 0;
+		break;
+
+	case 10:
+		fps_index = 1;
+		break;
+
+	case 15:
+		fps_index = 2;
+		break;
+
+	default:
+		dev_err(&client->dev, "%s: Value(%d) is not supported\n",
+			__func__, state_fps);
+		goto out;
 	}
+
+	if (state->vt_mode == 1)
+		fps = fps_vt_table;
 	else
-	{
-		switch(ctrl->value)
-		{
-		case 7:
-			for (i = 0; i < S5KA3DFX_FPS; i++) {
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_fps_7[i], sizeof(s5ka3dfx_fps_7[i]));
-			}
-			break;
+		fps = fps_table;
 
-		case 10:
-			for (i = 0; i < S5KA3DFX_FPS; i++) {
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_fps_10[i], sizeof(s5ka3dfx_fps_10[i]));
-			}
-			break;
-			
-		case 15:
-			for (i = 0; i < S5KA3DFX_FPS; i++) {
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_fps_15[i], sizeof(s5ka3dfx_fps_15[i]));
-			}
-			break;
+	fps += fps_index;
+	state->fps = fps_index;
 
-		default:
-			dev_dbg(&client->dev, "%s: Not Support value \n", __func__);
-			err = 0;
-			break;
-		}
-	}
+	err = s5ka3dfx_write_regset_table(sd, fps);
+	state->fps = state_fps;
+out:
 	return err;
 }
 
@@ -1065,316 +775,276 @@ static int s5ka3dfx_set_frame_rate(struct v4l2_subdev *sd, struct v4l2_control *
 static int s5ka3dfx_set_blur(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
-	struct s5ka3dfx_state *state = to_state(sd);
+	struct s5ka3dfx_state *state =
+		container_of(sd, struct s5ka3dfx_state, sd);
+	struct s5ka3dfx_regset_table *bl;
 	int err = -EINVAL;
+	int array_size;
 
-	dev_dbg(&client->dev, "%s: value : %d \n", __func__, ctrl->value);
-	
-	printk(KERN_DEBUG "state->vt_mode : %d \n", state->vt_mode);
-	if(state->vt_mode == 1)
-	{
-		switch(ctrl->value)
-		{
-			case BLUR_LEVEL_0:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_vt_none[0], sizeof(s5ka3dfx_blur_vt_none[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_vt_none[1], sizeof(s5ka3dfx_blur_vt_none[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_vt_none[2], sizeof(s5ka3dfx_blur_vt_none[2]));	
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_vt_none[3], sizeof(s5ka3dfx_blur_vt_none[3]));
-				break;
+	dev_dbg(&client->dev, "%s: value : %d\n", __func__, ctrl->value);
 
-			case BLUR_LEVEL_1:	
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_vt_p1[0], sizeof(s5ka3dfx_blur_vt_p1[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_vt_p1[1], sizeof(s5ka3dfx_blur_vt_p1[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_vt_p1[2], sizeof(s5ka3dfx_blur_vt_p1[2]));	
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_vt_p1[3], sizeof(s5ka3dfx_blur_vt_p1[3]));
-				break;
+	pr_debug("state->vt_mode : %d\n", state->vt_mode);
 
-			case BLUR_LEVEL_2:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_vt_p2[0], sizeof(s5ka3dfx_blur_vt_p2[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_vt_p2[1], sizeof(s5ka3dfx_blur_vt_p2[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_vt_p2[2], sizeof(s5ka3dfx_blur_vt_p2[2]));	
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_vt_p2[3], sizeof(s5ka3dfx_blur_vt_p2[3]));
-				break;
-
-			case BLUR_LEVEL_3:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_vt_p3[0], sizeof(s5ka3dfx_blur_vt_p3[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_vt_p3[1], sizeof(s5ka3dfx_blur_vt_p3[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_vt_p3[2], sizeof(s5ka3dfx_blur_vt_p3[2]));	
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_vt_p3[3], sizeof(s5ka3dfx_blur_vt_p3[3]));
-				break;
-
-			default:
-				dev_dbg(&client->dev, "%s: Not Support value \n", __func__);
-				err = 0;
-				break;
-
-		}
+	if ((ctrl->value < BLUR_LEVEL_0) || (ctrl->value > BLUR_LEVEL_MAX)) {
+		dev_dbg(&client->dev, "%s: Value(%d) out of range([%d:%d])\n",
+			__func__, ctrl->value,
+			BLUR_LEVEL_0, BLUR_LEVEL_MAX);
+		goto out;
 	}
-	else
-	{
-		switch(ctrl->value)
-		{
-			case BLUR_LEVEL_0:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_none[0], sizeof(s5ka3dfx_blur_none[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_none[1], sizeof(s5ka3dfx_blur_none[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_none[2], sizeof(s5ka3dfx_blur_none[2]));	
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_none[3], sizeof(s5ka3dfx_blur_none[3]));
-				break;
 
-			case BLUR_LEVEL_1:	
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_p1[0], sizeof(s5ka3dfx_blur_p1[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_p1[1], sizeof(s5ka3dfx_blur_p1[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_p1[2], sizeof(s5ka3dfx_blur_p1[2]));	
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_p1[3], sizeof(s5ka3dfx_blur_p1[3]));
-				break;
-
-			case BLUR_LEVEL_2:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_p2[0], sizeof(s5ka3dfx_blur_p2[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_p2[1], sizeof(s5ka3dfx_blur_p2[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_p2[2], sizeof(s5ka3dfx_blur_p2[2]));	
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_p2[3], sizeof(s5ka3dfx_blur_p2[3]));
-				break;
-
-			case BLUR_LEVEL_3:
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_p3[0], sizeof(s5ka3dfx_blur_p3[0]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_p3[1], sizeof(s5ka3dfx_blur_p3[1]));
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_p3[2], sizeof(s5ka3dfx_blur_p3[2]));	
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_blur_p3[3], sizeof(s5ka3dfx_blur_p3[3]));
-				break;
-
-			default:
-				dev_dbg(&client->dev, "%s: Not Support value \n", __func__);
-				err = 0;
-				break;
-		}		
+	if (state->vt_mode == 1) {
+		bl = blur_vt;
+		array_size = ARRAY_SIZE(blur_vt);
+	} else {
+		bl = blur;
+		array_size = ARRAY_SIZE(blur);
 	}
+
+	if (ctrl->value >= array_size) {
+		dev_dbg(&client->dev, "%s: Value(%d) out of range([%d:%d))\n",
+			__func__, ctrl->value,
+			BLUR_LEVEL_0, array_size);
+		goto out;
+	}
+
+	bl += ctrl->value;
+
+	err = s5ka3dfx_write_regset_table(sd, bl);
+out:
 	return err;
 }
 
 static int s5ka3dfx_check_dataline_stop(struct v4l2_subdev *sd)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
-	struct s5ka3dfx_state *state = to_state(sd);
-	int err = -EINVAL, i;
+	struct s5ka3dfx_state *state =
+		container_of(sd, struct s5ka3dfx_state, sd);
+	int err = -EINVAL;
 
 	dev_dbg(&client->dev, "%s\n", __func__);
 
-	for (i = 0; i < 2; i++) {
-		err = s5ka3dfx_i2c_write(sd, s5ka3dfx_dataline_stop[i], \
-					sizeof(s5ka3dfx_dataline_stop[i]));
-		if (err < 0)
-		{
-			v4l_info(client, "%s: register set failed\n", __func__);
-			return -EIO;
-		}
+	err = s5ka3dfx_write_regset_table(sd, dataline_stop);
+	if (err < 0) {
+		v4l_info(client, "%s: register set failed\n", __func__);
+		return -EIO;
 	}
+
 	state->check_dataline = 0;
 	err = s5ka3dfx_reset(sd);
-	if (err < 0)
-	{
+	if (err < 0) {
 		v4l_info(client, "%s: register set failed\n", __func__);
 		return -EIO;
 	}
 	return err;
 }
 
-/* if you need, add below some functions below */
+/* returns the real iso currently used by sensor due to lighting
+ * conditions, not the requested iso we sent using s_ctrl.
+ */
+static int s5ka3dfx_get_iso(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
+{
+	int err;
+	struct i2c_client *client = v4l2_get_subdevdata(sd);
+	s32 read_value;
+	int gain;
+
+	err = s5ka3dfx_i2c_write_multi(client, 0xEF, 0x02);
+	if (err < 0)
+		return err;
+
+	read_value = i2c_smbus_read_byte_data(client, 0x1D);
+	if (read_value < 0)
+		return read_value;
+
+	read_value &= 0x7F;
+	gain = (128 * 100) / (128 - read_value);
+
+	if (gain > 280)
+		ctrl->value = ISO_400;
+	else if (gain > 230)
+		ctrl->value = ISO_200;
+	else if (gain > 190)
+		ctrl->value = ISO_100;
+	else if (gain > 100)
+		ctrl->value = ISO_50;
+	else
+		ctrl->value = gain;
+
+	dev_dbg(&client->dev, "%s: get iso == %d (0x%x)\n",
+			__func__, ctrl->value, read_value);
+
+	return err;
+}
+
+static int s5ka3dfx_get_shutterspeed(struct v4l2_subdev *sd,
+		struct v4l2_control *ctrl)
+{
+	struct i2c_client *client = v4l2_get_subdevdata(sd);
+	struct s5ka3dfx_state *state = to_state(sd);
+	s32 read_value;
+	int cintr;
+	int err;
+
+	err = s5ka3dfx_i2c_write_multi(client, 0xEF, 0x02);
+	if (err < 0)
+		return err;
+
+	read_value = i2c_smbus_read_byte_data(client, 0x0E);
+	if (read_value < 0)
+		return read_value;
+	cintr = (read_value & 0x1F) << 8;
+
+	read_value = i2c_smbus_read_byte_data(client, 0x0F);
+	if (read_value < 0)
+		return read_value;
+	cintr |= read_value & 0xFF;
+
+	/* A3D Shutter Speed (Sec.) = MCLK / (2 * (cintr - 1) * 814) */
+	ctrl->value =  ((cintr - 1) * 1628) / (state->freq / 1000);
+
+	dev_dbg(&client->dev,
+			"%s: get shutterspeed == %d\n", __func__, ctrl->value);
+
+	return err;
+}
 
 static int s5ka3dfx_g_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
-	struct s5ka3dfx_state *state = to_state(sd);
+	struct s5ka3dfx_state *state =
+		container_of(sd, struct s5ka3dfx_state, sd);
 	struct s5ka3dfx_userset userset = state->userset;
-	int err = -EINVAL;
+	int err = 0;
 
-	dev_dbg(&client->dev, "%s: id : 0x%08x \n", __func__, ctrl->id);
+	dev_dbg(&client->dev, "%s: id : 0x%08x\n", __func__, ctrl->id);
 
 	switch (ctrl->id) {
 	case V4L2_CID_EXPOSURE:
 		ctrl->value = userset.exposure_bias;
-		err = 0;
 		break;
 
 	case V4L2_CID_AUTO_WHITE_BALANCE:
 		ctrl->value = userset.auto_wb;
-		err = 0;
 		break;
 
 	case V4L2_CID_WHITE_BALANCE_PRESET:
 		ctrl->value = userset.manual_wb;
-		err = 0;
 		break;
 
 	case V4L2_CID_COLORFX:
 		ctrl->value = userset.effect;
-		err = 0;
 		break;
 
 	case V4L2_CID_CONTRAST:
 		ctrl->value = userset.contrast;
-		err = 0;
 		break;
 
 	case V4L2_CID_SATURATION:
 		ctrl->value = userset.saturation;
-		err = 0;
 		break;
 
 	case V4L2_CID_SHARPNESS:
 		ctrl->value = userset.saturation;
-		err = 0;
 		break;
 
-#if 0
-	case V4L2_CID_CAM_FRAMESIZE_INDEX:
-		ctrl->value = s5ka3dfx_get_framesize_index(sd);
-		err = 0;
+	case V4L2_CID_CAMERA_GET_ISO:
+		err = s5ka3dfx_get_iso(sd, ctrl);
 		break;
-#endif
+
+	case V4L2_CID_CAMERA_GET_SHT_TIME:
+		err = s5ka3dfx_get_shutterspeed(sd, ctrl);
+		break;
+
+	case V4L2_CID_ESD_INT:
+		ctrl->value = 0;
+		break;
 
 	default:
 		dev_dbg(&client->dev, "%s: no such ctrl\n", __func__);
+		err = -EINVAL;
 		break;
 	}
-	
+
 	return err;
 }
 
 static int s5ka3dfx_s_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
 {
-#ifdef S5KA3DFX_COMPLETE
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
-	struct s5ka3dfx_state *state = to_state(sd);
+	struct s5ka3dfx_state *state =
+		container_of(sd, struct s5ka3dfx_state, sd);
 
 	int err = -EINVAL;
 
-	printk(KERN_DEBUG "s5ka3dfx_s_ctrl() : ctrl->id 0x%08x, ctrl->value %d \n",ctrl->id, ctrl->value);
+	pr_debug("%s : ctrl->id 0x%08x, ctrl->value %d\n", __func__,
+			ctrl->id, ctrl->value);
 
 	switch (ctrl->id) {
 
-#if 0		
-	case V4L2_CID_EXPOSURE:
-		dev_dbg(&client->dev, "%s: V4L2_CID_EXPOSURE\n", __func__);
-		err = s5ka3dfx_write_regs(sd, \
-			(unsigned char *) s5ka3dfx_regs_ev_bias[ctrl->value], \
-			sizeof(s5ka3dfx_regs_ev_bias[ctrl->value]));
-		break;
-
-	case V4L2_CID_AUTO_WHITE_BALANCE:
-		dev_dbg(&client->dev, "%s: V4L2_CID_AUTO_WHITE_BALANCE\n", \
-			__func__);
-		err = s5ka3dfx_write_regs(sd, \
-			(unsigned char *) s5ka3dfx_regs_awb_enable[ctrl->value], \
-			sizeof(s5ka3dfx_regs_awb_enable[ctrl->value]));
-		break;
-
-	case V4L2_CID_WHITE_BALANCE_PRESET:
-		dev_dbg(&client->dev, "%s: V4L2_CID_WHITE_BALANCE_PRESET\n", \
-			__func__);
-		err = s5ka3dfx_write_regs(sd, \
-			(unsigned char *) s5ka3dfx_regs_wb_preset[ctrl->value], \
-			sizeof(s5ka3dfx_regs_wb_preset[ctrl->value]));
-		break;
-
-	case V4L2_CID_COLORFX:
-		dev_dbg(&client->dev, "%s: V4L2_CID_COLORFX\n", __func__);
-		err = s5ka3dfx_write_regs(sd, \
-			(unsigned char *) s5ka3dfx_regs_color_effect[ctrl->value], \
-			sizeof(s5ka3dfx_regs_color_effect[ctrl->value]));
-		break;
-
-	case V4L2_CID_CONTRAST:
-		dev_dbg(&client->dev, "%s: V4L2_CID_CONTRAST\n", __func__);
-		err = s5ka3dfx_write_regs(sd, \
-			(unsigned char *) s5ka3dfx_regs_contrast_bias[ctrl->value], \
-			sizeof(s5ka3dfx_regs_contrast_bias[ctrl->value]));
-		break;
-
-	case V4L2_CID_SATURATION:
-		dev_dbg(&client->dev, "%s: V4L2_CID_SATURATION\n", __func__);
-		err = s5ka3dfx_write_regs(sd, \
-			(unsigned char *) s5ka3dfx_regs_saturation_bias[ctrl->value], \
-			sizeof(s5ka3dfx_regs_saturation_bias[ctrl->value]));
-		break;
-
-	case V4L2_CID_SHARPNESS:
-		dev_dbg(&client->dev, "%s: V4L2_CID_SHARPNESS\n", __func__);
-		err = s5ka3dfx_write_regs(sd, \
-			(unsigned char *) s5ka3dfx_regs_sharpness_bias[ctrl->value], \
-			sizeof(s5ka3dfx_regs_sharpness_bias[ctrl->value]));
-		break;	
-
-	/* The camif supports only a few frame resolutions. 
- 	 * Through this call, camif can set the camera resolution with given index.
- 	 * Typically, camif gets the index through g_ctrl call with this ID.
- 	 */
-
- 	case V4L2_CID_CAM_FRAMESIZE_INDEX:
-		err = s5ka3dfx_set_framesize_index(sd, ctrl->value);
-        break;
-#endif
-
-	case V4L2_CID_CAMERA_BRIGHTNESS:	//V4L2_CID_EXPOSURE:
-		dev_dbg(&client->dev, "%s: V4L2_CID_CAMERA_BRIGHTNESS\n", __func__);
+	case V4L2_CID_CAMERA_BRIGHTNESS:
+		dev_dbg(&client->dev, "%s: "
+				"V4L2_CID_CAMERA_BRIGHTNESS\n", __func__);
 		err = s5ka3dfx_set_brightness(sd, ctrl);
 		break;
 
-	case V4L2_CID_CAMERA_WHITE_BALANCE: //V4L2_CID_AUTO_WHITE_BALANCE:
-		dev_dbg(&client->dev, "%s: V4L2_CID_AUTO_WHITE_BALANCE\n", __func__);
+	case V4L2_CID_CAMERA_WHITE_BALANCE:
+		dev_dbg(&client->dev, "%s: "
+				"V4L2_CID_AUTO_WHITE_BALANCE\n", __func__);
 		err = s5ka3dfx_set_wb(sd, ctrl);
 		break;
 
-	case V4L2_CID_CAMERA_EFFECT:	//V4L2_CID_COLORFX:
-		dev_dbg(&client->dev, "%s: V4L2_CID_CAMERA_EFFECT\n", __func__);
+	case V4L2_CID_CAMERA_EFFECT:
+		dev_dbg(&client->dev, "%s: "
+				"V4L2_CID_CAMERA_EFFECT\n", __func__);
 		err = s5ka3dfx_set_effect(sd, ctrl);
 		break;
 
 	case V4L2_CID_CAMERA_FRAME_RATE:
-		dev_dbg(&client->dev, "%s: V4L2_CID_CAMERA_FRAME_RATE\n", __func__);
-		err = s5ka3dfx_set_frame_rate(sd, ctrl);	
+		dev_dbg(&client->dev, "%s: "
+				"V4L2_CID_CAMERA_FRAME_RATE\n", __func__);
+		state->fps = ctrl->value;
+		err = 0;
+		//err =  s5ka3dfx_set_frame_rate(sd, ctrl->value);
 		break;
-		
+
 	case V4L2_CID_CAMERA_VGA_BLUR:
-		dev_dbg(&client->dev, "%s: V4L2_CID_CAMERA_FRAME_RATE\n", __func__);
-		err = s5ka3dfx_set_blur(sd, ctrl);	
+		dev_dbg(&client->dev, "%s: "
+				"V4L2_CID_CAMERA_VGA_BLUR\n", __func__);
+		err = s5ka3dfx_set_blur(sd, ctrl);
 		break;
 
 	case V4L2_CID_CAMERA_VT_MODE:
 		state->vt_mode = ctrl->value;
-		dev_dbg(&client->dev, "%s: V4L2_CID_CAMERA_VT_MODE : state->vt_mode %d \n", __func__, state->vt_mode);
+		dev_dbg(&client->dev, "%s: V4L2_CID_CAMERA_VT_MODE : "
+				"state->vt_mode %d\n",
+				__func__, state->vt_mode);
 		err = 0;
 		break;
 
 	case V4L2_CID_CAMERA_CHECK_DATALINE:
 		state->check_dataline = ctrl->value;
 		err = 0;
-		break;	
+		break;
 
 	case V4L2_CID_CAMERA_CHECK_DATALINE_STOP:
 		err = s5ka3dfx_check_dataline_stop(sd);
 		break;
 
 	case V4L2_CID_CAM_PREVIEW_ONOFF:
-		if(state->check_previewdata == 0)
-		{
-			err = 0;
-		}
+		if (state->check_previewdata == 0)
+			err = s5ka3dfx_set_preview_start(sd);
 		else
-		{
-			err = -EIO;	
-		}
+			err = -EIO;
 		break;
 
-	//s1_camera [ Defense process by ESD input ] _[
 	case V4L2_CID_CAMERA_RESET:
-		dev_dbg(&client->dev, "%s: V4L2_CID_CAMERA_RESET \n", __func__);
+		dev_dbg(&client->dev, "%s: V4L2_CID_CAMERA_RESET\n", __func__);
 		err = s5ka3dfx_reset(sd);
 		break;
-	// _]
 
 	default:
-		dev_dbg(&client->dev, "%s: no support control in camera sensor, S5KA3DFX\n", __func__);
-		//err = -ENOIOCTLCMD;
+		dev_dbg(&client->dev, "%s: no support control "
+				"in camera sensor, S5KA3DFX\n", __func__);
 		err = 0;
 		break;
 	}
@@ -1387,89 +1057,70 @@ static int s5ka3dfx_s_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
 out:
 	dev_dbg(&client->dev, "%s: vidioc_s_ctrl failed\n", __func__);
 	return err;
-#else
-	return 0;
-#endif
+}
+
+static void s5ka3dfx_init_parameters(struct v4l2_subdev *sd)
+{
+	struct s5ka3dfx_state *state =
+		container_of(sd, struct s5ka3dfx_state, sd);
+	struct sec_cam_parm *parms =
+		(struct sec_cam_parm *)&state->strm.parm.raw_data;
+
+	parms->effects = IMAGE_EFFECT_NONE;
+	parms->brightness = EV_DEFAULT;
+	parms->white_balance = WHITE_BALANCE_AUTO;
+
 }
 
 static int s5ka3dfx_init(struct v4l2_subdev *sd, u32 val)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
-	struct s5ka3dfx_state *state = to_state(sd);
-	int err = -EINVAL, i;
+	struct s5ka3dfx_state *state =
+		container_of(sd, struct s5ka3dfx_state, sd);
+	int err = -EINVAL;
 
-	//v4l_info(client, "%s: camera initialization start : state->vt_mode %d \n", __func__, state->vt_mode);
-	printk(KERN_DEBUG "camera initialization start, state->vt_mode : %d \n", state->vt_mode); 
-	printk(KERN_DEBUG "state->check_dataline : %d \n", state->check_dataline); 
-	if(state->vt_mode == 0)
-	{
-		if(state->check_dataline)
-		{	
-			for (i = 0; i < S5KA3DFX_DATALINE_REGS; i++) {
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_dataline[i], \
-							sizeof(s5ka3dfx_dataline[i]));
-				if (err < 0)
-				{
-					v4l_info(client, "%s: register set failed\n", \
-					__func__);
-					
-					break;
-				}	
-			}
-		}
+	pr_debug("camera initialization start, state->vt_mode : %d\n",
+			state->vt_mode);
+	pr_debug("state->check_dataline : %d\n", state->check_dataline);
+
+	s5ka3dfx_init_parameters(sd);
+	if (state->vt_mode == 0) {
+		if (state->check_dataline)
+			err = s5ka3dfx_write_regset_table(sd, dataline);
 		else
-		{
-			for (i = 0; i < S5KA3DFX_INIT_REGS; i++) {
-				err = s5ka3dfx_i2c_write(sd, s5ka3dfx_init_reg[i], \
-							sizeof(s5ka3dfx_init_reg[i]));
-				if (err < 0)
-				{
-					v4l_info(client, "%s: register set failed\n", \
-					__func__);
-					
-					break;
-				}	
-			}
-		}
-	}
-	else
-	{
-		for (i = 0; i < S5KA3DFX_INIT_VT_REGS; i++) {
-			err = s5ka3dfx_i2c_write(sd, s5ka3dfx_init_vt_reg[i], \
-						sizeof(s5ka3dfx_init_vt_reg[i]));
-			if (err < 0)
-			{
-				v4l_info(client, "%s: register set failed\n", \
-				__func__);
-				
-				break;
-			}	
-		}
-	}
+			err = s5ka3dfx_write_regset_table(sd, init_reg);
+	} else
+		err = s5ka3dfx_write_regset_table(sd, init_vt_reg);
 
 	if (err < 0) {
-		//This is preview fail 
+		/* This is preview fail */
 		state->check_previewdata = 100;
-		v4l_err(client, "%s: camera initialization failed. err(%d)\n", \
+		v4l_err(client,
+			"%s: camera initialization failed. err(%d)\n",
 			__func__, state->check_previewdata);
-		return -EIO;	/* FIXME */	
+		return -EIO;
 	}
+	s5ka3dfx_set_frame_rate(sd, state->fps);
 
-	//This is preview success
+	/* This is preview success */
 	state->check_previewdata = 0;
 	return 0;
 }
 
 /*
  * s_config subdev ops
- * With camera device, we need to re-initialize every single opening time therefor,
- * it is not necessary to be initialized on probe time. except for version checking
+ * With camera device,
+ * we need to re-initialize every single opening time therefor,
+ * it is not necessary to be initialized on probe time.
+ * except for version checking
  * NOTE: version checking is optional
  */
-static int s5ka3dfx_s_config(struct v4l2_subdev *sd, int irq, void *platform_data)
+static int s5ka3dfx_s_config(struct v4l2_subdev *sd,
+			     int irq, void *platform_data)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
-	struct s5ka3dfx_state *state = to_state(sd);
+	struct s5ka3dfx_state *state =
+		container_of(sd, struct s5ka3dfx_state, sd);
 	struct s5ka3dfx_platform_data *pdata;
 
 	dev_dbg(&client->dev, "fetching platform data\n");
@@ -1498,8 +1149,8 @@ static int s5ka3dfx_s_config(struct v4l2_subdev *sd, int irq, void *platform_dat
 	else
 		state->pix.pixelformat = pdata->pixelformat;
 
-	if (!pdata->freq)
-		state->freq = 24000000;	/* 24MHz default */
+	if (pdata->freq == 0)
+		state->freq = DEFUALT_MCLK;
 	else
 		state->freq = pdata->freq;
 
@@ -1513,7 +1164,7 @@ static int s5ka3dfx_s_config(struct v4l2_subdev *sd, int irq, void *platform_dat
 }
 
 static const struct v4l2_subdev_core_ops s5ka3dfx_core_ops = {
-	.init = s5ka3dfx_init,	/* initializing API */
+	.init = s5ka3dfx_init,		/* initializing API */
 	.s_config = s5ka3dfx_s_config,	/* Fetch platform data */
 	.queryctrl = s5ka3dfx_queryctrl,
 	.querymenu = s5ka3dfx_querymenu,
@@ -1544,7 +1195,7 @@ static const struct v4l2_subdev_ops s5ka3dfx_ops = {
  * In probe routine, we just register subdev device
  */
 static int s5ka3dfx_probe(struct i2c_client *client,
-			 const struct i2c_device_id *id)
+			  const struct i2c_device_id *id)
 {
 	struct s5ka3dfx_state *state;
 	struct v4l2_subdev *sd;
@@ -1563,13 +1214,14 @@ static int s5ka3dfx_probe(struct i2c_client *client,
 	return 0;
 }
 
-
 static int s5ka3dfx_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct s5ka3dfx_state *state =
+		container_of(sd, struct s5ka3dfx_state, sd);
 
 	v4l2_device_unregister_subdev(sd);
-	kfree(to_state(sd));
+	kfree(state);
 	return 0;
 }
 
@@ -1577,6 +1229,7 @@ static const struct i2c_device_id s5ka3dfx_id[] = {
 	{ S5KA3DFX_DRIVER_NAME, 0 },
 	{ },
 };
+
 MODULE_DEVICE_TABLE(i2c, s5ka3dfx_id);
 
 static struct v4l2_i2c_driver_data v4l2_i2c_data = {
@@ -1589,4 +1242,3 @@ static struct v4l2_i2c_driver_data v4l2_i2c_data = {
 MODULE_DESCRIPTION("Samsung Electronics S5KA3DFX UXGA camera driver");
 MODULE_AUTHOR("Jinsung Yang <jsgood.yang@samsung.com>");
 MODULE_LICENSE("GPL");
-

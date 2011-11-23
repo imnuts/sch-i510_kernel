@@ -12,7 +12,6 @@
 
 #include <linux/io.h>
 #include <linux/delay.h>
-#include <linux/clk.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
@@ -25,17 +24,7 @@
 #include <mach/dma.h>
 
 #include "s3c-dma.h"
-#include "s3c-i2s-v2.h"
-
-#define S3C64XX_DIV_BCLK	S3C_I2SV2_DIV_BCLK
-#define S3C64XX_DIV_RCLK	S3C_I2SV2_DIV_RCLK
-#define S3C64XX_DIV_PRESCALER	S3C_I2SV2_DIV_PRESCALER
-
-#define S3C64XX_CLKSRC_PCLK	(0)
-#define S3C64XX_CLKSRC_MUX	(1)
-#define S3C64XX_CLKSRC_CDCLK    (2)
-
-extern void s5p_idma_init(void *);
+#include "s3c-idma.h"
 
 static void __iomem *s5p_i2s0_regs;
 
@@ -44,88 +33,17 @@ static struct s3c2410_dma_client s5p_dma_client_outs = {
 };
 
 static struct s3c_dma_params s5p_i2s_sec_pcm_out = {
-	.channel	= DMACH_I2S0_OUT_S,
+	.channel	= DMACH_I2S0S_TX,
 	.client		= &s5p_dma_client_outs,
 	.dma_size	= 4,
 };
 
-static inline struct s3c_i2sv2_info *to_info(struct snd_soc_dai *cpu_dai)
-{
-	return cpu_dai->private_data;
-}
-
-static void s5p_snd_rxctrl(int on)
-{
-	u32 fic, con, mod;
-
-	pr_debug("%s(%d)\n", __func__, on);
-
-	fic = readl(s5p_i2s0_regs + S3C2412_IISFIC);
-	con = readl(s5p_i2s0_regs + S3C2412_IISCON);
-	mod = readl(s5p_i2s0_regs + S3C2412_IISMOD);
-
-	pr_debug("%s: On=%d..IIS: CON=%x MOD=%x FIC=%x\n", __func__,on, con, mod, fic);
-
-	if (on) {
-		con |= S3C2412_IISCON_RXDMA_ACTIVE | S3C2412_IISCON_IIS_ACTIVE;
-		con &= ~S3C2412_IISCON_RXDMA_PAUSE;
-		con &= ~S3C2412_IISCON_RXCH_PAUSE;
-
-		switch (mod & S3C2412_IISMOD_MODE_MASK) {
-		case S3C2412_IISMOD_MODE_TXRX:
-		case S3C2412_IISMOD_MODE_RXONLY:
-			/* do nothing, we are in the right mode */
-			break;
-
-		case S3C2412_IISMOD_MODE_TXONLY:
-			mod &= ~S3C2412_IISMOD_MODE_MASK;
-			mod |= S3C2412_IISMOD_MODE_TXRX;
-			break;
-
-//		default:
-//			dev_err(i2s->dev, "RXEN: Invalid MODE %x in IISMOD\n",
-//				mod & S3C2412_IISMOD_MODE_MASK);
-		}
-
-		writel(mod, s5p_i2s0_regs + S3C2412_IISMOD);
-		writel(con, s5p_i2s0_regs + S3C2412_IISCON);
-	} else {
-		/* See txctrl notes on FIFOs. */
-
-		con &= ~S3C2412_IISCON_RXDMA_ACTIVE;
-		con |=  S3C2412_IISCON_RXDMA_PAUSE;
-		con |=  S3C2412_IISCON_RXCH_PAUSE;
-
-		switch (mod & S3C2412_IISMOD_MODE_MASK) {
-		case S3C2412_IISMOD_MODE_RXONLY:
-			con &= ~S3C2412_IISCON_IIS_ACTIVE;
-			mod &= ~S3C2412_IISMOD_MODE_MASK;
-			break;
-
-		case S3C2412_IISMOD_MODE_TXRX:
-			mod &= ~S3C2412_IISMOD_MODE_MASK;
-			mod |= S3C2412_IISMOD_MODE_TXONLY;
-			break;
-
-//		default:
-//			dev_err(i2s->dev, "RXDIS: Invalid MODE %x in IISMOD\n",
-//				mod & S3C2412_IISMOD_MODE_MASK);
-		}
-
-		writel(con, s5p_i2s0_regs + S3C2412_IISCON);
-		writel(mod, s5p_i2s0_regs + S3C2412_IISMOD);
-	}
-
-	fic = readl(s5p_i2s0_regs + S3C2412_IISFIC);
-	pr_debug("%s: IIS: CON=%x MOD=%x FIC=%x\n", __func__, con, mod, fic);
-}
-
 static void s5p_snd_txctrl(int on)
 {
 	u32 iiscon, iismod;
+
 	iiscon = readl(s5p_i2s0_regs + S3C2412_IISCON);
 	iismod = readl(s5p_i2s0_regs + S3C2412_IISMOD);
-	pr_debug("%s: On=%d . IIS: CON=%x MOD=%x \n", __func__,on, iiscon, iismod);
 
 	if (on) {
 		iiscon |= S3C2412_IISCON_IIS_ACTIVE;
@@ -145,7 +63,7 @@ static void s5p_snd_txctrl(int on)
 			break;
 
 		default:
-			pr_debug("TXEN: Invalid MODE %x in IISMOD\n",
+			printk(KERN_ERR "TXEN: Invalid MODE %x in IISMOD\n",
 				iismod & S3C2412_IISMOD_MODE_MASK);
 			break;
 		}
@@ -176,7 +94,7 @@ static void s5p_snd_txctrl(int on)
 			break;
 
 		default:
-			pr_debug("TXDIS: Invalid MODE %x in IISMOD\n",
+			printk(KERN_ERR "TXDIS: Invalid MODE %x in IISMOD\n",
 				iismod & S3C2412_IISMOD_MODE_MASK);
 			break;
 		}
@@ -219,10 +137,10 @@ int s5p_i2s_hw_params(struct snd_pcm_substream *substream,
 		struct snd_pcm_hw_params *params, struct snd_soc_dai *dai)
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	struct snd_soc_dai_link *dailink = rtd->dai;
 	u32 iismod;
 
-	dailink->cpu_dai->dma_data = &s5p_i2s_sec_pcm_out;
+	snd_soc_dai_set_dma_data(rtd->dai->cpu_dai, substream,
+					&s5p_i2s_sec_pcm_out);
 
 	iismod = readl(s5p_i2s0_regs + S3C2412_IISMOD);
 
@@ -251,10 +169,8 @@ int s5p_i2s_startup(struct snd_soc_dai *dai)
 	writel(iisahb, s5p_i2s0_regs + S5P_IISAHB);
 	writel(iismod, s5p_i2s0_regs + S3C2412_IISMOD);
 
-	s5p_snd_txctrl(0);
-	//s5p_snd_rxctrl(0);//Don't turn-off RX setting as recording may b active during playback startup
-
-	/* FIFOs must be flushed before enabling PSR and other MOD bits, so we do it here. */
+	/* FIFOs must be flushed before enabling PSR
+	*  and other MOD bits, so we do it here. */
 	if (iiscon & S5P_IISCON_TXSDMACTIVE)
 		return 0;
 
@@ -274,8 +190,6 @@ int s5p_i2s_startup(struct snd_soc_dai *dai)
 }
 EXPORT_SYMBOL_GPL(s5p_i2s_startup);
 
-int i2s_trigger_stop = 0;
-EXPORT_SYMBOL_GPL(i2s_trigger_stop);
 int s5p_i2s_trigger(struct snd_pcm_substream *substream,
 		int cmd, struct snd_soc_dai *dai)
 {
@@ -289,13 +203,11 @@ int s5p_i2s_trigger(struct snd_pcm_substream *substream,
 		 */
 		s5p_snd_lrsync();
 		s5p_snd_txctrl(1);
-		i2s_trigger_stop = 0;
 		break;
 
 	case SNDRV_PCM_TRIGGER_STOP:
 	case SNDRV_PCM_TRIGGER_SUSPEND:
 	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
-		i2s_trigger_stop = 1;
 		s5p_snd_txctrl(0);
 		break;
 	}
@@ -304,57 +216,11 @@ int s5p_i2s_trigger(struct snd_pcm_substream *substream,
 }
 EXPORT_SYMBOL_GPL(s5p_i2s_trigger);
 
-struct snd_soc_dai i2s_sec_fifo_dai = {
-	.name = "i2s-sec-fifo",
-	.id = 0,
-};
-EXPORT_SYMBOL_GPL(i2s_sec_fifo_dai);
-
-static int get_dma_mode(struct snd_kcontrol *kcontrol,
-	struct snd_ctl_elem_value *ucontrol)
-{
-	ucontrol->value.integer.value[0] = i2s_sec_fifo_dai.use_idma;
-
-	return 0;
-}
-
-static int set_dma_mode(struct snd_kcontrol *kcontrol,
-		struct snd_ctl_elem_value *ucontrol)
-{
-	if (i2s_sec_fifo_dai.use_idma == ucontrol->value.integer.value[0]
-		|| i2s_sec_fifo_dai.active)
-		return 0;
-
-	i2s_sec_fifo_dai.use_idma = ucontrol->value.integer.value[0];
-
-	return 1;
-}
-
-static int get_dma_mode(struct snd_kcontrol *kcontrol,
-	struct snd_ctl_elem_value *ucontrol);
-static int set_dma_mode(struct snd_kcontrol *kcontrol,
-		struct snd_ctl_elem_value *ucontrol);
-
-static const char *dma_modes[] = {
-	"SysDMA",
-	"iDMA",
-};
-
-static const struct soc_enum dma_mode_enum[] = {
-	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(dma_modes), dma_modes),
-};
-
-const struct snd_kcontrol_new s5p_idma_control =
-	SOC_ENUM_EXT("Sec_Fifo Mode", dma_mode_enum[0],
-		get_dma_mode, set_dma_mode);
-EXPORT_SYMBOL_GPL(s5p_idma_control);
-
 void s5p_i2s_sec_init(void *regs, dma_addr_t phys_base)
 {
 	u32 val;
 #ifdef CONFIG_ARCH_S5PV210
 /* S5PC110 or S5PV210 */
-//#include <plat/map.h>
 #define S3C_VA_AUDSS	S3C_ADDR(0x01600000)	/* Audio SubSystem */
 #include <mach/regs-audss.h>
 	/* We use I2SCLK for rate generation, so set EPLLout as
@@ -375,7 +241,6 @@ void s5p_i2s_sec_init(void *regs, dma_addr_t phys_base)
 	s5p_i2s0_regs = regs;
 	s5p_i2s_sec_pcm_out.dma_addr = phys_base + S5P_IISTXDS;
 
-	s5p_snd_rxctrl(0);
 	s5p_snd_txctrl(0);
 	s5p_idma_init(regs);
 }

@@ -84,6 +84,7 @@
 #define INT_MASK_CMD_EMER_DOWN		0x000C
 #define INT_MASK_CMD_PIF_INIT_DONE     	0x000D
 #define INT_MASK_CMD_SILENT_NV_REBUILDING	0x000E
+#define INT_MASK_CMD_NORMAL_POWER_OFF		0x000F
 
 #define INT_COMMAND(x)			(INT_MASK_VALID | INT_MASK_COMMAND | x)
 #define INT_NON_COMMAND(x)		(INT_MASK_VALID | x)
@@ -134,6 +135,7 @@ struct _param_em {
 #define HN_PDP_TXSTOP		_IO(IOC_MZ2_MAGIC, 0xe4)
 #define HN_PDP_SETRADIO		_IOW(IOC_MZ2_MAGIC, 0xe5,int)
 #define HN_PDP_DATASTATUS	_IOW(IOC_MZ2_MAGIC, 0xe6,int)
+#define HN_PDP_FLUSH_WORK	_IO(IOC_MZ2_MAGIC, 0xe7)
 
 /* structure definitions. */
 typedef struct dpram_serial {

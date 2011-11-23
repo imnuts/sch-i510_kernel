@@ -16,6 +16,7 @@
  */
 
 #include <linux/kernel.h>
+#include <linux/slab.h>
 #include <linux/fb.h>
 #include <linux/console.h>
 #include <linux/module.h>
@@ -79,6 +80,7 @@ EXPORT_SYMBOL(framebuffer_alloc);
  */
 void framebuffer_release(struct fb_info *info)
 {
+	kfree(info->apertures);
 	kfree(info);
 }
 EXPORT_SYMBOL(framebuffer_release);
@@ -484,29 +486,6 @@ static ssize_t show_bl_curve(struct device *device,
 }
 #endif
 
-extern void ld9040_sleep_off(void);
-extern void ld9040_sleep_in(void);
-
-static ssize_t store_lcd_on_off(struct device *device,
-                  struct device_attribute *attr,
-                  const char *buf, size_t count)
-{
-    if (strncmp(buf, "on", 2) == 0) 
-    {
-        ld9040_sleep_off();
-    }
-    else if (strncmp(buf, "off", 3) == 0) 
-    {
-        ld9040_sleep_in();
-    }
-    else
-    { 
-        return -1;
-    }
-
-    return 0;
-}
-
 /* When cmap is added back in it should be a binary attribute
  * not a text one. Consideration should also be given to converting
  * fbdev to use configfs instead of sysfs */
@@ -526,7 +505,6 @@ static struct device_attribute device_attrs[] = {
 #ifdef CONFIG_FB_BACKLIGHT
 	__ATTR(bl_curve, S_IRUGO|S_IWUSR, show_bl_curve, store_bl_curve),
 #endif
-    __ATTR(lcd_on_off, S_IRUGO|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH, NULL, store_lcd_on_off),
 };
 
 int fb_init_device(struct fb_info *fb_info)

@@ -27,7 +27,10 @@
 #include <linux/page-flags.h>
 #include <linux/highmem.h>
 #include <linux/console.h>
+#include <linux/pci.h>
+#include <linux/gfp.h>
 
+#include <xen/xen.h>
 #include <xen/interface/xen.h>
 #include <xen/interface/version.h>
 #include <xen/interface/physdev.h>
@@ -48,6 +51,7 @@
 #include <asm/traps.h>
 #include <asm/setup.h>
 #include <asm/desc.h>
+#include <asm/pgalloc.h>
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>
 #include <asm/reboot.h>
@@ -923,7 +927,7 @@ static const struct pv_init_ops xen_init_ops __initdata = {
 };
 
 static const struct pv_time_ops xen_time_ops __initdata = {
-	.sched_clock = xen_sched_clock,
+	.sched_clock = xen_clocksource_read,
 };
 
 static const struct pv_cpu_ops xen_cpu_ops __initdata = {
@@ -1092,10 +1096,14 @@ asmlinkage void __init xen_start_kernel(void)
 
 	__supported_pte_mask |= _PAGE_IOMAP;
 
-#ifdef CONFIG_X86_64
+	/*
+	 * Prevent page tables from being allocated in highmem, even
+	 * if CONFIG_HIGHPTE is enabled.
+	 */
+	__userpte_alloc_gfp &= ~__GFP_HIGHMEM;
+
 	/* Work out if we support NX */
-	check_efer();
-#endif
+	x86_configure_nx();
 
 	xen_setup_features();
 
@@ -1151,9 +1159,13 @@ asmlinkage void __init xen_start_kernel(void)
 
 	/* keep using Xen gdt for now; no urgent need to change it */
 
+#ifdef CONFIG_X86_32
 	pv_info.kernel_rpl = 1;
 	if (xen_feature(XENFEAT_supervisor_mode_kernel))
 		pv_info.kernel_rpl = 0;
+#else
+	pv_info.kernel_rpl = 0;
+#endif
 
 	/* set the limit of our address space */
 	xen_reserve_top();
@@ -1177,7 +1189,11 @@ asmlinkage void __init xen_start_kernel(void)
 		add_preferred_console("xenboot", 0, NULL);
 		add_preferred_console("tty", 0, NULL);
 		add_preferred_console("hvc", 0, NULL);
+	} else {
+		/* Make sure ACS will be enabled */
+		pci_request_acs();
 	}
+		
 
 	xen_raw_console_write("about to get started...\n");
 

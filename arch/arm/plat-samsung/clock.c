@@ -67,12 +67,21 @@ static int clk_null_enable(struct clk *clk, int enable)
 
 /* Clock API calls */
 
+static int nullstrcmp(const char *a, const char *b)
+{
+	if (!a)
+		return b ? -1 : 0;
+	if (!b)
+		return 1;
+
+	return strcmp(a, b);
+}
+
 struct clk *clk_get(struct device *dev, const char *id)
 {
-	unsigned long flags;
-	struct clk *p;
-	struct clk *clk = ERR_PTR(-ENOENT);
+	struct clk *clk;
 	int idno;
+	unsigned long flags;
 
 	if (dev == NULL || dev->bus != &platform_bus_type)
 		idno = -1;
@@ -81,28 +90,25 @@ struct clk *clk_get(struct device *dev, const char *id)
 
 	spin_lock_irqsave(&clocks_lock, flags);
 
-	list_for_each_entry(p, &clocks, list) {
-		if (p->id == idno &&
-		    strcmp(id, p->name) == 0 &&
-		    try_module_get(p->owner)) {
-			clk = p;
-			break;
-		}
-	}
+	list_for_each_entry(clk, &clocks, list)
+		if (!nullstrcmp(id, clk->name) && clk->dev == dev)
+			goto found_it;
 
-	/* check for the case where a device was supplied, but the
-	 * clock that was being searched for is not device specific */
+	list_for_each_entry(clk, &clocks, list)
+		if (clk->id == idno && nullstrcmp(id, clk->name) == 0)
+			goto found_it;
 
-	if (IS_ERR(clk)) {
-		list_for_each_entry(p, &clocks, list) {
-			if (p->id == -1 && strcmp(id, p->name) == 0 &&
-			    try_module_get(p->owner)) {
-				clk = p;
-				break;
-			}
-		}
-	}
+	list_for_each_entry(clk, &clocks, list)
+		if (clk->id == -1 && !nullstrcmp(id, clk->name) &&
+							clk->dev == NULL)
+			goto found_it;
 
+	clk = ERR_PTR(-ENOENT);
+	spin_unlock_irqrestore(&clocks_lock, flags);
+	return clk;
+found_it:
+	if (!try_module_get(clk->owner))
+		clk = ERR_PTR(-ENOENT);
 	spin_unlock_irqrestore(&clocks_lock, flags);
 	return clk;
 }
@@ -139,6 +145,13 @@ void clk_disable(struct clk *clk)
 
 	spin_lock_irqsave(&clocks_lock, flags);
 
+	if (WARN_ON(!clk->usage)) {
+		pr_err("%s: %s %s already disabled\n", __func__,
+			clk->dev ? dev_name(clk->dev) : "", clk->name);
+		spin_unlock_irqrestore(&clocks_lock, flags);
+		return;
+	}
+
 	if ((--clk->usage) == 0)
 		(clk->enable)(clk, 0);
 
@@ -174,8 +187,8 @@ long clk_round_rate(struct clk *clk, unsigned long rate)
 
 int clk_set_rate(struct clk *clk, unsigned long rate)
 {
-	unsigned long flags;
 	int ret;
+	unsigned long flags;
 
 	if (IS_ERR(clk))
 		return -EINVAL;
@@ -204,8 +217,8 @@ struct clk *clk_get_parent(struct clk *clk)
 
 int clk_set_parent(struct clk *clk, struct clk *parent)
 {
-	unsigned long flags;
 	int ret = 0;
+	unsigned long flags;
 
 	if (IS_ERR(clk))
 		return -EINVAL;
@@ -323,6 +336,7 @@ struct clk s3c24xx_uclk = {
 int s3c24xx_register_clock(struct clk *clk)
 {
 	unsigned long flags;
+
 	if (clk->enable == NULL)
 		clk->enable = clk_null_enable;
 
@@ -382,6 +396,21 @@ void __init s3c_register_clocks(struct clk *clkp, int nr_clks)
 			       clkp->name, ret);
 		}
 	}
+}
+
+/**
+ * s3c_disable_clocks() - disable an array of clocks
+ * @clkp: Pointer to the first clock in the array.
+ * @nr_clks: Number of clocks to register.
+ *
+ * for internal use only at initialisation time. disable the clocks in the
+ * @clkp array.
+ */
+
+void __init s3c_disable_clocks(struct clk *clkp, int nr_clks)
+{
+	for (; nr_clks > 0; nr_clks--, clkp++)
+		(clkp->enable)(clkp, 0);
 }
 
 /* initalise all the clocks */

@@ -1,0 +1,9 @@
+#
+#
+#
+config LTESPI
+	tristate "LTE SPI"
+#	depends on SAMSUNG_MODULES && SAMSUNG_PHONE_SVNET
+	default m
+	help
+	Say Y to enable SPI driver for LTE  support.

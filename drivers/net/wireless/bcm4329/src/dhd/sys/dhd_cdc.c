@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_cdc.c,v 1.22.4.2.4.7.2.36 2010/04/14 12:09:11 Exp $
+ * $Id: dhd_cdc.c,v 1.22.4.2.4.7.2.41 2010/06/23 19:58:18 Exp $
  *
  * BDC is like CDC, except it includes a header for data packets to convey
  * packet priority over the bus, and flags (e.g. to indicate checksum status
@@ -116,9 +116,13 @@ dhdcdc_query_ioctl(dhd_pub_t *dhd, int ifidx, uint cmd, void *buf, uint len)
 	int ret = 0, retries = 0;
 	uint32 id, flags = 0;
 
-	DHD_TRACE(("%s: Enter\n", __FUNCTION__));
-	DHD_CTL(("%s: cmd %d len %d\n", __FUNCTION__, cmd, len));
-
+	if (DHD_TRACE_ON()) {
+		if ((cmd == WLC_GET_VAR) || (cmd == WLC_SET_VAR)) {
+			DHD_TRACE(("%s: cmd %d '%s' len %d\n", __FUNCTION__, cmd, (char *)buf, len));
+		} else {
+			DHD_TRACE(("%s: cmd %d len %d\n", __FUNCTION__, cmd, len));
+		}
+	}
 
 	/* Respond "bcmerror" and "bcmerrorstr" with local cache */
 	if (cmd == WLC_GET_VAR && buf)
@@ -199,13 +203,19 @@ dhdcdc_set_ioctl(dhd_pub_t *dhd, int ifidx, uint cmd, void *buf, uint len)
 	int ret = 0;
 	uint32 flags, id;
 
-	DHD_TRACE(("%s: Enter\n", __FUNCTION__));
-	DHD_CTL(("%s: cmd %d len %d\n", __FUNCTION__, cmd, len));
-
 	if (prot == 0) {
 		DHD_ERROR(("dhdcdc_set_ioctl: dhd->prot NULL. idx=%d, cmd=0x%x", ifidx, cmd));
 		goto done;
 	}
+
+	if (DHD_TRACE_ON()) {
+		if ((cmd == WLC_GET_VAR) || (cmd == WLC_SET_VAR)) {
+			DHD_TRACE(("%s: cmd %d '%s' len %d\n", __FUNCTION__, cmd, (char *)buf, len));
+		} else {
+			DHD_TRACE(("%s: cmd %d len %d\n", __FUNCTION__, cmd, len));
+		}
+	}
+	
 	memset(msg, 0, sizeof(cdc_ioctl_t));
 
 	msg->cmd = htol32(cmd);
@@ -324,23 +334,12 @@ dhd_prot_dump(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf)
 	bcm_bprintf(strbuf, "Protocol CDC: reqid %d\n", dhdp->prot->reqid);
 }
 
-#ifdef APSTA_PINGTEST
-extern struct ether_addr guest_eas[MAX_GUEST];
-#endif
 
 void
 dhd_prot_hdrpush(dhd_pub_t *dhd, int ifidx, void *pktbuf)
 {
 #ifdef BDC
 	struct bdc_header *h;
-#ifdef APSTA_PINGTEST
-	struct	ether_header *eh;
-	int i;
-#ifdef DHD_DEBUG
-	char eabuf1[ETHER_ADDR_STR_LEN];
-	char eabuf2[ETHER_ADDR_STR_LEN];
-#endif /* DHD_DEBUG */
-#endif /* APSTA_PINGTEST */
 #endif /* BDC */
 
 	DHD_TRACE(("%s: Enter\n", __FUNCTION__));
@@ -348,9 +347,6 @@ dhd_prot_hdrpush(dhd_pub_t *dhd, int ifidx, void *pktbuf)
 #ifdef BDC
 	/* Push BDC header used to convey priority for buses that don't */
 
-#ifdef APSTA_PINGTEST
-	eh = (struct ether_header *)PKTDATA(dhd->osh, pktbuf);
-#endif
 
 	PKTPUSH(dhd->osh, pktbuf, BDC_HEADER_LEN);
 
@@ -363,19 +359,6 @@ dhd_prot_hdrpush(dhd_pub_t *dhd, int ifidx, void *pktbuf)
 
 	h->priority = (PKTPRIO(pktbuf) & BDC_PRIORITY_MASK);
 	h->flags2 = 0;
-#ifdef APSTA_PINGTEST
-	for (i = 0; i < MAX_GUEST; ++i) {
-		if (!ETHER_ISNULLADDR(eh->ether_dhost) &&
-		    bcmp(eh->ether_dhost, guest_eas[i].octet, ETHER_ADDR_LEN) == 0) {
-			DHD_TRACE(("send on if 1; sa %s, da %s\n",
-			       bcm_ether_ntoa((struct ether_addr *)(eh->ether_shost), eabuf1),
-			       bcm_ether_ntoa((struct ether_addr *)(eh->ether_dhost), eabuf2)));
-			/* assume all guest STAs are on interface 1 */
-			h->flags2 = 1;
-			break;
-		}
-	}
-#endif /* APSTA_PINGTEST */
 	h->rssi = 0;
 #endif /* BDC */
 	BDC_SET_IF_IDX(h, ifidx);
@@ -410,7 +393,6 @@ dhd_prot_hdrpull(dhd_pub_t *dhd, int *ifidx, void *pktbuf)
 #ifdef BDC
 	struct bdc_header *h;
 #endif
-	uint8 bdc_ver;
 
 	DHD_TRACE(("%s: Enter\n", __FUNCTION__));
 
@@ -431,11 +413,9 @@ dhd_prot_hdrpull(dhd_pub_t *dhd, int *ifidx, void *pktbuf)
 		return BCME_ERROR;
 	}
 
-	bdc_ver = (h->flags & BDC_FLAG_VER_MASK) >> BDC_FLAG_VER_SHIFT;
-
-	if ((bdc_ver != BDC_PROTO_VER) && (bdc_ver != 2)) {
-		DHD_ERROR(("%s: non-BDC packet received, flags 0x%x, BDC %d\n",
-		           dhd_ifname(dhd, *ifidx), h->flags, bdc_ver));
+	if (((h->flags & BDC_FLAG_VER_MASK) >> BDC_FLAG_VER_SHIFT) != BDC_PROTO_VER) {
+		DHD_ERROR(("%s: non-BDC packet received, flags 0x%x\n",
+		           dhd_ifname(dhd, *ifidx), h->flags));
 		return BCME_ERROR;
 	}
 
@@ -529,9 +509,12 @@ dhd_prot_init(dhd_pub_t *dhd)
 	strcpy(buf, "cur_etheraddr");
 	ret = dhdcdc_query_ioctl(dhd, 0, WLC_GET_VAR, buf, sizeof(buf));
 	if (ret < 0) {
-		goto fail;
+		dhd_os_proto_unblock(dhd);
+		return ret;
 	}
 	memcpy(dhd->mac.octet, buf, ETHER_ADDR_LEN);
+
+	dhd_os_proto_unblock(dhd);
 
 #ifdef EMBEDDED_PLATFORM
 	ret = dhd_preinit_ioctls(dhd);
@@ -539,9 +522,6 @@ dhd_prot_init(dhd_pub_t *dhd)
 
 	/* Always assumes wl for now */
 	dhd->iswl = TRUE;
-
-fail:
-	dhd_os_proto_unblock(dhd);
 
 	return ret;
 }

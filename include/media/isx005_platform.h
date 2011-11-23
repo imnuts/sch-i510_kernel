@@ -1,5 +1,5 @@
 /*
- * Driver for ISX005 (5MP camera) from NEC
+ * Driver for isx005 (3MP Camera) from SONY
  * 
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

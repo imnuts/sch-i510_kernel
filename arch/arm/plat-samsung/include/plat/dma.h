@@ -19,10 +19,8 @@ enum s3c2410_dma_buffresult {
 enum s3c2410_dmasrc {
 	S3C2410_DMASRC_HW,		/* source is memory */
 	S3C2410_DMASRC_MEM,		/* source is hardware */
-	S3C_DMA_MEM2MEM,      		/* source is memory - READ/WRITE */
-	S3C_DMA_MEM2MEM_SET,      	/* source is memory - READ/WRITE for MEMSET*/
-	S3C_DMA_MEM2MEM_P,      	/* source is hardware - READ/WRITE */
-	S3C_DMA_PER2PER      		/* source is hardware - READ/WRITE */
+	S3C_DMA_MEM2MEM,
+	S3C_DMA_MEM2MEM_SET,
 };
 
 /* enum s3c2410_chan_op
@@ -39,7 +37,6 @@ enum s3c2410_chan_op {
 	S3C2410_DMAOP_FLUSH,
 	S3C2410_DMAOP_TIMEOUT,		/* internal signal to handler */
 	S3C2410_DMAOP_STARTED,		/* indicate channel started */
-	S3C2410_DMAOP_ABORT,		/* abnormal stop */
 };
 
 struct s3c2410_dma_client {
@@ -103,6 +100,8 @@ extern int s3c2410_dma_free(unsigned int channel, struct s3c2410_dma_client *);
 extern int s3c2410_dma_enqueue(unsigned int channel, void *id,
 			       dma_addr_t data, int size);
 
+extern int s3c2410_dma_enqueue_autoload(unsigned int channel, void *id,
+			       dma_addr_t data, int size, int num);
 /* s3c2410_dma_config
  *
  * configure the dma channel
@@ -115,8 +114,8 @@ extern int s3c2410_dma_config(unsigned int channel, int xferunit);
  * configure the device we're talking to
 */
 
-extern int s3c2410_dma_devconfig(int channel, enum s3c2410_dmasrc source,
-				 unsigned long devaddr);
+extern int s3c2410_dma_devconfig(unsigned int channel,
+		enum s3c2410_dmasrc source, unsigned long devaddr);
 
 /* s3c2410_dma_getposition
  *

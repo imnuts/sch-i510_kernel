@@ -2,8 +2,8 @@
  *
  * Video Layer ftn. file for Samsung TVOut driver
  *
- * Copyright (c) 2009 Samsung Electronics
- * 	http://www.samsungsemi.com/
+ * Copyright (c) 2010 Samsung Electronics
+ * http://www.samsungsemi.com/
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -32,7 +32,7 @@
 #define VLAYERPRINTK(fmt, args...)
 #endif
 
-#define INTERLACED 	0
+#define INTERLACED	0
 #define PROGRESSIVE 	1
 
 u8 check_input_mode(enum s5p_vp_src_color color)
@@ -139,9 +139,9 @@ static void _s5p_vlayer_calc_inner_values(void)
 	}
 
 	if (o_mode == INTERLACED) {
- 		st->vl_dest_height	= d_h / 2;
-		st->vl_dest_offset_y = d_oy / 2;
- 	}
+		st->vl_dest_height	= d_h / 2;
+		st->vl_dest_offset_y	= d_oy / 2;
+	}
 
 }
 
@@ -216,8 +216,8 @@ bool _s5p_vlayer_start(void)
 
 	_s5p_vlayer_set_top_address((unsigned long)&temp_addr);
 	_s5p_vlayer_set_img_size((unsigned long)&img_size);
-         
-        img_size.img_width = param.src_width;
+
+	img_size.img_width = param.src_width;
 	img_size.img_height = param.src_height;
 	_s5p_vlayer_set_src_size((unsigned long)&img_size);
 
@@ -703,9 +703,9 @@ bool _s5p_vlayer_set_brightness_contrast_control(unsigned long buf_in)
 	memcpy((void *)&(s5ptv_status.vl_bc_control[ctrl->eq_num]),
 		(const void *)ctrl, sizeof(struct s5p_vl_csc_ctrl));
 
-	eq_num 	= s5ptv_status.vl_bc_control[ctrl->eq_num].eq_num;
-	intc 	= s5ptv_status.vl_bc_control[ctrl->eq_num].intc;
-	slope 	= s5ptv_status.vl_bc_control[ctrl->eq_num].slope;
+	eq_num	= s5ptv_status.vl_bc_control[ctrl->eq_num].eq_num;
+	intc	= s5ptv_status.vl_bc_control[ctrl->eq_num].intc;
+	slope	= s5ptv_status.vl_bc_control[ctrl->eq_num].slope;
 
 	if (_s5p_vlayer_wait_previous_update())
 		return false;
@@ -853,24 +853,24 @@ bool _s5p_vlayer_init_param(unsigned long buf_in)
 		/* i to i : line skip 1, ipc 0, auto toggle 0 */
 		if (o_mode == INTERLACED) {
 			st->vl_op_mode.line_skip = true;
-			st->vl2d_ipc 		 = false;
+			st->vl2d_ipc		= false;
 			st->vl_op_mode.toggle_id = false;
 		} else {
 		/* i to p : line skip 1, ipc 1, auto toggle 0 */
 			st->vl_op_mode.line_skip = true;
-			st->vl2d_ipc 		 = true;
+			st->vl2d_ipc		= true;
 			st->vl_op_mode.toggle_id = false;
 		}
 	} else {
 		/* p to i : line skip 1, ipc 0, auto toggle 0 */
 		if (o_mode == INTERLACED) {
 			st->vl_op_mode.line_skip = false;
-			st->vl2d_ipc 		 = false;
+			st->vl2d_ipc		 = false;
 			st->vl_op_mode.toggle_id = false;
 		} else {
 		/* p to p : line skip 0, ipc 0, auto toggle 0 */
 			st->vl_op_mode.line_skip = false;
-			st->vl2d_ipc 		 = false;
+			st->vl2d_ipc		= false;
 			st->vl_op_mode.toggle_id = false;
 		}
 	}

@@ -10,13 +10,13 @@
  * (at your option) any later version.
  */
 
-
 #include <linux/i2c.h>
 #include <linux/irq.h>
 #include <linux/delay.h>
 #include <linux/version.h>
 #include <linux/vmalloc.h>
 #include <linux/firmware.h>	/* For firware update */
+#include <linux/regulator/consumer.h>
 #include <linux/syscalls.h>
 #include <linux/file.h>
 
@@ -31,10 +31,11 @@
 
 #include <linux/rtc.h>
 #include <mach/gpio.h>
-#include <plat/gpio-cfg.h>
 #include <mach/regs-gpio.h>
 #include <mach/regs-clock.h>
-#include <mach/max8998_function.h>
+#include <plat/gpio-cfg.h>
+#include <plat/regs-fimc.h>
+#include <plat/fimc.h>
 
 #include "m5mo_ls.h"
 
@@ -70,6 +71,8 @@
 
 #define ISO_TABLE_MAX 30
 
+#define NIGHT_MODE_MAX_ONE_FRAME_DELAY_MS     330
+
 /* Wait Queue For Fujitsu ISP Interrupt */
 static DECLARE_WAIT_QUEUE_HEAD(cam_wait);
 static int fw_update_status = 100;
@@ -91,9 +94,7 @@ static int camfw_update = 2;
 
 #define M5MO_LS_FW_F2_PATH	"/system/firmware/M5MO_LSF02.bin"
 
-#ifdef CONFIG_VIDEO_M5MO_LS
 #define IRQ_M5MO_LS_CAM_MEGA_INT (IRQ_EINT_GROUP18_BASE+6) /* J0_6 */
-#endif
 
 unsigned char MAIN_SW_FW[4] = {0x0, 0x0, 0x0, 0x0};		/* {FW Maj, FW Min, PRM Maj, PRM Min} */
 int MAIN_SW_DATE_INFO[3] = {0x0, 0x0, 0x0};		/* {Year, Month, Date} */
@@ -335,6 +336,7 @@ struct m5moLS_state {
 	struct m5moLS_gps_info gpsInfo;
 	enum m5moLS_runmode runmode;
 	enum m5moLS_oprmode oprmode;
+       struct mutex ctrl_lock;
 	int framesize_index;
 	int sensor_version;
 	int freq;	/* MCLK in Hz */
@@ -353,21 +355,8 @@ struct m5moLS_state {
        u8 vintage_mode;
        u8 beauty_mode;
        u8 touch_af_mode;
-       u8 m_contrast_mode;
-       u8 m_sharpness_mode;
-       u8 m_wdr_mode;
-       u8 m_anti_shake_mode;
-       u8 m_white_balance_mode;
-       u8 m_anti_banding_mode;
-       u8 m_ev_mode;
-       u8 m_iso_mode;
-       u8 m_effect_mode;
-       u8 m_metering_mode;
-       u8 m_zoom_level;
        u8 m_movie_mode;
-       u8 m_saturation_mode;
-       u8 m_ev_program_mode;
-       u8 m_mcc_mode;
+    u8 m_ev_program_mode;
        u8 m_focus_mode;
        u16 hw_ver;
        u16 prm_ver;
@@ -674,244 +663,293 @@ STATUS_ERR:
 }
 
 #ifdef M5MO_LS_CAM_POWER
-static void m5moLS_ldo_en(bool onoff)
+static struct regulator *cam_isp_core_regulator;/*buck4*/
+static struct regulator *cam_isp_host_regulator;/*15*/
+static struct regulator *cam_af_regulator;/*11*/
+static struct regulator *cam_sensor_core_regulator;/*12*/
+static struct regulator *cam_vga_vddio_regulator;/*13*/
+static struct regulator *cam_vga_dvdd_regulator;/*14*/
+static struct regulator *cam_vga_avdd_regulator;/*16*/
+
+static int m5moLS_regulator_init(void)
 {
-        int err;
+        printk("m5moLS_regulator_init\n");
+/*BUCK 4*/
+	if (IS_ERR_OR_NULL(cam_isp_core_regulator)) {
+		cam_isp_core_regulator = regulator_get(NULL, "cam_isp_core");
+		if (IS_ERR_OR_NULL(cam_isp_core_regulator)) {
+			pr_err("failed to get cam_isp_core regulator");
+			return -EINVAL;
+		}
+	}
+/*ldo 11*/
+	if (IS_ERR_OR_NULL(cam_af_regulator)) {
+		cam_af_regulator = regulator_get(NULL, "cam_af");
+		if (IS_ERR_OR_NULL(cam_af_regulator)) {
+			pr_err("failed to get cam_af regulator");
+			return -EINVAL;
+		}
+	}
+/*ldo 12*/
+	if (IS_ERR_OR_NULL(cam_sensor_core_regulator)) {
+		cam_sensor_core_regulator = regulator_get(NULL, "cam_sensor");
+		if (IS_ERR_OR_NULL(cam_sensor_core_regulator)) {
+			pr_err("failed to get cam_sensor regulator");
+			return -EINVAL;
+		}
+	}
+/*ldo 13*/
+	if (IS_ERR_OR_NULL(cam_vga_vddio_regulator)) {
+		cam_vga_vddio_regulator = regulator_get(NULL, "vga_vddio");
+		if (IS_ERR_OR_NULL(cam_vga_vddio_regulator)) {
+			pr_err("failed to get vga_vddio regulator");
+			return -EINVAL;
+		}
+	}
+/*ldo 14*/
+	if (IS_ERR_OR_NULL(cam_vga_dvdd_regulator)) {
+		cam_vga_dvdd_regulator = regulator_get(NULL, "vga_dvdd");
+		if (IS_ERR_OR_NULL(cam_vga_dvdd_regulator)) {
+			pr_err("failed to get vga_dvdd regulator");
+			return -EINVAL;
+		}
+	}
+/*ldo 15*/
+	if (IS_ERR_OR_NULL(cam_isp_host_regulator)) {
+		cam_isp_host_regulator = regulator_get(NULL, "cam_isp_host");
+		if (IS_ERR_OR_NULL(cam_isp_host_regulator)) {
+			pr_err("failed to get cam_isp_host regulator");
+			return -EINVAL;
+		}
+	}
+/*ldo 16*/
+	if (IS_ERR_OR_NULL(cam_vga_avdd_regulator)) {
+		cam_vga_avdd_regulator = regulator_get(NULL, "vga_avdd");
+		if (IS_ERR_OR_NULL(cam_vga_avdd_regulator)) {
+			pr_err("failed to get vga_avdd regulator");
+			return -EINVAL;
+		}
+	}
+	pr_debug("cam_isp_core_regulator = %p\n", cam_isp_core_regulator);
+	pr_debug("cam_isp_host_regulator = %p\n", cam_isp_host_regulator);
+	pr_debug("cam_af_regulator = %p\n", cam_af_regulator);
+	pr_debug("cam_sensor_core_regulator = %p\n", cam_sensor_core_regulator);
+	pr_debug("cam_vga_vddio_regulator = %p\n", cam_vga_vddio_regulator);
+	pr_debug("cam_vga_dvdd_regulator = %p\n", cam_vga_dvdd_regulator);
+	pr_debug("cam_vga_avdd_regulator = %p\n", cam_vga_avdd_regulator);
+	return 0;
+}
 
-        printk(KERN_ERR "m5moLS_ldo_en\n");        
+static void m5moLS_regulator_off(void)
+{
+        int err = 0;
 
-	 printk("m5moLS_ldo_en\n"); 
-		
+        printk("m5moLS_regulator_off\n");
+        
+        /* ldo 11 */
+        if(!IS_ERR_OR_NULL(cam_af_regulator)){
+            err = regulator_disable(cam_af_regulator);
+            if (err) {
+                    pr_err("Failed to disable regulator cam_isp_core\n");
+            }
+        }
+        
+        /* ldo 12 */
+        if(!IS_ERR_OR_NULL(cam_sensor_core_regulator)){
+            err = regulator_disable(cam_sensor_core_regulator);
+            if (err) {
+                    pr_err("Failed to disable regulator cam_sensor\n");
+            }
+        }
+        
+        /* ldo 13 */
+        if(!IS_ERR_OR_NULL(cam_vga_vddio_regulator)){       
+            err = regulator_disable(cam_vga_vddio_regulator);
+            if (err) {
+                    pr_err("Failed to disable regulator cam_vga_vddio\n");
+            }
+        }
+        
+        /* ldo 14 */
+        if(!IS_ERR_OR_NULL(cam_vga_dvdd_regulator)){      
+            err = regulator_disable(cam_vga_dvdd_regulator);
+            if (err) {
+                    pr_err("Failed to disable regulator cam_vga_dvdd\n");
+            }
+        }
+        
+        /* ldo 15 */
+        if(!IS_ERR_OR_NULL(cam_isp_host_regulator)){       
+            err = regulator_disable(cam_isp_host_regulator);
+            if (err) {
+                    pr_err("Failed to disable regulator cam_isp_core\n");
+            }
+        }
+        
+        /* ldo 16 */
+        if(!IS_ERR_OR_NULL(cam_vga_avdd_regulator)){       
+            err = regulator_disable(cam_vga_avdd_regulator);
+            if (err) {
+                    pr_err("Failed to disable regulator cam_vga_avdd\n");
+            }
+        }
+        
+        /* BUCK 4 */
+        if(!IS_ERR_OR_NULL(cam_isp_core_regulator)){      
+            err = regulator_disable(cam_isp_core_regulator);
+            if (err) {
+                    pr_err("Failed to disable regulator cam_isp_core\n");
+            }
+        }
+}
 
-        //For Emul Rev0.1
-        // Because B4, B5 do not use this GPIO, this GPIO is enabled in all HW version
-        /* CAM_IO_EN - GPB(7) */
-#if 0        
-        err = gpio_request(GPIO_CAM_IO_EN, "CAM_IO_EN");
+static int m5moLS_power_on(struct v4l2_subdev *sd)
+{
+        int err = 0;
+        
+        if (m5moLS_regulator_init()) {
+                printk("Failed to initialize camera regulators\n");
+                return -EINVAL;
+        }
 
+        /* CAM_MEGA_nRST - GPJ1(5) */
+        err = gpio_request(GPIO_CAM_MEGA_nRST, "GPJ1");
         if(err) {
-                printk(KERN_ERR "failed to request GPB7 for camera control\n");
-
+                printk("failed to request GPJ1 for camera control\n");
                 return err;
         }
-#endif
-        if(onoff == TRUE) { //power on 
 
-            /* 1. CAM_VDIG 1.2V(SENSOR DIGITAL POWER)
-                         2. CAM_I_CORE 1.2V
-                         3. CAM_VANA_2.8V(SENSOR ANALOG POWER)
-                         4. CAM_VIF 1.8V(SENSOR I/O POWER)
-                         5. CAM_I_HOST 1.8V(I/O POWER SUPPLY FOR YUV I/F)
-                     */
-            /* STEALTH REV0.1
-                        LDO11 = CAM_AF_2.8V
-                        LDO12 = CAM_SENSOR_CORE_1.2V
-                        LDO13 = CAM_SENSOR_A2.8V
-                        LDO14 = CAM_DVDD_1.5V
-                        LDO15 = CAM_HOST_1.8V
-                        LDO16 = CAM_SENSOR_IO_1.8V
-                        LX4(BUCK4)  = CAM_ISP_CORE_1.2V
-                        ON SEQUENCE : LDO12->LX4->LDO13->LDO14->LDO15->LDO16->LDO11
-                    */
-            
-            Set_MAX8998_PM_OUTPUT_Voltage(LDO12, VCC_1p300);
-            Set_MAX8998_PM_REG(ELDO12, 1);
+        /* CAM_VT_EN - GPJ(0)  */
+        err = gpio_request(GPIO_CAM_VT_EN_28V, "GPJ4");
+        if (err) {
+                printk("failed to request GPB0 for camera control\n");
+                return err;
+        }
 
-            Set_MAX8998_PM_OUTPUT_Voltage(BUCK4, VCC_1p300);
-            Set_MAX8998_PM_REG(EN4, 1);
+        /* GPIO_CAM_VT_RST_28V - GPJ4(1) */
+        err = gpio_request(GPIO_CAM_VT_RST_28V, "GPJ4");
+        if(err) {
+                printk("failed to request GPJ1 for camera control\n");
+                return err;
+        }
+        
+        // Power On Sequence
 
-            if(HWREV>=8)
-            {
-                if(gpio_request(GPIO_CAM_IO_EN, "GPB") != 0)
-                {
+        /* Turn CAM_ISP_CORE_1.2V(VDD_REG) on BUCK 4*/
+        err = regulator_enable(cam_isp_core_regulator);
+        if (err) {
+                pr_err("Failed to enable regulator cam_isp_core\n");
+                goto off;
+        }
+        udelay(20);
+        
+        /* CAM_SENSOR_CORE_1.2V on ldo 12*/
+        err = regulator_enable(cam_sensor_core_regulator);
+        if (err) {
+                pr_err("Failed to enable regulator cam_isp_core\n");
+                goto off;
+        }
+        udelay(150);
+        
+        /* CAM_1.3M_nSTBY  HIGH */
+        gpio_direction_output(GPIO_CAM_VT_EN_28V, 1);
+        gpio_set_value(GPIO_CAM_VT_EN_28V, 1);
+        udelay(20);
+
+        /* CAM_DVDD_1.5V on ldo 14*/
+        err = regulator_enable(cam_vga_dvdd_regulator);
+        if (err) {
+                pr_err("Failed to enable regulator cam_isp_core\n");
+                goto off;
+        }
+        udelay(20);
+        
+        if(HWREV>=8){
+                if(gpio_request(GPIO_CAM_IO_EN, "GPB") != 0){
                         printk(KERN_ERR "failed to request GPB7 for camera control = %d\n",HWREV);
                         return err;
                 }
                 gpio_direction_output(GPIO_CAM_IO_EN, 0);
                 gpio_set_value(GPIO_CAM_IO_EN, 1);                
-            }
-            else
-            {
-                Set_MAX8998_PM_OUTPUT_Voltage(LDO13, VCC_2p800);
-                Set_MAX8998_PM_REG(ELDO13, 1);
-            }
-            
-            Set_MAX8998_PM_OUTPUT_Voltage(LDO14, VCC_1p500);
-            Set_MAX8998_PM_REG(ELDO14, 1);
-
-            Set_MAX8998_PM_OUTPUT_Voltage(LDO15, VCC_1p800);
-            Set_MAX8998_PM_REG(ELDO15, 1);
-
-            Set_MAX8998_PM_OUTPUT_Voltage(LDO16, VCC_1p800);
-            Set_MAX8998_PM_REG(ELDO16, 1);
-
-            Set_MAX8998_PM_OUTPUT_Voltage(LDO11, VCC_2p800);
-            Set_MAX8998_PM_REG(ELDO11, 1);
+        }else{
+                /* CAM_SENSOR_A2.8V on ldo 13*/
+                err = regulator_enable(cam_vga_vddio_regulator);
+                if (err) {
+                        pr_err("Failed to enable regulator cam_isp_core\n");
+                        goto off;
+                }
         }
-        else { // power off
-            /*
-                    1. CAM_I_HOST 1.8V
-                    2. CAM_VIF 1.8V
-                    3. CAM_VANA_2.8V
-                    4. CAM_I_CORE_1.2V
-                    5. CAM_VDIG 1.2V
-                    */
-            //OFF SEQUENCE : LDO11->LDO15->LDO16->LDO13->LDO14->LX4->LDO12
 
-            Set_MAX8998_PM_REG(ELDO11, 0);
-
-            Set_MAX8998_PM_REG(ELDO15, 0);
-
-            Set_MAX8998_PM_REG(ELDO16, 0);
-
-            if(HWREV>=8)
-            {
-                if(gpio_request(GPIO_CAM_IO_EN, "GPB") != 0)
-                {
-                        printk(KERN_ERR "failed to request GPB7 for camera control = %d\n",HWREV);
-                        return err;
-                }            
-                gpio_direction_output(GPIO_CAM_IO_EN, 1);    
-                gpio_set_value(GPIO_CAM_IO_EN, 0);
-            }
-            else
-            {
-                Set_MAX8998_PM_REG(ELDO13, 0);
-            }
-            
-            Set_MAX8998_PM_REG(ELDO14, 0);                
-
-            Set_MAX8998_PM_REG(EN4, 0);
-
-            Set_MAX8998_PM_REG(ELDO12, 0);
+        udelay(20);
+        
+        /* CAM_HOST_1.8V on ldo 15*/
+        err = regulator_enable(cam_isp_host_regulator);
+        if (err) {
+                pr_err("Failed to enable regulator cam_isp_core\n");
+                goto off;
         }
+       udelay(20);
+       
+        /* CAM_SENSOR_IO_1.8V on ldo 16*/
+        err = regulator_enable(cam_vga_avdd_regulator);
+        if (err) {
+                pr_err("Failed to enable regulator cam_isp_core\n");
+                goto off;
+        }
+        udelay(100);
+
+        // Mclk enable
+        s3c_gpio_cfgpin(GPIO_CAM_MCLK, S5PV210_GPE1_3_CAM_A_CLKOUT);
+
+        mdelay(1);
+
+        /* Turn CAM_AF_2.8V or 3.0V on ldo 11*/
+        err = regulator_enable(cam_af_regulator);
+        if (err) {
+                pr_err("Failed to enable regulator cam_isp_core\n");
+                goto off;
+        }
+       udelay(20);
+       
+        // CAM_VGA_nRST  HIGH       
+        gpio_direction_output(GPIO_CAM_VT_RST_28V, 0);
+        gpio_set_value(GPIO_CAM_VT_RST_28V, 1);
+        mdelay(85);
+
+        // CAM_1.3M_nSTBY  LOW  
+        gpio_direction_output(GPIO_CAM_VT_EN_28V, 1);
+        gpio_set_value(GPIO_CAM_VT_EN_28V, 0);
+        udelay(20);
+
+        // CAM_MEGA_nRST HIGH
+        gpio_direction_output(GPIO_CAM_MEGA_nRST, 0);
+        gpio_set_value(GPIO_CAM_MEGA_nRST, 1);
+
+
+        gpio_free(GPIO_CAM_MEGA_nRST);
+        gpio_free(GPIO_CAM_VT_EN_28V);
+        gpio_free(GPIO_CAM_VT_RST_28V); 
 
         if(HWREV >= 8)
-            gpio_free(GPIO_CAM_IO_EN);
+                gpio_free(GPIO_CAM_IO_EN);
 
-};
+        mdelay(5);
+        
+        return 0;
+off:
+        m5moLS_regulator_off();
+        
+        gpio_free(GPIO_CAM_MEGA_nRST);
+        gpio_free(GPIO_CAM_VT_EN_28V);
+        gpio_free(GPIO_CAM_VT_RST_28V); 
 
-static int m5moLS_power_on(struct v4l2_subdev *sd)
-{   
-    int err, err2, err3, err4;
+        if(HWREV >= 8)
+                gpio_free(GPIO_CAM_IO_EN);
 
-    printk("m5moLS_power_on::::: Camera Driver\n");
+        mdelay(5);
 
-    /* CAM_MEGA_nRST - GPJ1(5) */
-    err = gpio_request(GPIO_CAM_MEGA_nRST, "GPJ1");
-    if(err) {
-        printk(KERN_ERR "failed to request GPJ1 for camera control\n");
-        return err;
-    }
-
-    /* CAM_VT_EN - GPJ(0)  */
-    err = gpio_request(GPIO_CAM_VT_EN_28V, "GPJ4");
-    if (err) {
-        printk(KERN_ERR "failed to request GPB0 for camera control\n");
-        return err;
-    }
-
-    /* GPIO_CAM_VT_RST_28V - GPJ4(1) */
-    err = gpio_request(GPIO_CAM_VT_RST_28V, "GPJ4");
-    if(err) {
-        printk(KERN_ERR "failed to request GPJ1 for camera control\n");
-        return err;
-    }
-    // Power On Sequence
-
-    /* CAM_ISP_CORE_1.2V */
-    Set_MAX8998_PM_OUTPUT_Voltage(BUCK4, VCC_1p300);
-    Set_MAX8998_PM_REG(EN4, 1);
-
-    udelay(20);
-    
-    /* CAM_SENSOR_CORE_1.2V */
-    Set_MAX8998_PM_OUTPUT_Voltage(LDO12, VCC_1p300);
-    Set_MAX8998_PM_REG(ELDO12, 1);
-
-    udelay(150);
-    
-    /* CAM_1.3M_nSTBY  HIGH */
-    gpio_direction_output(GPIO_CAM_VT_EN_28V, 1);
-    gpio_set_value(GPIO_CAM_VT_EN_28V, 1);
-
-    udelay(20);
-
-    /* CAM_DVDD_1.5V */
-    Set_MAX8998_PM_OUTPUT_Voltage(LDO14, VCC_1p500);
-    Set_MAX8998_PM_REG(ELDO14, 1);    
-
-    udelay(20);
-    
-    /* CAM_SENSOR_A2.8V */
-    if(HWREV>=8)
-    {
-        if(gpio_request(GPIO_CAM_IO_EN, "GPB") != 0)
-        {
-                printk(KERN_ERR "failed to request GPB7 for camera control = %d\n",HWREV);
-                return err;
-        }
-        gpio_direction_output(GPIO_CAM_IO_EN, 0);
-        gpio_set_value(GPIO_CAM_IO_EN, 1);                
-    }
-    else
-    {
-        Set_MAX8998_PM_OUTPUT_Voltage(LDO13, VCC_2p800);
-        Set_MAX8998_PM_REG(ELDO13, 1);
-    }
-
-    /* CAM_HOST_1.8V */
-    Set_MAX8998_PM_OUTPUT_Voltage(LDO15, VCC_1p800);
-    Set_MAX8998_PM_REG(ELDO15, 1);
-
-    udelay(20);
-
-    /* CAM_SENSOR_IO_1.8V */
-    Set_MAX8998_PM_OUTPUT_Voltage(LDO16, VCC_1p800);
-    Set_MAX8998_PM_REG(ELDO16, 1);
-
-    udelay(100);
-    
-    // Mclk enable
-    s3c_gpio_cfgpin(GPIO_CAM_MCLK, S5PV210_GPE1_3_CAM_A_CLKOUT);
-
-    mdelay(1);
-
-    /* CAM_AF_2.8V */
-    Set_MAX8998_PM_OUTPUT_Voltage(LDO11, VCC_2p800);
-    Set_MAX8998_PM_REG(ELDO11, 1);
-            
-    // CAM_VGA_nRST  HIGH       
-    gpio_direction_output(GPIO_CAM_VT_RST_28V, 0);
-    gpio_set_value(GPIO_CAM_VT_RST_28V, 1);
-
-    mdelay(85);
-
-    // CAM_1.3M_nSTBY  LOW  
-    gpio_direction_output(GPIO_CAM_VT_EN_28V, 1);
-    gpio_set_value(GPIO_CAM_VT_EN_28V, 0);
-
-    udelay(20);
-       
-    // CAM_MEGA_nRST HIGH
-    gpio_direction_output(GPIO_CAM_MEGA_nRST, 0);
-    gpio_set_value(GPIO_CAM_MEGA_nRST, 1);    
-    
-
-    gpio_free(GPIO_CAM_MEGA_nRST);
-
-    gpio_free(GPIO_CAM_VT_EN_28V);
-
-    gpio_free(GPIO_CAM_VT_RST_28V); 
-
-    if(HWREV >= 8)
-        gpio_free(GPIO_CAM_IO_EN);
-
-    mdelay(5);
-
-    return 0;
+        return 0;
 }
-
 
 /** 
  * m5moLS_power_off: Power off the camera sensor 
@@ -920,91 +958,116 @@ static int m5moLS_power_on(struct v4l2_subdev *sd)
  */
 static int m5moLS_power_off(struct v4l2_subdev *sd)
 {
-    int err;
+        int err;
 
-    printk(KERN_ERR "m5moLS_power_off\n");
+        //printk(KERN_ERR "m5moLS_power_off\n");
 
-    /* CAM_MEGA_nRST - GPJ1(5) */
-    err = gpio_request(GPIO_CAM_MEGA_nRST, "GPJ1");
-    if(err) {
-        printk(KERN_ERR "failed to request GPJ1 for camera control\n");
-        return err;
-    }
-
-    /* GPIO_CAM_VT_RST_28V - GPJ4(1) */
-    err = gpio_request(GPIO_CAM_VT_RST_28V, "GPJ4");
-    if(err) {
-        printk(KERN_ERR "failed to request GPJ1 for camera control\n");
-        return err;
-    }
-
-    // Power Off Sequence
-    mdelay(5);
-
-    // CAM_MEGA_nRST - GPJ1(5) LOW
-    gpio_direction_output(GPIO_CAM_MEGA_nRST, 1);
-    gpio_set_value(GPIO_CAM_MEGA_nRST, 0);
-
-    // CAM_VGA_nRST  LOW
-    gpio_direction_output(GPIO_CAM_VT_RST_28V, 0);
-    gpio_set_value(GPIO_CAM_VT_RST_28V, 0);
-
-    /* CAM_AF_2.8V */
-    Set_MAX8998_PM_OUTPUT_Voltage(LDO11, VCC_2p800);
-    Set_MAX8998_PM_REG(ELDO11, 0);
-
-    mdelay(1);
-    
-    // Mclk disable
-    s3c_gpio_cfgpin(GPIO_CAM_MCLK, 0);
-
-    /* CAM_SENSOR_IO_1.8V */
-    Set_MAX8998_PM_OUTPUT_Voltage(LDO16, VCC_1p800);
-    Set_MAX8998_PM_REG(ELDO16, 0);    
-
-     /* CAM_HOST_1.8V */
-     Set_MAX8998_PM_OUTPUT_Voltage(LDO15, VCC_1p800);
-     Set_MAX8998_PM_REG(ELDO15, 0);
-
-     /* CAM_SENSOR_A2.8V */
-    if(HWREV>=8)
-    {
-        if(gpio_request(GPIO_CAM_IO_EN, "GPB") != 0)
-        {
-                printk(KERN_ERR "failed to request GPB7 for camera control = %d\n",HWREV);
+        /* CAM_MEGA_nRST - GPJ1(5) */
+        err = gpio_request(GPIO_CAM_MEGA_nRST, "GPJ1");
+        if(err) {
+                printk(KERN_ERR "failed to request GPJ1 for camera control\n");
                 return err;
-        }            
-        gpio_direction_output(GPIO_CAM_IO_EN, 1);    
-        gpio_set_value(GPIO_CAM_IO_EN, 0);
-    }
-    else
-    {
-        Set_MAX8998_PM_REG(ELDO13, 0);
-    }    
+        }
 
-    /* CAM_DVDD_1.5V */
-    Set_MAX8998_PM_OUTPUT_Voltage(LDO14, VCC_1p500);
-    Set_MAX8998_PM_REG(ELDO14, 0);
+        /* GPIO_CAM_VT_RST_28V - GPJ4(1) */
+        err = gpio_request(GPIO_CAM_VT_RST_28V, "GPJ4");
+        if(err) {
+                printk(KERN_ERR "failed to request GPJ1 for camera control\n");
+                return err;
+        }
 
-    /* CAM_SENSOR_CORE_1.2V */
-    Set_MAX8998_PM_OUTPUT_Voltage(LDO12, VCC_1p300);
-    Set_MAX8998_PM_REG(ELDO12, 0);
+        // Power Off Sequence
 
-    /* CAM_ISP_CORE_1.2V */
-    Set_MAX8998_PM_OUTPUT_Voltage(BUCK4, VCC_1p300);
-    Set_MAX8998_PM_REG(EN4, 0);    
-    
+        m5moLS_disable_interrupt_pin(sd);
+        mdelay(5);
 
-    gpio_free(GPIO_CAM_MEGA_nRST);
-    
-    gpio_free(GPIO_CAM_VT_RST_28V);
+        // CAM_MEGA_nRST - GPJ1(5) LOW
+        gpio_direction_output(GPIO_CAM_MEGA_nRST, 1);
+        gpio_set_value(GPIO_CAM_MEGA_nRST, 0);
 
-    if(HWREV >= 8)
-        gpio_free(GPIO_CAM_IO_EN);
+        // CAM_VGA_nRST  LOW
+        gpio_direction_output(GPIO_CAM_VT_RST_28V, 0);
+        gpio_set_value(GPIO_CAM_VT_RST_28V, 0);
 
-    return 0;
+        /* CAM_AF_2.8V- ldo 11*/
+        if(!IS_ERR_OR_NULL(cam_af_regulator)){
+            err = regulator_disable(cam_af_regulator);
+            if (err) {
+                    pr_err("Failed to disable regulator cam_isp_core\n");
+            }
+        }
+        mdelay(1);
+        
+        // Mclk disable
+        s3c_gpio_cfgpin(GPIO_CAM_MCLK, 0);
+        
+         /* CAM_SENSOR_IO_1.8V - ldo 16*/
+         if(!IS_ERR_OR_NULL(cam_vga_avdd_regulator)){
+             err = regulator_disable(cam_vga_avdd_regulator);
+             if (err) {
+                     pr_err("Failed to disable regulator cam_vga_avdd\n");
+             }
+         }
+        /* CAM_HOST_1.8V - ldo 15*/
+        if(!IS_ERR_OR_NULL(cam_isp_host_regulator)){        
+            err = regulator_disable(cam_isp_host_regulator);
+            if (err) {
+                    pr_err("Failed to disable regulator cam_isp_core\n");
+            }
+        }
+         /* CAM_SENSOR_A2.8V */
+        if(HWREV>=8)
+        {
+                if(gpio_request(GPIO_CAM_IO_EN, "GPB") != 0)
+                {
+                        printk(KERN_ERR "failed to request GPB7 for camera control = %d\n",HWREV);
+                        return err;
+                }            
+                gpio_direction_output(GPIO_CAM_IO_EN, 1);    
+                gpio_set_value(GPIO_CAM_IO_EN, 0);
+        }
+        else
+        {
+                /* ldo 13 */
+                if(!IS_ERR_OR_NULL(cam_vga_vddio_regulator)){  
+                    err = regulator_disable(cam_vga_vddio_regulator);
+                    if (err) {
+                            pr_err("Failed to disable regulator cam_vga_vddio\n");
+                    }
+                }
+        }    
+
+        /* CAM_DVDD_1.5V -ldo 14*/
+        if(!IS_ERR_OR_NULL(cam_vga_dvdd_regulator)){  
+            err = regulator_disable(cam_vga_dvdd_regulator);
+            if (err) {
+                    pr_err("Failed to disable regulator cam_vga_dvdd\n");
+            }
+        }
+        
+        /* CAM_SENSOR_CORE_1.2V - ldo 12*/
+        if(!IS_ERR_OR_NULL(cam_sensor_core_regulator)){  
+        err = regulator_disable(cam_sensor_core_regulator);
+            if (err) {
+                    pr_err("Failed to disable regulator cam_sensor\n");
+            }
+        }
+        
+        /* CAM_ISP_CORE_1.2V - buck4*/
+        if(!IS_ERR_OR_NULL(cam_isp_core_regulator)){  
+            err = regulator_disable(cam_isp_core_regulator);
+            if (err) {
+                    pr_err("Failed to disable regulator cam_isp_core\n");
+            }    
+        }
+        gpio_free(GPIO_CAM_MEGA_nRST);
+        gpio_free(GPIO_CAM_VT_RST_28V);
+
+        if(HWREV >= 8)
+                gpio_free(GPIO_CAM_IO_EN);
+
+        return 0;
 }
-
 
 
 /** 
@@ -1014,17 +1077,16 @@ static int m5moLS_power_off(struct v4l2_subdev *sd)
  */
 static int m5moLS_power_en(struct v4l2_subdev *sd,int onoff)
 {
-	if(onoff == 1)
-	{
-		m5moLS_power_on(sd);
-	}
-
-	else 
-	{
-		m5moLS_power_off(sd);
-	}
-	return 0;
+        printk("CameraDriver-m5moLS_power_en\n");
+        
+        if(onoff == 1) {
+                m5moLS_power_on(sd);
+        }else {
+                m5moLS_power_off(sd);
+        }
+        return 0;
 }
+
 
 #endif //ifdef M5MO_LS_CAM_POWER
 
@@ -1457,7 +1519,10 @@ static int m5moLS_set_preview_resolution(struct v4l2_subdev *sd)
              dev_err(&client->dev, "%s: failed: i2c_write for Preview_image_resoltuion\n", __func__);
              return -EIO; 
          }
-     
+#if 0
+         m5moLS_msg(&client->dev,"fixed fps %d\n",state->fps);
+         m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x01, 0x31, state->fps != 30 ? state->fps:0);
+#endif         
          if(OrgMode != M5MO_LS_PARMSET_MODE)
          {
              err = m5moLS_set_mode(sd, OrgMode);
@@ -1474,10 +1539,32 @@ static int m5moLS_set_preview_resolution(struct v4l2_subdev *sd)
 
 }
 
-static int m5moLS_set_frame_rate(struct v4l2_subdev *sd)
+static int m5moLS_set_frame_rate(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
 {
-	/*[5B] Need to do later*/
-	return 0;
+      int rval;
+      int OrgMode;
+      int fps = ctrl->value;
+      struct m5moLS_state *state = to_state(sd);
+      struct i2c_client *client = v4l2_get_subdevdata(sd);
+
+        OrgMode = m5moLS_get_mode(sd);
+        rval = m5moLS_set_mode(sd, M5MO_LS_PARMSET_MODE);
+        if(rval){
+            m5moLS_msg(&client->dev,"Can not set operation mode\n");
+            return rval;
+        }
+        m5moLS_msg(&client->dev,"fixed fps %d ( %d)\n",state->fps, fps);
+        m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x01, 0x31, fps != 30 ? fps:0);
+
+	
+       if(OrgMode == M5MO_LS_MONITOR_MODE){
+        	rval = m5moLS_set_mode(sd, M5MO_LS_MONITOR_MODE);
+        	if(rval){
+        		m5moLS_msg(&client->dev,"Can not set monitor mode\n");
+        		return rval;
+        	}
+       }
+	return rval;
 }
 
 static int m5moLS_set_anti_banding(struct v4l2_subdev *sd)
@@ -1485,9 +1572,6 @@ static int m5moLS_set_anti_banding(struct v4l2_subdev *sd)
 	int err;
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	struct m5moLS_state *state = to_state(sd);	
-
-       if(state->m_anti_banding_mode == state->anti_banding)
-            return 0;
        
 	switch(state->anti_banding)
 	{
@@ -1514,7 +1598,6 @@ static int m5moLS_set_anti_banding(struct v4l2_subdev *sd)
 		return -EIO;
 	}
     
-       state->m_anti_banding_mode = state->anti_banding;
 	m5moLS_msg(&client->dev, "%s: done\n", __func__);
 	
 	return 0;
@@ -1535,9 +1618,6 @@ static int m5moLS_set_dzoom(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
     zoom_level = ctrl->value;
 	m5moLS_msg(&client->dev, "%s: Enter : Digital Zoom = %d\n", __func__, zoom_level);
     
-    if(state->m_zoom_level == zoom_level)
-        return 0;
-    
     if((zoom_level < M5MO_LS_ZOOM_LEVEL_0) || (zoom_level > M5MO_LS_ZOOM_LEVEL_MAX))
     {
         m5moLS_msg(&client->dev,"Error, Zoom Level is out of range!\n");
@@ -1549,7 +1629,6 @@ static int m5moLS_set_dzoom(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
     msleep(30);
 
     if(err == 0){
-        state->m_zoom_level = zoom_level;
         m5moLS_msg(&client->dev, "%s: done\n", __func__);
     }
     return err;
@@ -1793,6 +1872,41 @@ static int m5moLS_set_capture_resolution(struct v4l2_subdev *sd)
       return 0;    
 }
 
+static int m5moLS_set_ae_awb_lock(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
+{
+    struct i2c_client *client = v4l2_get_subdevdata(sd);
+    int ret = 0;
+
+    switch(ctrl->value){
+        case AE_UNLOCK_AWB_UNLOCK:
+            ret = m5moLS_set_awb_lock(sd,0);
+            ret |= m5moLS_set_ae_lock(sd,0);
+            break;
+
+        case AE_LOCK_AWB_UNLOCK:
+            ret = m5moLS_set_awb_lock(sd,0);
+            ret |= m5moLS_set_ae_lock(sd,1);
+            break;
+
+        case AE_UNLOCK_AWB_LOCK:
+            ret = m5moLS_set_awb_lock(sd,1);
+            ret |= m5moLS_set_ae_lock(sd,0);
+            break;
+
+        case AE_LOCK_AWB_LOCK:
+            ret = m5moLS_set_awb_lock(sd,1);
+            ret |= m5moLS_set_ae_lock(sd,1);
+            break;
+
+        default:
+            break;
+    }
+    
+    if(ret != 0)
+        m5moLS_msg(&client->dev, "set_ae_awb_lock failed\n");
+    
+    return ret;
+}
 
 static int m5moLS_set_awb_lock(struct v4l2_subdev *sd, int lock)
 {
@@ -1829,25 +1943,42 @@ static int m5moLS_set_ae_lock(struct v4l2_subdev *sd, int lock)
 static int m5moLS_set_jpeg_quality(struct v4l2_subdev *sd, int quality)
 {
     struct i2c_client *client = v4l2_get_subdevdata(sd);
-    struct m5moLS_state *state = to_state(sd);
-    int compressionRatio = 0;
 
-    m5moLS_msg(&client->dev, "%s : Enter ::::: quality = %d\n",__func__,quality);
-
+    m5moLS_msg(&client->dev, "%s : Enter ::::: quality = %d\n",__func__, quality);
+ 
     m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0B, 0x17, 0x62);    
-    
-    if(quality > 70)    // superfine
-    {
-        m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0B, 0x34, M5MO_LS_JPEG_SUPERFINE);
-    }
-    else if(quality > 40)   // fine
-    {
-        m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0B, 0x34, M5MO_LS_JPEG_FINE);
-    }
-    else    // normal
-    {
-        m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0B, 0x34, M5MO_LS_JPEG_NORMAL);    
-    }
+
+	switch(quality) 
+	{
+		case JPEG_QUALITY_SUPERFINE:
+		{
+            m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0B, 0x34, M5MO_LS_JPEG_SUPERFINE);
+            break;
+        }
+
+		case JPEG_QUALITY_FINE:
+		{
+            m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0B, 0x34, M5MO_LS_JPEG_FINE);
+            break;
+        }
+        
+		case JPEG_QUALITY_NORMAL:
+		{
+			m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0B, 0x34, M5MO_LS_JPEG_NORMAL); 
+			break;
+        }
+
+		case JPEG_QUALITY_ECONOMY:
+		{
+			m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0B, 0x34, M5MO_LS_JPEG_ECONOMY); 
+			break;
+        }
+
+        default:
+        {
+			break;
+        }
+    }        
     
     return 0;
 }
@@ -2017,7 +2148,7 @@ m5moLS_start_capture_transfer(struct v4l2_subdev *sd)
 	m5moLS_read_category_parm(client, M5MO_LS_32BIT, 0x0C, 0x11, &val);
 	m5moLS_msg(&client->dev, "%s: JPEG thumbnail is %d\n", __func__, val);\
 	thumb_jpeg_size = val;
-
+#if 0
 	temp_val = 0;
 	m5moLS_read_category_parm(client, M5MO_LS_8BIT, 0x0B, 0x12, &temp_val);
 	jpeg_max_size |= temp_val;
@@ -2044,6 +2175,7 @@ m5moLS_start_capture_transfer(struct v4l2_subdev *sd)
 	temp_val =0;
 	m5moLS_read_category_parm(client, M5MO_LS_8BIT, 0x0B, 0x3C, &temp_val);
 	thumbnail_max_size |= (temp_val<<24);
+#endif    
 	temp_val =0;       
 	state->jpeg.main_offset = 0;
 	state->jpeg.thumb_offset = M5MO_LS_THUMB_OFFSET;
@@ -2075,8 +2207,8 @@ static int m5moLS_set_capture_start(struct v4l2_subdev *sd, struct v4l2_control 
     	m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0B, 0x00, 0x00); // YUV422
 
     /* Set Thumbnail Max Size */
-    m5moLS_write_category_parm(client,M5MO_LS_32BIT, 0x0B,0x3C, M5MO_LS_THUMB_MAX_SIZE);
-    
+    m5moLS_write_category_parm(client,M5MO_LS_32BIT, 0x0B,0x3C, M5MO_LS_THUMB_MAX_SIZE);    
+
     /* AE/AWB Lock */
     if(m5moLS_set_ae_lock(sd,M5MO_LS_AE_LOCK) != 0)
         return -EINVAL;
@@ -2097,12 +2229,15 @@ static int m5moLS_set_capture_start(struct v4l2_subdev *sd, struct v4l2_control 
         m5moLS_info(&client->dev,"failed set_face_beauty\n");
         return -EINVAL;
     }
-    
+
     /* Enable Capture Transfer Interrupt */
     m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x00, 0x11, M5MO_LS_INT_CAPTURE);
 
     /* Set Still Capture Mode */
     m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x00, 0x0B, M5MO_LS_STILLCAP_MODE);
+
+    /* Interrupt Clear */
+    m5moLS_read_category_parm(client, M5MO_LS_8BIT, 0x00, 0x10, &intr_value);
 
     /* Wait 'Capture Complete' interrupt */
     DBG("Waiting 'Capture Complete' interrupt... \n");
@@ -2115,8 +2250,6 @@ static int m5moLS_set_capture_start(struct v4l2_subdev *sd, struct v4l2_control 
     return 0; 
 }
 
-
-//static int m5moLS_get_focus_mode(struct i2c_client *client, unsigned char cmd, unsigned char *value)
 static int m5moLS_get_focus_mode(struct i2c_client *client, struct v4l2_control *ctrl)
 
 {
@@ -2339,9 +2472,6 @@ static int m5moLS_set_effect(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
 	int err = -1;
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
        struct m5moLS_state *state = to_state(sd);
-        
-       if(state->m_effect_mode == ctrl->value)
-            return 0;
        
 	switch(ctrl->value)
 	{
@@ -2364,7 +2494,6 @@ static int m5moLS_set_effect(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
     		break;
 	}
 
-       state->m_effect_mode = ctrl->value;
 	m5moLS_msg(&client->dev, "%s: done\n", __func__);
 
 	return err;
@@ -2377,9 +2506,6 @@ static int m5moLS_set_saturation(struct v4l2_subdev *sd, struct v4l2_control *ct
        struct m5moLS_state *state = to_state(sd);  
 
 	m5moLS_msg(&client->dev, "%s: Enter : saturation %d\n", __func__, ctrl->value);
-
-       if(state->m_saturation_mode == ctrl->value)
-            return 0;
 
 	err = m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x02, 0x10, 0x01);
 
@@ -2417,8 +2543,6 @@ static int m5moLS_set_saturation(struct v4l2_subdev *sd, struct v4l2_control *ct
     		break;
 
 	}
-
-       state->m_saturation_mode = ctrl->value;
        
 	m5moLS_msg(&client->dev, "%s: done, saturation: %d\n", __func__, ctrl->value);
 
@@ -2430,9 +2554,6 @@ static int m5moLS_set_contrast(struct v4l2_subdev *sd, struct v4l2_control *ctrl
     int err = -1;
     struct i2c_client *client = v4l2_get_subdevdata(sd);
     struct m5moLS_state *state = to_state(sd);
-
-    if(state->m_contrast_mode == ctrl->value)
-        return 0;
     
     switch(ctrl->value)
     {
@@ -2461,7 +2582,6 @@ static int m5moLS_set_contrast(struct v4l2_subdev *sd, struct v4l2_control *ctrl
             err =  -EINVAL;
             break;
     }
-    state->m_contrast_mode = ctrl->value;
     
     return err;
 }
@@ -2472,10 +2592,7 @@ static int m5moLS_set_sharpness(struct v4l2_subdev *sd, struct v4l2_control *ctr
     int err =-1;
     struct i2c_client *client = v4l2_get_subdevdata(sd);
     struct m5moLS_state *state = to_state(sd);
-
-    if(state->m_sharpness_mode == ctrl->value)
-        return 0;
-    
+  
     err = m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x02, 0x12, 0x01);
 
     if(err != 0) {
@@ -2510,7 +2627,6 @@ static int m5moLS_set_sharpness(struct v4l2_subdev *sd, struct v4l2_control *ctr
             m5moLS_msg(&client->dev,"[Sharpness]Invalid value is ordered!!!\n");
             return -EINVAL;
     }
-    state->m_sharpness_mode = ctrl->value;
     
     return 0;
 }
@@ -2521,9 +2637,6 @@ static int m5moLS_set_wdr(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
     int err = -1;
     struct i2c_client *client = v4l2_get_subdevdata(sd);
     struct m5moLS_state *state = to_state(sd);
-
-    if(state->m_wdr_mode == ctrl->value)
-        return 0;
 
     switch(ctrl->value)
     {
@@ -2542,7 +2655,6 @@ static int m5moLS_set_wdr(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
         err = -EINVAL;
         break;
     }
-    state->m_wdr_mode = ctrl->value;
     
     return err;
 }
@@ -2554,7 +2666,8 @@ static int m5moLS_set_anti_shake(struct v4l2_subdev *sd, struct v4l2_control *ct
     struct i2c_client *client = v4l2_get_subdevdata(sd);
     struct m5moLS_state *state = to_state(sd);
 
-    if(state->m_anti_shake_mode == ctrl->value)
+    m5moLS_msg(&client->dev,"%s",__func__);
+    if(state->m_ev_program_mode != SCENE_MODE_NONE)
         return 0;
     
     /* WDR & ISC are orthogonal!*/
@@ -2578,7 +2691,6 @@ static int m5moLS_set_anti_shake(struct v4l2_subdev *sd, struct v4l2_control *ct
             err =  -EINVAL;
             break;
     }
-    state->m_anti_shake_mode = ctrl->value;
         
     return err;
 }
@@ -2734,13 +2846,13 @@ static int m5moLS_set_focus_mode(struct v4l2_subdev *sd, struct v4l2_control *ct
             state->userset.lens.af_status = M5MO_LS_AF_INIT_MACRO;
             break;
             
-        case FOCUS_MODE_FD:
+        case FOCUS_MODE_FACEDETECT:
             /*Set Face Detection AF mode */
             err = m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0A, 0x01, 0x03);
             state->userset.lens.af_status = M5MO_LS_AF_INIT_FD;
             break;
 			
-        case FOCUS_MODE_FD_DEFAULT:
+        case FOCUS_MODE_FACEDETECT_DEFAULT:
             /* AE/AWB Unlock */
             if(m5moLS_set_ae_lock(sd,M5MO_LS_AE_UNLOCK) != 0)
                 return -EINVAL;
@@ -2842,9 +2954,6 @@ static int m5moLS_set_white_balance(struct v4l2_subdev *sd, struct v4l2_control 
     struct m5moLS_state *state = to_state(sd);
 
 	m5moLS_msg(&client->dev, "%s: Enter : white balance %d\n", __func__, ctrl->value);
-
-    if(state->m_white_balance_mode == ctrl->value)
-        return 0;
     
 	switch(ctrl->value)
 	{
@@ -2879,7 +2988,6 @@ static int m5moLS_set_white_balance(struct v4l2_subdev *sd, struct v4l2_control 
 	}
 
     if(err == 0){
-            state->m_white_balance_mode = ctrl->value;
 	    m5moLS_msg(&client->dev, "%s: done\n", __func__);
     }
     else
@@ -2894,10 +3002,7 @@ static int m5moLS_set_ev(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
     struct i2c_client *client = v4l2_get_subdevdata(sd);
     struct m5moLS_state *state = to_state(sd);
 
-	m5moLS_msg(&client->dev, "%s: Enter : brightness = %d\n", __func__, ctrl->value);
-
-    if(state->m_ev_mode == ctrl->value)
-        return 0;
+    m5moLS_msg(&client->dev, "%s: Enter : brightness = %d\n", __func__, ctrl->value);
     
     switch(ctrl->value)
     {
@@ -2944,7 +3049,6 @@ static int m5moLS_set_ev(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
     }
 
     if(err == 0){
-       state->m_ev_mode = ctrl->value;
     	m5moLS_msg(&client->dev, "%s: done, brightness: %d\n", __func__, ctrl->value);
     }
     else
@@ -2962,8 +3066,7 @@ static int m5moLS_set_metering(struct v4l2_subdev *sd, struct v4l2_control *ctrl
 
     m5moLS_msg(&client->dev, "%s: Enter : metering %d\n", __func__, ctrl->value);
     
-    if((state->m_metering_mode == ctrl->value)||
-        (state->m_movie_mode == 0x01)) // 0x01: movie_mode, 0x00 :  Moniter_mode
+    if(state->m_movie_mode == 0x01) // 0x01: movie_mode, 0x00 :  Moniter_mode
         return 0;
     
     switch(ctrl->value)
@@ -2987,7 +3090,6 @@ static int m5moLS_set_metering(struct v4l2_subdev *sd, struct v4l2_control *ctrl
     }
 
     if(err == 0){
-        state->m_metering_mode = ctrl->value;
         m5moLS_msg(&client->dev, "%s: done\n", __func__);
     }
     else
@@ -3003,9 +3105,6 @@ static int m5moLS_set_iso(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
        struct m5moLS_state *state = to_state(sd);
 
 	m5moLS_msg(&client->dev, "%s: Enter : iso %d\n", __func__, ctrl->value);
-
-       if(state->m_iso_mode == ctrl->value)
-            return 0;
        
 	switch(ctrl->value)
 	{
@@ -3047,7 +3146,6 @@ static int m5moLS_set_iso(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
 	}
 
     if(err == 0){
-        state->m_iso_mode = ctrl->value;
     	m5moLS_msg(&client->dev, "%s: done, iso: 0x%02x\n", __func__, ctrl->value);
     }
     else
@@ -3075,28 +3173,43 @@ static void m5moLS_start_auto_focus(struct v4l2_subdev *sd)
     struct m5moLS_state *state = to_state(sd);
 
     int orgmode = 0, af_status = 0, intr_value=0;
+    int count=0;
+    u32 val = 0;
     af_status = state->userset.lens.af_status;
-
-    orgmode = m5moLS_get_mode(sd);
-    if(orgmode != M5MO_LS_MONITOR_MODE)
-    {
-        state->userset.lens.af_status = af_status;
-        m5moLS_msg(&client->dev," camera module mode is not preview!! Don't working AF!n");
-        return 0;
-    }
 
     m5moLS_msg(&client->dev,"Start AF !!!\n");
     state->userset.lens.af_status = M5MO_LS_AF_START;
-
     /* Interrupt Clear */
-    m5moLS_read_category_parm(client, M5MO_LS_8BIT, 0x00, 0x10, &intr_value);        
+    m5moLS_read_category_parm(client, M5MO_LS_8BIT, 0x00, 0x10, &intr_value); 
     /* AF interrupt enable */
     m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x00, 0x11, M5MO_LS_INT_AF); 
     /* AF Start Operation */
-    m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0A, 0x02, 0x01);
-    
-    m5moLS_wait_interrupt(sd, M5MO_LS_INT_AF, 1000);
+    m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0A, 0x02, 0x01);    
 
+    cam_interrupted = 0;        
+    
+    for(count=0;count<600;count++){
+        if(state->userset.lens.af_status == M5MO_LS_AF_STOP){
+            m5moLS_msg(&client->dev,"AF Cancelled while doing!!!");
+            break;
+        }
+        
+        mutex_unlock(&state->ctrl_lock);
+        msleep(10);
+        mutex_lock(&state->ctrl_lock);
+
+        m5moLS_read_category_parm(client, M5MO_LS_8BIT, 0x0A, 0x03, &val);
+        m5moLS_msg(&client->dev,"AF status reading... %d \n", val);
+        m5moLS_msg(&client->dev,"AF status reading... interrupted flag = %d \n", cam_interrupted);
+
+        if(val != 1 && cam_interrupted== 1){
+            m5moLS_read_category_parm(client, M5MO_LS_8BIT, 0x00, 0x10, &intr_value);
+            break;
+         }else{
+            continue;
+         }
+     }
+ 
 }
 
 static void m5moLS_stop_auto_focus(struct v4l2_subdev *sd)
@@ -3108,25 +3221,10 @@ static void m5moLS_stop_auto_focus(struct v4l2_subdev *sd)
     int orgmode = 0, af_status = 0, intr_value=0;
     af_status = state->userset.lens.af_status;
 
-    orgmode = m5moLS_get_mode(sd);
-    if(orgmode != M5MO_LS_MONITOR_MODE)
-    {
-        state->userset.lens.af_status = af_status;
-        m5moLS_info(&client->dev," camera module mode is not preview!! Don't working AF!n");
-        return 0;
-    }
-
     state->userset.lens.af_status = M5MO_LS_AF_STOP;
 
     /* AF Stop Operation */
     m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0A, 0x02, 0x00);
-    /* disable AF interrupt */
-    m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x00, 0x11, 0x00); 
-    /* Clear Interrupt flag */
-    m5moLS_read_category_parm(client, M5MO_LS_8BIT, 0x00, 0x10, &intr_value);        
-
-    //cam_interrupted = 1;
-    //wake_up_interruptible(&cam_wait);
 
     /* AE/AWB Unlock */
     if(m5moLS_set_ae_lock(sd,M5MO_LS_AE_UNLOCK) != 0)
@@ -3144,37 +3242,60 @@ static int m5moLS_get_auto_focus_status(struct v4l2_subdev *sd, struct v4l2_cont
     struct i2c_client *client = v4l2_get_subdevdata(sd);
     struct m5moLS_state *state = to_state(sd);
     u32 val = 0;
+    u32 count = 0;
 
-    if(state->userset.lens.af_status == M5MO_LS_AF_STOP)
-    {
-        return M5MO_LS_AF_RELEASE;
+    m5moLS_msg(&client->dev,"%s",__func__);
+
+    for(count = 0; count<600;count++){
+        
+	mutex_unlock(&state->ctrl_lock);
+	msleep(10);
+	mutex_lock(&state->ctrl_lock);
+
+	if (state->userset.lens.af_status  == M5MO_LS_AF_STOP) {
+		m5moLS_info(&client->dev,
+			"%s: AF is cancelled while doing\n", __func__);
+		ctrl->value = M5MO_LS_AF_STATUS_CANCEL;
+		return M5MO_LS_AF_STATUS_CANCEL;
+	}
+
+        m5moLS_read_category_parm(client, M5MO_LS_8BIT, 0x0A, 0x03, &val);
+        m5moLS_msg(&client->dev,"AF status reading... %d \n", val);
+        
+        if(val == 1){
+            ctrl->value = M5MO_LS_AF_STATUS_MOVING;
+            continue;
+        }else if(val == 0){
+            ctrl->value = M5MO_LS_AF_STATUS_FAILED; 
+            /* AF initial position */
+            m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0A, 0x00, 0x01);   
+            break;
+        }else if(val == 2){
+            ctrl->value = M5MO_LS_AF_STATUS_SUCCESS;
+            break;
+        }
+        
     }
     
-    m5moLS_read_category_parm(client, M5MO_LS_8BIT, 0x0A, 0x03, &val);
-    if(val == 1)
-        ctrl->value = M5MO_LS_AF_STATUS_MOVING;
-    else if(val == 0)
-        ctrl->value = M5MO_LS_AF_STATUS_FAILED; 
-    else if(val == 2)
-        ctrl->value = M5MO_LS_AF_STATUS_SUCCESS;
-
-    m5moLS_msg(&client->dev,"AF status reading... %d \n", ctrl->value);
-
-    if(ctrl->value == M5MO_LS_AF_STATUS_FAILED || ctrl->value == M5MO_LS_AF_STATUS_SUCCESS)
+    if(ctrl->value !=  M5MO_LS_AF_STATUS_MOVING)
     { 
         if((ctrl->value == M5MO_LS_AF_STATUS_SUCCESS)&&(state->touch_af_mode == 0))
         {
-            /* AE/AWB Lock */
-            if(m5moLS_set_ae_lock(sd,M5MO_LS_AE_LOCK) != 0)
-                return -EINVAL;
-            if(m5moLS_set_awb_lock(sd,M5MO_LS_AWB_LOCK) != 0)
-                return -EINVAL;
+		if(state->m_ev_program_mode == SCENE_MODE_NIGHTSHOT)
+		{
+			msleep(NIGHT_MODE_MAX_ONE_FRAME_DELAY_MS*3);
+		}        
+		/* AE/AWB Lock */
+		if(m5moLS_set_ae_lock(sd,M5MO_LS_AE_LOCK) != 0)
+		    return -EINVAL;
+		if(m5moLS_set_awb_lock(sd,M5MO_LS_AWB_LOCK) != 0)
+		    return -EINVAL;
         } 
 
         if(state->touch_af_mode)
             state->touch_af_mode = 0;
         
-        m5moLS_msg(&client->dev, "AF result = %d (2.success, 1. moving, 0.fail), af_status = %d\n", ctrl->value,state->userset.lens.af_status);
+        m5moLS_msg(&client->dev, "AF result = %d (1.success, 5. moving, 0.fail), af_status = %d\n", ctrl->value,state->userset.lens.af_status);
     }
 
     return ctrl->value;
@@ -3567,6 +3688,14 @@ static int m5moLS_s_parm(struct v4l2_subdev *sd, struct v4l2_streamparm *param)
 		param->parm.capture.timeperframe.denominator = fps;
 	
 		state->fps = fps;
+
+              err = m5moLS_set_mode(sd, M5MO_LS_PARMSET_MODE);
+              if(err){
+                  m5moLS_msg(&client->dev,"Can not set operation mode\n");
+                  return err;
+              }
+              m5moLS_msg(&client->dev,"fixed fps %d\n",state->fps);
+              m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x01, 0x31, state->fps != 30 ? state->fps:0);
 	}
 
 	/* Don't set the fps value, just update it in the state 
@@ -3679,8 +3808,7 @@ static int m5moLS_set_ev_program_mode(struct v4l2_subdev *sd, struct v4l2_contro
 
 	m5moLS_msg(&client->dev, "%s: Scene Mode = %d\n",__func__,ctrl->value);
 
-       if((state->m_ev_program_mode == ctrl->value)||
-          (state->m_movie_mode == 0x01))    // 0x01 : movie_mode, 0x00 : moniter_mode
+       if(state->m_movie_mode == 0x01)    // 0x01 : movie_mode, 0x00 : moniter_mode
             return 0;
        
 	switch(ctrl->value) {
@@ -3786,9 +3914,6 @@ static int m5moLS_set_movie_mode(struct v4l2_subdev *sd, struct v4l2_control *ct
     m5moLS_msg(&client->dev,"%s ::: mode_value = %d\n",__func__, mode_val);
 
     mode_val = ctrl->value;
-
-    if(state->m_movie_mode == mode_val)
-        return 0;
     
     orgmode = m5moLS_get_mode(sd);
     rval = m5moLS_set_mode(sd, M5MO_LS_PARMSET_MODE);
@@ -3810,7 +3935,6 @@ static int m5moLS_set_movie_mode(struct v4l2_subdev *sd, struct v4l2_control *ct
             return rval;
         }
     }
-    state->m_movie_mode = mode_val;
     
     return mode_err;
 }
@@ -3824,9 +3948,6 @@ static int m5moLS_set_mcc_mode(struct v4l2_subdev *sd, struct v4l2_control *ctrl
        struct m5moLS_state *state = to_state(sd);
 
 	m5moLS_msg(&client->dev, "%s: Scene Mode = %d\n",__func__,ctrl->value);
-
-       if(state->m_mcc_mode == ctrl->value)
-            return 0;
        
 	if(ctrl->value == SCENE_MODE_NONE) {
 		err = m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0B, 0x1D, 0x01);	// Still capture color effect using multi-axis color space conversio
@@ -3835,8 +3956,6 @@ static int m5moLS_set_mcc_mode(struct v4l2_subdev *sd, struct v4l2_control *ctrl
 	else {
 		err = m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0B, 0x1D, 0x00);	// Still capture color effect using multi-axis color space conversio
 	}
-
-       state->m_mcc_mode = ctrl->value;
        
 	m5moLS_msg(&client->dev,"%s: err = %d\n", __func__, err);
 
@@ -4056,7 +4175,7 @@ static int m5moLS_s_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
         case V4L2_CID_CAMERA_ANTI_SHAKE:
             err = m5moLS_set_anti_shake(sd, ctrl);
             break;
-            
+
         case V4L2_CID_CAMERA_BRIGHTNESS:
             err = m5moLS_set_ev(sd, ctrl);
             break;
@@ -4080,7 +4199,7 @@ static int m5moLS_s_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
         case V4L2_CID_CAMERA_FACE_DETECTION:
             err = m5moLS_set_face_detection(sd, ctrl);
             break;
-        
+
         case V4L2_CID_CAMERA_ZOOM:
             err = m5moLS_set_dzoom(sd, ctrl);
             err =0;
@@ -4090,7 +4209,7 @@ static int m5moLS_s_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
             state->jpeg.quality = ctrl->value;
             err = 0;
             break;
-            
+
         case V4L2_CID_CAMERA_WHITE_BALANCE:
             err = m5moLS_set_white_balance(sd, ctrl);
             break;
@@ -4103,11 +4222,11 @@ static int m5moLS_s_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
             err = m5moLS_set_effect(sd, ctrl);                 
             err = 0;
             break;      
-        
+
         case V4L2_CID_CAMERA_ISO:
             err = m5moLS_set_iso(sd, ctrl);       
             break;
-        
+
         case V4L2_CID_CAMERA_METERING:
             err = m5moLS_set_metering(sd, ctrl);        
             break;
@@ -4119,14 +4238,14 @@ static int m5moLS_s_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
         case V4L2_CID_CAM_CAPTURE:      // start_capture
             err = m5moLS_set_capture_start(sd, ctrl);
             break;
-            
+
         /* Used to start / stop preview operation. 
-                * This call can be modified to START/STOP operation, which can be used in image capture also */
+        * This call can be modified to START/STOP operation, which can be used in image capture also */
         case V4L2_CID_CAM_PREVIEW_ONOFF:
             if(ctrl->value)
-            err = m5moLS_set_preview_start(sd);
+                err = m5moLS_set_preview_start(sd);
             else
-            err = m5moLS_set_preview_stop(sd);
+                err = m5moLS_set_preview_stop(sd);
             break;
 
         case V4L2_CID_CAMERA_CAF_START_STOP:
@@ -4137,7 +4256,7 @@ static int m5moLS_s_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
             state->position.x = ctrl->value;
             err = 0;
             break;
-        
+
         case V4L2_CID_CAMERA_OBJECT_POSITION_Y:
             state->position.y = ctrl->value;
             err = 0;
@@ -4184,7 +4303,7 @@ static int m5moLS_s_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
             state->not_detect = 1;
             err = m5moLS_get_version(sd,ctrl);
             break;
-            
+
         case V4L2_CID_CAM_DUMP_FW:
             err = 0;
             break;
@@ -4202,45 +4321,51 @@ static int m5moLS_s_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
             break;
 
         case V4L2_CID_CAMERA_CHECK_DATALINE:
-			state->check_dataline = ctrl->value;
+            state->check_dataline = ctrl->value;
             err = 0;        
             break;	
 
         case V4L2_CID_CAMERA_CHECK_DATALINE_STOP:
-			err = m5moLS_set_dtp_stop(sd);       
+            err = m5moLS_set_dtp_stop(sd);       
             break;
-			
-		case V4L2_CID_CAMERA_ANTI_BANDING:
-			state->anti_banding = ctrl->value;
-			err = 0;		
-			break;
 
-		case V4L2_CID_CAMERA_FRAME_RATE:
-			err = 0;		
-			break;
-			
-		case V4L2_CID_CAMERA_VINTAGE_MODE:
-			state->vintage_mode = ctrl->value;
-                     err = 0;
-			break;
+        case V4L2_CID_CAMERA_ANTI_BANDING:
+            state->anti_banding = ctrl->value;
+            err = 0;		
+            break;
 
-		case V4L2_CID_CAMERA_BEAUTY_SHOT:
-			state->beauty_mode = ctrl->value;
-                     err = 0;
-			break;
+        case V4L2_CID_CAMERA_FRAME_RATE:
+            //err = m5moLS_set_frame_rate(sd,ctrl);
+            state->fps = ctrl->value;
+            err = 0;
+            break;
 
-		case V4L2_CID_CAMERA_EV_PROGRAM_MODE:
-			err = m5moLS_set_ev_program_mode(sd, ctrl);
-			break;
+        case V4L2_CID_CAMERA_VINTAGE_MODE:
+            state->vintage_mode = ctrl->value;
+            err = 0;
+            break;
 
-		case V4L2_CID_CAMERA_MCC_MODE:
-			err = m5moLS_set_mcc_mode(sd, ctrl);
-			break;
-            
-	       case V4L2_CID_CAMERA_MON_MOVIE_SELECT:
-                    state->m_movie_mode = ctrl->value;
-                    err = 0;
-                    break; 
+        case V4L2_CID_CAMERA_BEAUTY_SHOT:
+            state->beauty_mode = ctrl->value;
+            err = 0;
+            break;
+
+        case V4L2_CID_CAMERA_EV_PROGRAM_MODE:
+            err = m5moLS_set_ev_program_mode(sd, ctrl);
+            break;
+
+        case V4L2_CID_CAMERA_MCC_MODE:
+            err = m5moLS_set_mcc_mode(sd, ctrl);
+            break;
+
+        case V4L2_CID_CAMERA_MON_MOVIE_SELECT:
+            state->m_movie_mode = ctrl->value;
+            err = 0;
+            break; 
+
+        case V4L2_CID_CAMERA_AE_AWB_LOCKUNLOCK:
+            err = m5moLS_set_ae_awb_lock(sd,ctrl);
+            break;
             
         default:
             dev_err(&client->dev, "%s: no such control:::: s_ctrl:id(%d)\n", __func__, (ctrl->id - offset));
@@ -4331,14 +4456,25 @@ m5moLS_i2c_update_firmware(struct v4l2_subdev *sd)
 	u32 val = 0, flash_addr;
 	u8 pin1 = 0x7E;
 	u8 status = '1';
-	
-        m5moLS_msg(&client->dev, "%s: start\n", __func__);
-	
+	int ret_val;
+    
+        m5moLS_info(&client->dev, "%s: start\n", __func__);
 	/* Set M-5MoLS Pins */
-	m5moLS_write_mem(client, 0x0001, 0x50000308, &pin1);
-	/* M-5MoLS flash memory select */
-	m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0F, 0x13, 0x01);
-
+	ret_val = m5moLS_write_mem(client, 0x0001, 0x50000308, &pin1);
+       if(ret_val < 0)
+       {
+            m5moLS_info(&client->dev,"return failed");
+            return -1;
+       }
+	/* M-5MoLS flash memory select */   
+	ret_val = m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0F, 0x13, 0x01);
+       if(ret_val < 0)
+       {
+            m5moLS_info(&client->dev,"return failed");
+            return -1;
+       }
+       msleep(30);
+       
 	m5moLS_msg(&client->dev,"Firmware Update Start!!\n");
 	m5moLS_write_fw_status(&status);
 	flash_addr = 0x10000000;	
@@ -4346,9 +4482,10 @@ m5moLS_i2c_update_firmware(struct v4l2_subdev *sd)
 	{
 		/* Set Flash ROM memory address */
 		m5moLS_write_category_parm(client, M5MO_LS_32BIT, 0x0F, 0x00, flash_addr);
-
+              msleep(30);
 		/* Erase FLASH ROM entire memory */
 		m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0F, 0x06, 0x01);
+              msleep(30);
 		retry = 0;
 		while(1) 
 		{
@@ -4357,13 +4494,14 @@ m5moLS_i2c_update_firmware(struct v4l2_subdev *sd)
 			if(val == 0)	//4
 				break;
 
-			mdelay(20);
+			//mdelay(50);
+			msleep(200);
 			retry++;
 		}	
 
 		/* Set FLASH ROM programming size */
 		m5moLS_write_category_parm(client, M5MO_LS_16BIT, 0x0F, 0x04, 0x0000);
-
+              msleep(30);
 		/* Clear M-5MoLS internal RAM */
 		m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0F, 0x08, 0x01);
 		mdelay(10);
@@ -4371,7 +4509,7 @@ m5moLS_i2c_update_firmware(struct v4l2_subdev *sd)
 		printk("Firmware Update is processing... %d!!\n", i);
 		/* Set Flash ROM programming address */
 		m5moLS_write_category_parm(client, M5MO_LS_32BIT, 0x0F, 0x00, flash_addr);
-
+              msleep(30);
 		/* Send programmed firmware */
 		for(j=0; j<0x10000; j+=0x1000)
 		{
@@ -4382,7 +4520,8 @@ m5moLS_i2c_update_firmware(struct v4l2_subdev *sd)
 		}
 
 		/* Start Programming */
-		m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0F, 0x07, 0x01);						
+		m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0F, 0x07, 0x01);	
+              msleep(30);
 		/* Confirm programming has been completed */
 		retry = 0;
 		while(1) 
@@ -4390,8 +4529,8 @@ m5moLS_i2c_update_firmware(struct v4l2_subdev *sd)
 			m5moLS_read_category_parm(client, M5MO_LS_8BIT, 0x0F, 0x07, &val);
 			if(val == 0)			//check programming process
 				break;
-
-			mdelay(10);
+			msleep(50);
+			//msleep(200);
 			retry++;
 		}
 		mdelay(20);
@@ -4406,9 +4545,10 @@ m5moLS_i2c_update_firmware(struct v4l2_subdev *sd)
 	{
 		/* Set FLASH ROM memory address */
 		m5moLS_write_category_parm(client, M5MO_LS_32BIT, 0x0F, 0x00, flash_addr);
-
+              msleep(30);
 		/* Erase FLASH ROM entire memory */
 		m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0F, 0x06, 0x01);
+              msleep(30);
 		retry = 0;
 		while(1) 
 		{
@@ -4417,7 +4557,8 @@ m5moLS_i2c_update_firmware(struct v4l2_subdev *sd)
 			if(val == 0)	//4
 				break;
 
-			mdelay(20);
+			//mdelay(20);
+			msleep(200);
 			retry++;
                      m5moLS_msg(&client->dev,"Response while sector-erase is operating :: retry = %d\n",retry);
 		}	
@@ -4431,7 +4572,8 @@ m5moLS_i2c_update_firmware(struct v4l2_subdev *sd)
 
 		/* Set Flash ROM programming address */
 		m5moLS_write_category_parm(client, M5MO_LS_32BIT, 0x0F, 0x00, flash_addr);
-
+              msleep(30);
+              
 		/* Send programmed firmware */
 		for(j=0; j<0x2000; j+=0x1000)
 		{
@@ -4444,6 +4586,8 @@ m5moLS_i2c_update_firmware(struct v4l2_subdev *sd)
 		/* Start Programming */
 		m5moLS_write_category_parm(client, M5MO_LS_8BIT, 0x0F, 0x07, 0x01);						
 		/* Confirm programming has been completed */
+              msleep(30);
+        
 		retry = 0;
 		while(1) 
 		{
@@ -4451,10 +4595,12 @@ m5moLS_i2c_update_firmware(struct v4l2_subdev *sd)
 			if(val == 0)			//check programming process
 				break;
 
-			mdelay(10);
+			//mdelay(10);
+			msleep(200);
 			retry++;
 		}
-		mdelay(20);
+		//mdelay(20);
+		msleep(20);
 		
 		/* Increase Flash ROM memory address */
 		flash_addr += 0x2000;	
@@ -4462,7 +4608,7 @@ m5moLS_i2c_update_firmware(struct v4l2_subdev *sd)
 		fw_update_status += 1;
 	}
 
-	m5moLS_msg(&client->dev,"Firmware Update Success!!\n");
+	m5moLS_info(&client->dev,"Firmware Update Success!!\n");
 
 	//release_firmware(fw_entry);
 
@@ -4472,7 +4618,7 @@ m5moLS_i2c_update_firmware(struct v4l2_subdev *sd)
         
 	status = '0';
 	m5moLS_write_fw_status(&status);
-        
+
      	return 0;
 		
 }
@@ -4745,6 +4891,7 @@ static int m5moLS_init(struct v4l2_subdev *sd, u32 val)
     if(err)
         return err;
 
+#if 0   // temp : fix kernel panic
     for(i=0;i<30;i++)
     {
         m5moLS_read_category_parm(client, M5MO_LS_8BIT, 0x00, 0x0A, &temp_8);
@@ -4756,6 +4903,7 @@ static int m5moLS_init(struct v4l2_subdev *sd, u32 val)
         m5moLS_msg(&client->dev, "FW_INFO_VER[%d] = 0x%02x[%c]\n", i,state->camera_fw_info[i],state->camera_fw_info[i]);
         temp_8=0;
     }
+#endif
 
     /* Parameter Setting Mode */
     err = m5moLS_set_mode(sd, M5MO_LS_PARMSET_MODE);
@@ -4812,9 +4960,7 @@ static int m5moLS_s_config(struct v4l2_subdev *sd, int irq, void *platform_data)
     * Use configured default information in platform data
     * or without them, use default information in driver
     */
-    if (!(pdata->default_width && pdata->default_height)) {
-        /* TODO: assign driver default resolution */
-    } else {
+    if (pdata->default_width && pdata->default_height) {
         state->pix.width = pdata->default_width;
         state->pix.height = pdata->default_height;
     }
@@ -4845,11 +4991,6 @@ static int m5moLS_s_config(struct v4l2_subdev *sd, int irq, void *platform_data)
         m5moLS_msg(&client->dev, "failed to enable interrupt :::: ret = %d\n",ret);
     }
 
-#if 0
-    ret = device_create_file(sd->v4l2_dev->dev, &dev_attr_m5moLS_debug);
-    if (ret < 0)
-    ERR("Failed to add object sysfs files(dev_attr_m5moLS_debug)\n");
-#endif
     return 0;
 }
 
@@ -4896,10 +5037,12 @@ static int m5moLS_probe(struct i2c_client *client,
 	if (state == NULL)
 		return -ENOMEM;
 
+       mutex_init(&state->ctrl_lock);
+       
 	state->runmode = M5MO_LS_RUNMODE_NOTREADY;
 	state->pre_af_status = -1;
 	state->cur_af_status = -2;
-
+       
 	sd = &state->sd;
 	strcpy(sd->name, M5MO_LS_DRIVER_NAME);
 
@@ -4914,11 +5057,13 @@ static int m5moLS_probe(struct i2c_client *client,
 static int m5moLS_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
-    
-    m5moLS_disable_interrupt_pin(sd);
+       struct m5moLS_state *state = to_state(sd);
+       
+       m5moLS_disable_interrupt_pin(sd);
 	//m5moLS_set_af_softlanding(sd);
 
 	v4l2_device_unregister_subdev(sd);
+       mutex_destroy(&state->ctrl_lock);
 	kfree(to_state(sd));
 
 	m5moLS_info(&client->dev, "Unloaded camera sensor M5MO_LS.\n");

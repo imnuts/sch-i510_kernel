@@ -194,6 +194,8 @@
 #define S3C_VIDCON2_EN601_DISABLE		(0 << 23)
 #define S3C_VIDCON2_EN601_ENABLE		(1 << 23)
 #define S3C_VIDCON2_EN601_MASK			(1 << 23)
+#define S5P_VIDCON2_RGB_ORDER_E(x)   		(((x)&0x7)<<19)
+#define S5P_VIDCON2_RGB_ORDER_O(x)   		(((x)&0x7)<<16)
 #define S3C_VIDCON2_WB_DISABLE			(0 << 15)
 #define S3C_VIDCON2_WB_ENABLE			(1 << 15)
 #define S3C_VIDCON2_WB_MASK			(1 << 15)

@@ -19,6 +19,7 @@
 #include <media/v4l2-subdev.h>
 #include <media/v4l2-i2c-drv.h>
 #include <media/s5k5aafa_platform.h>
+#include <linux/regulator/consumer.h>
 #ifdef FEATURE_CAMERA_TUNING_MODE
 #include <linux/fs.h>
 #include <linux/mm.h>
@@ -33,9 +34,9 @@
 
 #include <mach/gpio.h>
 #include <plat/gpio-cfg.h>
+#include <plat/regs-fimc.h>
 #include <mach/regs-gpio.h>
 #include <mach/regs-clock.h>
-#include <mach/max8998_function.h>
 
 //#define VT_CAM_DEBUG
 
@@ -154,285 +155,305 @@ static inline struct s5k5aafa_state *to_state(struct v4l2_subdev *sd)
 
 //s1_camera [ Defense process by ESD input ] _[
 #if 1
-static void s5k5aafa_ldo_en(bool onoff)
+static struct regulator *s5k5aafa_vga_dvdd;
+static struct regulator *s5k5aafa_vga_vddio;
+static struct regulator *s5k5aafa_cam_isp_host;
+static struct regulator *s5k5aafa_cam_isp_core;
+
+static int s5k5aafa_regulator_init(struct v4l2_subdev *sd)
 {
-    int err;
+        struct i2c_client *client = v4l2_get_subdevdata(sd);
 
-    printk(KERN_ERR "s5k5aafa_ldo_en\n");        
-
-    //For Emul Rev0.1
-    // Because B4, B5 do not use this GPIO, this GPIO is enabled in all HW version
-    /* CAM_IO_EN - GPB(7) */
-
-    if(onoff == TRUE) { //power on 
-
-        /* 1. CAM_VDIG 1.2V(SENSOR DIGITAL POWER)
-                     2. CAM_I_CORE 1.2V
-                     3. CAM_VANA_2.8V(SENSOR ANALOG POWER)
-                     4. CAM_VIF 1.8V(SENSOR I/O POWER)
-                     5. CAM_I_HOST 1.8V(I/O POWER SUPPLY FOR YUV I/F)
-                 */
-        /* STEALTH REV0.1
-                    LDO11 = CAM_AF_2.8V
-                    LDO12 = CAM_SENSOR_CORE_1.2V
-                    LDO13 = CAM_SENSOR_A2.8V
-                    LDO14 = CAM_DVDD_1.5V
-                    LDO15 = CAM_HOST_1.8V
-                    LDO16 = CAM_SENSOR_IO_1.8V
-                    LX4(BUCK4)  = CAM_ISP_CORE_1.2V
-                    ON SEQUENCE : LDO13->LDO15->LDO14 ->STBYN->I2c->MCLK->RSTN
-                */
-
-        if(HWREV >= 8)
-        {
-            if(gpio_request(GPIO_CAM_IO_EN, "GPB") != 0)
-            {
-                    printk(KERN_ERR "failed to request GPB7 for camera control = %d\n",HWREV);
-                    return err;
-            }
-            gpio_direction_output(GPIO_CAM_IO_EN, 0);
-            gpio_set_value(GPIO_CAM_IO_EN, 1);           
-        }
-        else
-        {
-            Set_MAX8998_PM_OUTPUT_Voltage(LDO13, VCC_2p800);
-            Set_MAX8998_PM_REG(ELDO13, 1);
-        }
-        
-        Set_MAX8998_PM_OUTPUT_Voltage(LDO15, VCC_1p800);
-        Set_MAX8998_PM_REG(ELDO15, 1);
-
-        Set_MAX8998_PM_OUTPUT_Voltage(LDO14, VCC_1p500);
-        Set_MAX8998_PM_REG(ELDO14, 1);
-    }
-    else { // power off
-        /*
-                1. CAM_I_HOST 1.8V
-                2. CAM_VIF 1.8V
-                3. CAM_VANA_2.8V
-                4. CAM_I_CORE_1.2V
-                5. CAM_VDIG 1.2V
-                */
-        //OFF SEQUENCE : STBYN->RSTN->MCLK->LDO14->LDO13->LDO15
-
-        Set_MAX8998_PM_REG(ELDO14, 0);
-
-        if(HWREV >= 8)
-        {
-
-            if(gpio_request(GPIO_CAM_IO_EN, "GPB") != 0)
-            {
-                    printk(KERN_ERR "failed to request GPB7 for camera control = %d\n",HWREV);
-                    return err;
-            }        
-            gpio_direction_output(GPIO_CAM_IO_EN, 1);    
-            gpio_set_value(GPIO_CAM_IO_EN, 0);        
-        }
-        else
-        {
-            Set_MAX8998_PM_REG(ELDO13, 0);
-        }
-        
-        Set_MAX8998_PM_REG(ELDO15, 0);
-    }
-
-    if(HWREV >= 8)
-        gpio_free(GPIO_CAM_IO_EN);
-
-}
-
-static int s5k5aafa_power_on()
-{   
-    int err, err2, err3, err4;
-        
-    /* CAM_MEGA_nRST - GPJ1(5) */
-    err = gpio_request(GPIO_CAM_MEGA_nRST, "GPJ1");
-    if(err) {
-        printk(KERN_ERR "failed to request GPJ1 for camera control\n");
-        return err;
-    }
-
-    /* CAM_VT_EN - GPJ(0)  */
-    err = gpio_request(GPIO_CAM_VT_EN_28V, "GPJ4");
-    if (err) {
-        printk(KERN_ERR "failed to request GPB0 for camera control\n");
-        return err;
-    }
-
-      /* GPIO_CAM_VT_RST_28V - GPJ(0)  */
-    err = gpio_request(GPIO_CAM_VT_RST_28V, "GPJ4");
-    if (err) {
-        printk(KERN_ERR "failed to request GPB0 for camera control\n");
-        return err;
-    }
-
-    // CAM_MEGA_nRST LOW
-    gpio_direction_output(GPIO_CAM_MEGA_nRST, 0);
-    gpio_set_value(GPIO_CAM_MEGA_nRST, 0);
-
-    // Power on Seqeunce
-    
-    /* CAM_ISP_CORE_1.2V */
-    Set_MAX8998_PM_OUTPUT_Voltage(BUCK4, VCC_1p300);
-    Set_MAX8998_PM_REG(EN4, 1);
-
-    mdelay(1);
-    
-    /* CAM_1.3M_nSTBY  HIGH */
-    gpio_direction_output(GPIO_CAM_VT_EN_28V, 1);
-    gpio_set_value(GPIO_CAM_VT_EN_28V, 1);
-
-    /* CAM_DVDD_1.5V */
-    Set_MAX8998_PM_OUTPUT_Voltage(LDO14, VCC_1p500);
-    Set_MAX8998_PM_REG(ELDO14, 1);    
-
-    /* CAM_SENSOR_A2.8V */
-    if(HWREV>=8)
-    {
-        if(gpio_request(GPIO_CAM_IO_EN, "GPB") != 0)
-        {
-                printk(KERN_ERR "failed to request GPB7 for camera control = %d\n",HWREV);
-                return err;
-        }
-        gpio_direction_output(GPIO_CAM_IO_EN, 0);
-        gpio_set_value(GPIO_CAM_IO_EN, 1);                
-    }
-    else
-    {
-        Set_MAX8998_PM_OUTPUT_Voltage(LDO13, VCC_2p800);
-        Set_MAX8998_PM_REG(ELDO13, 1);
-    }
-
-    /* CAM_HOST_1.8V */
-    Set_MAX8998_PM_OUTPUT_Voltage(LDO15, VCC_1p800);
-    Set_MAX8998_PM_REG(ELDO15, 1);
-
-    udelay(200);
-    
-    // Mclk enable
-    s3c_gpio_cfgpin(GPIO_CAM_MCLK, S5PV210_GPE1_3_CAM_A_CLKOUT);
-
-    mdelay(10);
-    
-    // CAM_VGA_nRST  HIGH       
-    gpio_direction_output(GPIO_CAM_VT_RST_28V, 0);
-    gpio_set_value(GPIO_CAM_VT_RST_28V, 1);
-
-    mdelay(85);
-
-    gpio_free(GPIO_CAM_MEGA_nRST);
-
-    gpio_free(GPIO_CAM_VT_EN_28V);
-
-    gpio_free(GPIO_CAM_VT_RST_28V); 
-
-    if(HWREV >= 8)
-        gpio_free(GPIO_CAM_IO_EN);
-
-    return 0;
-}
-
-
-
-
-
-static int s5k5aafa_power_off()
-{
-    int err;
-
-    printk(KERN_DEBUG "s5k5aafa_power_off\n");
-
-    //OFF SEQUENCE : STBYN->RSTN->MCLK->LDO14->LDO13->LDO15    
-    /* CAM_VT_EN - GPJ(0)  */
-    err = gpio_request(GPIO_CAM_VT_EN_28V, "GPJ4");
-    if (err) {
-        printk(KERN_ERR "failed to request GPB0 for camera control\n");
-        return err;
-    }
-
-    /* GPIO_CAM_VT_RST_28V - GPJ(0)  */
-    err = gpio_request(GPIO_CAM_VT_RST_28V, "GPJ4");
-    if (err) {
-        printk(KERN_ERR "failed to request GPB0 for camera control\n");
-        return err;
-    }
-
-     /* CAM_1.3M_nSTBY  LOW */     
-    gpio_direction_output(GPIO_CAM_VT_EN_28V, 0);
-    gpio_set_value(GPIO_CAM_VT_EN_28V, 0);
-
-    mdelay(1);
-
-    // CAM_VT_RST  HIGH       
-    gpio_direction_output(GPIO_CAM_VT_RST_28V, 0);
-
-    gpio_set_value(GPIO_CAM_VT_RST_28V, 0); 
-
-    mdelay(1);   
-
-    // Mclk enable
-    s3c_gpio_cfgpin(GPIO_CAM_MCLK, 0);
-
-    mdelay(1);
-    
-     /* CAM_HOST_1.8V */
-     Set_MAX8998_PM_OUTPUT_Voltage(LDO15, VCC_1p800);
-     Set_MAX8998_PM_REG(ELDO15, 0);
-
-     /* CAM_SENSOR_A2.8V */
-    if(HWREV>=8)
-    {
-        if(gpio_request(GPIO_CAM_IO_EN, "GPB") != 0)
-        {
-                printk(KERN_ERR "failed to request GPB7 for camera control = %d\n",HWREV);
-                return err;
-        }            
-        gpio_direction_output(GPIO_CAM_IO_EN, 1);    
-        gpio_set_value(GPIO_CAM_IO_EN, 0);
-    }
-    else
-    {
-        Set_MAX8998_PM_REG(ELDO13, 0);
-    }    
-
-    /* CAM_DVDD_1.5V */
-    Set_MAX8998_PM_OUTPUT_Voltage(LDO14, VCC_1p500);
-    Set_MAX8998_PM_REG(ELDO14, 0);
-
-    /* CAM_ISP_CORE_1.2V */
-    Set_MAX8998_PM_OUTPUT_Voltage(BUCK4, VCC_1p300);
-    Set_MAX8998_PM_REG(EN4, 0);    
-
-
-    gpio_free(GPIO_CAM_VT_EN_28V);
-    
-    gpio_free(GPIO_CAM_VT_RST_28V); 
-    
-    if(HWREV >= 8)
-        gpio_free(GPIO_CAM_IO_EN);
-
-    return 0;
-}
-
-
-static int s5k5aafa_power_en(int onoff)
-{
-    printk(KERN_ERR "s5k5aafa_power_en\n");
-
-	if(onoff){
-		s5k5aafa_power_on();
-	} else {
-		s5k5aafa_power_off();
+/*BUCK 4*/
+	if (IS_ERR_OR_NULL(s5k5aafa_cam_isp_core)) {
+		s5k5aafa_cam_isp_core = regulator_get(NULL, "cam_isp_core");
+		if (IS_ERR_OR_NULL(s5k5aafa_cam_isp_core)) {
+			pr_err("failed to get cam_isp_core regulator");
+			return -EINVAL;
+		}
+	}
+/*ldo 13*/
+	if (IS_ERR_OR_NULL(s5k5aafa_vga_vddio)) {
+		s5k5aafa_vga_vddio = regulator_get(NULL, "vga_vddio");
+		if (IS_ERR_OR_NULL(s5k5aafa_vga_vddio)) {
+			pr_err("failed to get vga_vddio regulator");
+			return -EINVAL;
+		}
+	}
+/*ldo 14*/
+	if (IS_ERR_OR_NULL(s5k5aafa_vga_dvdd)) {
+		s5k5aafa_vga_dvdd = regulator_get(NULL, "vga_dvdd");
+		if (IS_ERR_OR_NULL(s5k5aafa_vga_dvdd)) {
+			pr_err("failed to get vga_dvdd regulator");
+			return -EINVAL;
+		}
+	}
+/*ldo 15*/
+	if (IS_ERR_OR_NULL(s5k5aafa_cam_isp_host)) {
+		s5k5aafa_cam_isp_host = regulator_get(NULL, "cam_isp_host");
+		if (IS_ERR_OR_NULL(s5k5aafa_cam_isp_host)) {
+			pr_err("failed to get cam_isp_host regulator");
+			return -EINVAL;
+		}
 	}
 
+	k5aa_msg(&client->dev,"s5k5aafa_cam_isp_core = %p\n", s5k5aafa_cam_isp_core);
+	k5aa_msg(&client->dev,"s5k5aafa_vga_vddio = %p\n", s5k5aafa_vga_vddio);
+	k5aa_msg(&client->dev,"s5k5aafa_vga_dvdd = %p\n", s5k5aafa_vga_dvdd);
+	k5aa_msg(&client->dev,"s5k5aafa_cam_isp_host = %p\n", s5k5aafa_cam_isp_host);
 	return 0;
 }
 
+static void s5k5aafa_regulator_off(struct v4l2_subdev *sd)
+{
+        struct i2c_client *client = v4l2_get_subdevdata(sd);
+        int err = 0;
+        
+        /* ldo 13 */
+        err = regulator_disable(s5k5aafa_vga_vddio);
+        if (err) {
+                k5aa_msg(&client->dev,"Failed to disable regulator cam_vga_vddio\n");
+        }
+        /* ldo 14 */
+        err = regulator_disable(s5k5aafa_vga_dvdd);
+        if (err) {
+                k5aa_msg(&client->dev,"Failed to disable regulator cam_vga_dvdd\n");
+        }
+        /* ldo 15 */
+        err = regulator_disable(s5k5aafa_cam_isp_host);
+        if (err) {
+                k5aa_msg(&client->dev,"Failed to disable regulator cam_isp_core\n");
+        }
+        /* BUCK 4 */
+        err = regulator_disable(s5k5aafa_cam_isp_core);
+        if (err) {
+                k5aa_msg(&client->dev,"Failed to disable regulator cam_isp_core\n");
+        }
+}
+
+static int s5k5aafa_power_on(struct v4l2_subdev *sd)
+{   
+        int err = 0;
+
+        if (s5k5aafa_regulator_init(sd)) {
+                pr_err("Failed to initialize camera regulators\n");
+                return -EINVAL;
+        }
+
+        /* CAM_MEGA_nRST - GPJ1(5) */
+        err = gpio_request(GPIO_CAM_MEGA_nRST, "GPJ1");
+        if(err) {
+                printk(KERN_ERR "failed to request GPJ1 for camera control\n");
+                return err;
+        }
+
+        /* CAM_VT_EN - GPJ(0)  */
+        err = gpio_request(GPIO_CAM_VT_EN_28V, "GPJ4");
+        if (err) {
+                printk(KERN_ERR "failed to request GPB0 for camera control\n");
+                return err;
+        }
+
+        /* GPIO_CAM_VT_RST_28V - GPJ(0)  */
+        err = gpio_request(GPIO_CAM_VT_RST_28V, "GPJ4");
+        if (err) {
+                printk(KERN_ERR "failed to request GPB0 for camera control\n");
+                return err;
+        }
+
+        // CAM_MEGA_nRST LOW
+        gpio_direction_output(GPIO_CAM_MEGA_nRST, 0);
+        gpio_set_value(GPIO_CAM_MEGA_nRST, 0);
+
+        // Power on Seqeunce
+
+        /* Turn CAM_ISP_CORE_1.2V(VDD_REG) on BUCK 4*/
+        err = regulator_enable(s5k5aafa_cam_isp_core);
+        if (err) {
+                pr_err("Failed to enable regulator cam_isp_core\n");
+                goto off;
+        }
+        mdelay(1);
+
+        /* CAM_1.3M_nSTBY  HIGH */
+        gpio_direction_output(GPIO_CAM_VT_EN_28V, 1);
+        gpio_set_value(GPIO_CAM_VT_EN_28V, 1);
+
+        /* CAM_DVDD_1.5V on ldo 14*/
+        err = regulator_enable(s5k5aafa_vga_dvdd);
+        if (err) {
+                pr_err("Failed to enable regulator cam_isp_core\n");
+                goto off;
+        }
+
+        /* CAM_SENSOR_A2.8V */
+        if(HWREV>=8){
+                if(gpio_request(GPIO_CAM_IO_EN, "GPB") != 0){
+                        printk(KERN_ERR "failed to request GPB7 for camera control = %d\n",HWREV);
+                        return err;
+                }
+                        gpio_direction_output(GPIO_CAM_IO_EN, 0);
+                        gpio_set_value(GPIO_CAM_IO_EN, 1);                
+        }else{
+                /* CAM_SENSOR_A2.8V on ldo 13*/
+                err = regulator_enable(s5k5aafa_vga_vddio);
+                if (err) {
+                        pr_err("Failed to enable regulator cam_isp_core\n");
+                        goto off;
+                }
+        }
+
+        /* CAM_HOST_1.8V on ldo 15*/
+        err = regulator_enable(s5k5aafa_cam_isp_host);
+        if (err) {
+                pr_err("Failed to enable regulator cam_isp_core\n");
+                goto off;
+        }
+        udelay(200);
+
+        // Mclk enable
+        s3c_gpio_cfgpin(GPIO_CAM_MCLK, S5PV210_GPE1_3_CAM_A_CLKOUT);
+
+        mdelay(10);
+
+        // CAM_VGA_nRST  HIGH       
+        gpio_direction_output(GPIO_CAM_VT_RST_28V, 0);
+        gpio_set_value(GPIO_CAM_VT_RST_28V, 1);
+
+        mdelay(80);
+
+        gpio_free(GPIO_CAM_MEGA_nRST);
+        gpio_free(GPIO_CAM_VT_EN_28V);
+        gpio_free(GPIO_CAM_VT_RST_28V); 
+
+        if(HWREV >= 8)
+                gpio_free(GPIO_CAM_IO_EN);
+
+        mdelay(5);
+        
+        return 0;
+off:
+        s5k5aafa_regulator_off(sd);
+
+        gpio_free(GPIO_CAM_MEGA_nRST);
+        gpio_free(GPIO_CAM_VT_EN_28V);
+        gpio_free(GPIO_CAM_VT_RST_28V); 
+
+        if(HWREV >= 8)
+                gpio_free(GPIO_CAM_IO_EN);
+
+        mdelay(5);
+        
+        return 0;
+}
+
+
+static int s5k5aafa_power_off(struct v4l2_subdev *sd)
+{
+        int err = 0;
+        
+        printk(KERN_DEBUG "s5k5aafa_power_off\n");
+
+        //OFF SEQUENCE : STBYN->RSTN->MCLK->LDO14->LDO13->LDO15    
+        /* CAM_VT_EN - GPJ(0)  */
+        err = gpio_request(GPIO_CAM_VT_EN_28V, "GPJ4");
+        if (err) {
+                printk(KERN_ERR "failed to request GPB0 for camera control\n");
+                return err;
+        }
+
+        /* GPIO_CAM_VT_RST_28V - GPJ(0)  */
+        err = gpio_request(GPIO_CAM_VT_RST_28V, "GPJ4");
+        if (err) {
+                printk(KERN_ERR "failed to request GPB0 for camera control\n");
+                return err;
+        }
+
+        /* CAM_1.3M_nSTBY  LOW  */     
+        gpio_direction_output(GPIO_CAM_VT_EN_28V, 0);
+        gpio_set_value(GPIO_CAM_VT_EN_28V, 0);
+        mdelay(1);
+
+        // CAM_VT_RST  HIGH       
+        gpio_direction_output(GPIO_CAM_VT_RST_28V, 0);
+        gpio_set_value(GPIO_CAM_VT_RST_28V, 0); 
+        mdelay(1);   
+
+        // Mclk enable
+        s3c_gpio_cfgpin(GPIO_CAM_MCLK, 0);
+        mdelay(1);
+    
+        /* CAM_HOST_1.8V - ldo 15*/
+        if(!IS_ERR_OR_NULL(s5k5aafa_cam_isp_host)){  
+            err = regulator_disable(s5k5aafa_cam_isp_host);
+            if (err) {
+                    pr_err("Failed to disable regulator cam_isp_core\n");
+            }
+        }
+        /* CAM_SENSOR_A2.8V */
+        if(HWREV>=8){
+                if(gpio_request(GPIO_CAM_IO_EN, "GPB") != 0){
+                        printk(KERN_ERR "failed to request GPB7 for camera control = %d\n",HWREV);
+                        return err;
+                }            
+                gpio_direction_output(GPIO_CAM_IO_EN, 1);    
+                gpio_set_value(GPIO_CAM_IO_EN, 0);
+        }else{
+                /* ldo 13 */
+                if(!IS_ERR_OR_NULL(s5k5aafa_vga_vddio)){  
+                    err = regulator_disable(s5k5aafa_vga_vddio);
+                    if (err) {
+                            pr_err("Failed to disable regulator cam_vga_vddio\n");
+                    }
+                }
+        }    
+
+        /* CAM_DVDD_1.5V -ldo 14*/
+        if(!IS_ERR_OR_NULL(s5k5aafa_vga_dvdd)){  
+            err = regulator_disable(s5k5aafa_vga_dvdd);
+            if (err) {
+                    pr_err("Failed to disable regulator cam_vga_dvdd\n");
+            }
+        }
+        
+        /* CAM_ISP_CORE_1.2V - buck4*/
+        if(!IS_ERR_OR_NULL(s5k5aafa_cam_isp_core)){          
+            err = regulator_disable(s5k5aafa_cam_isp_core);
+            if (err) {
+                    pr_err("Failed to disable regulator cam_isp_core\n");
+            }
+        }
+        
+        gpio_free(GPIO_CAM_VT_EN_28V);
+        gpio_free(GPIO_CAM_VT_RST_28V); 
+
+        if(HWREV >= 8)
+                gpio_free(GPIO_CAM_IO_EN);
+
+        return 0;
+}
+
+
+static int s5k5aafa_power_en(struct v4l2_subdev *sd, int onoff)
+{
+       struct i2c_client *client = v4l2_get_subdevdata(sd);
+
+        k5aa_msg(&client->dev,"CameraDriver-s5k5aafa_power_en\n");
+
+        if(onoff){
+                s5k5aafa_power_on(sd);
+        } else {
+                s5k5aafa_power_off(sd);
+        }
+        return 0;
+}
+
+
 static int s5k5aafa_reset(struct v4l2_subdev *sd)
 {
-	s5k5aafa_power_en(0);
+	s5k5aafa_power_en(sd, 0);
 	mdelay(5);
-	s5k5aafa_power_en(1);
+	s5k5aafa_power_en(sd, 1);
 	mdelay(5);
 	s5k5aafa_init(sd, 0);
 	return 0;
@@ -1117,10 +1138,6 @@ static int s5k5aafa_enum_framesizes(struct v4l2_subdev *sd, \
 					struct v4l2_frmsizeenum *fsize)
 {
 	struct  s5k5aafa_state *state = to_state(sd);
-	int num_entries = sizeof(s5k5aafa_framesize_list)/sizeof(struct s5k5aafa_enum_framesize);	
-	struct s5k5aafa_enum_framesize *elem;	
-	int index = 0;
-	int i = 0;
 
 	printk(KERN_DEBUG "s5k5aafa_enum_framesizes is called... \n");
 
@@ -1250,9 +1267,7 @@ static int s5k5aafa_set_brightness(struct v4l2_subdev *sd, struct v4l2_control *
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	struct s5k5aafa_state *state = to_state(sd);
-	struct s5k5aafa_userset userset = state->userset;
 
-	int i = 0;
 	int err = -EINVAL;
 	int ev_value = 0;
 
@@ -1520,7 +1535,7 @@ static int s5k5aafa_set_preview_start(struct v4l2_subdev *sd)
             err = camsensor_config_set_register(sd, SECTION_OP_NORMAL_LIGHT_PREVIEW);
         }
     }
-    mdelay(50);
+    msleep(50);
     
     if(err < 0)
         k5aa_msg(&client->dev,"%s : Failed\n",__func__);
@@ -1531,7 +1546,7 @@ static int s5k5aafa_set_preview_start(struct v4l2_subdev *sd)
 }
 
 //Arun-SISO
-static int s5k6aafx_set_capture_start(struct v4l2_subdev *sd)
+static int s5k5aafx_set_capture_start(struct v4l2_subdev *sd)
 {
     int err = -EINVAL;
     u8 AgcValue;
@@ -1550,25 +1565,25 @@ static int s5k6aafx_set_capture_start(struct v4l2_subdev *sd)
     {
         k5aa_msg(&client->dev,"LOW_LIGHT_COND\n");
         err = camsensor_config_set_register(sd, SECTION_OP_LOW_LIGHT_CAPTURE);
-        mdelay(capture_delay_table[LOW_LIGHT_DELAY]);
+        msleep(capture_delay_table[LOW_LIGHT_DELAY]);
     }
     else if(AgcValue >= threshold_table[MID_LOW_LIGHT_COND])
     {
         k5aa_msg(&client->dev,"MID_LOW_LIGHT_COND\n");    
         err = camsensor_config_set_register(sd, SECTION_OP_MID_LOW_LIGHT_CAPTURE);    
-        mdelay(capture_delay_table[MID_LOW_LIGHT_DELAY]);
+        msleep(capture_delay_table[MID_LOW_LIGHT_DELAY]);
     }
     else if(AgcValue <= threshold_table[NORMAL_LIGHT_COND])
     {
         k5aa_msg(&client->dev,"NORMAL_LIGHT_COND\n");    
         err = camsensor_config_set_register(sd, SECTION_OP_CAPTURE);    
-        mdelay(capture_delay_table[NORMAL_LIGHT_DELAY]);
+        msleep(capture_delay_table[NORMAL_LIGHT_DELAY]);
     }
     else
     {
         k5aa_msg(&client->dev,"ETC_COND\n");    
         err = camsensor_config_set_register(sd, SECTION_OP_MIDLIGHT_CAPTURE);
-        mdelay(capture_delay_table[MID_LIGHT_DELAY]);
+        msleep(capture_delay_table[MID_LIGHT_DELAY]);
     }
 
     if(err < 0)
@@ -1616,12 +1631,12 @@ static int s5k5aafa_check_dataline_stop(struct v4l2_subdev *sd)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	struct s5k5aafa_state *state = to_state(sd);
-	int err = -EINVAL, i;
+	int err = -EINVAL;
 
-	dev_dbg(&client->dev, "%s\n", __func__);
+	k5aa_msg(&client->dev, "%s\n", __func__);
 
 	state->check_dataline = 0;
-	err = s5k5aafa_reset(sd);
+       err = s5k5aafa_reset(sd);
 	if (err < 0)
 	{
 		v4l_info(client, "%s: register set failed\n", __func__);
@@ -1684,6 +1699,9 @@ static int s5k5aafa_g_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
 		break;
 #endif
 
+       case V4L2_CID_CAMERA_GET_ISO:
+            err = 0;
+            
 	default:
 		dev_dbg(&client->dev, "%s: no such ctrl\n", __func__);
 		break;
@@ -1700,10 +1718,15 @@ static int s5k5aafa_s_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
 
 	int err = -EINVAL;
 
-	printk(KERN_DEBUG "s5k5aafa_s_ctrl() : ctrl->id 0x%08lx, ctrl->value %d \n",ctrl->id, ctrl->value);
+	k5aa_msg(&client->dev,"s5k5aafa_s_ctrl() : ctrl->id 0x%08lx, ctrl->value %d \n",ctrl->id, ctrl->value);
 
 	switch (ctrl->id) {
-#if 0		
+	case V4L2_CID_CAMERA_BRIGHTNESS:	//V4L2_CID_EXPOSURE:
+		dev_dbg(&client->dev, "%s: V4L2_CID_CAMERA_BRIGHTNESS\n", __func__);
+		err = s5k5aafa_set_brightness(sd, ctrl);
+		err = 0;
+		break;        
+#if 0
 	case V4L2_CID_EXPOSURE:
 		dev_dbg(&client->dev, "%s: V4L2_CID_EXPOSURE\n", __func__);
 		err = s5k5aafa_set_brightness(sd, ctrl);
@@ -1764,15 +1787,10 @@ static int s5k5aafa_s_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
 #endif
 
 	case V4L2_CID_CAM_CAPTURE:
-		printk("%s: V4L2_CID_CAM_CAPTURE ###############################\n", __func__);
-		err = s5k6aafx_set_capture_start(sd);
-		break;			
-	case V4L2_CID_CAMERA_BRIGHTNESS:	//V4L2_CID_EXPOSURE:
-		dev_dbg(&client->dev, "%s: V4L2_CID_CAMERA_BRIGHTNESS\n", __func__);
-		err = s5k5aafa_set_brightness(sd, ctrl);
-		err = 0;
-		break;
-
+		k5aa_msg(&client->dev,"%s: V4L2_CID_CAM_CAPTURE ###############################\n", __func__);
+		err = s5k5aafx_set_capture_start(sd);
+		break;	
+#if 0 
 	case V4L2_CID_CAMERA_WHITE_BALANCE: //V4L2_CID_AUTO_WHITE_BALANCE:
 		dev_dbg(&client->dev, "%s: V4L2_CID_AUTO_WHITE_BALANCE\n", __func__);
 		err = s5k5aafa_set_wb(sd, ctrl);
@@ -1797,13 +1815,31 @@ static int s5k5aafa_s_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
 		err = 0;        
 		break;
 
-	case V4L2_CID_CAMERA_VT_MODE:
-		state->vt_mode = ctrl->value;
-		dev_dbg(&client->dev, "%s: V4L2_CID_CAMERA_VT_MODE : state->vt_mode %d \n", __func__, state->vt_mode);
-		err = 0;
+	//s1_camera [ Defense process by ESD input ] _[
+	case V4L2_CID_CAMERA_RESET:
+		dev_dbg(&client->dev, "%s: V4L2_CID_CAMERA_RESET \n", __func__);
+		err = s5k5aafa_reset(sd);
+		err = 0;		
 		break;
+	// _]
+#endif
+        case V4L2_CID_CAMERA_MON_MOVIE_SELECT:
+            state->camcorder_mode = ctrl->value;
+            err = 0;
+            break;
 
-	case V4L2_CID_CAMERA_CHECK_DATALINE:
+      case V4L2_CID_CAMERA_VT_MODE:
+          state->vt_mode = ctrl->value;
+          dev_dbg(&client->dev, "%s: V4L2_CID_CAMERA_VT_MODE : state->vt_mode %d \n", __func__, state->vt_mode);
+          err = 0;
+          break;
+      
+      case V4L2_CID_CAM_PREVIEW_ONOFF:
+          err = s5k5aafa_set_preview_start(sd);
+          //err = 0;
+          break;
+
+      case V4L2_CID_CAMERA_CHECK_DATALINE:
 		state->check_dataline = ctrl->value;
 		err = 0;
 		break;	
@@ -1813,28 +1849,8 @@ static int s5k5aafa_s_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
 		err = 0;        
 		break;
 
-	case V4L2_CID_CAM_PREVIEW_ONOFF:
-        err = s5k5aafa_set_preview_start(sd);
-        //err = 0;
-		break;
-
-	//s1_camera [ Defense process by ESD input ] _[
-	case V4L2_CID_CAMERA_RESET:
-		dev_dbg(&client->dev, "%s: V4L2_CID_CAMERA_RESET \n", __func__);
-		err = s5k5aafa_reset(sd);
-		err = 0;		
-		break;
-	// _]
-
-        case V4L2_CID_CAMCORER_MODE:
-            state->camcorder_mode = ctrl->value;
-            //err = s5k5aafa_set_camcorder_mode(sd,ctrl);
-            err = 0;
-            break;
-            
 	default:
-		dev_dbg(&client->dev, "%s: no support control in camera sensor, S5K5AAFA\n", __func__);
-		//err = -ENOIOCTLCMD;
+		k5aa_msg(&client->dev, "%s: no support control in camera sensor, S5K5AAFA\n", __func__);
 		err = 0;
 		break;
 	}
@@ -1845,7 +1861,7 @@ static int s5k5aafa_s_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
 		return 0;
 
 out:
-	dev_dbg(&client->dev, "%s: vidioc_s_ctrl failed\n", __func__);
+	k5aa_msg(&client->dev, "%s: vidioc_s_ctrl failed\n", __func__);
 	return err;
 #else
 	return 0;

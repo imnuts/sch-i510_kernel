@@ -45,7 +45,14 @@ ENTRY(cpu_v7_proc_init)
 ENDPROC(cpu_v7_proc_init)
 
 ENTRY(cpu_v7_proc_fin)
-	mov	pc, lr
+	stmfd	sp!, {lr}
+	cpsid	if				@ disable interrupts
+	bl	v7_flush_kern_cache_all
+	mrc	p15, 0, r0, c1, c0, 0		@ ctrl register
+	bic	r0, r0, #0x1000			@ ...i............
+	bic	r0, r0, #0x0006			@ .............ca.
+	mcr	p15, 0, r0, c1, c0, 0		@ disable caches
+	ldmfd	sp!, {pc}
 ENDPROC(cpu_v7_proc_fin)
 
 /*
@@ -56,8 +63,6 @@ ENDPROC(cpu_v7_proc_fin)
  *	to what would be the reset vector.
  *
  *	- loc   - location to jump to for soft reset
- *
- *	It is assumed that:
  */
 	.align	5
 ENTRY(cpu_v7_reset)
@@ -265,7 +270,7 @@ __v7_setup:
 	 *   NS1 = PRRR[19] = 1		- normal shareable property
 	 *   NOS = PRRR[24+n] = 1	- not outer shareable
 	 */
-	ldr	r5, =0xff0881a8			@ PRRR
+	ldr	r5, =0xff0a81a8			@ PRRR
 	ldr	r6, =0x40e040e0			@ NMRR
 	mcr	p15, 0, r5, c10, c2, 0		@ write PRRR
 	mcr	p15, 0, r6, c10, c2, 1		@ write NMRR

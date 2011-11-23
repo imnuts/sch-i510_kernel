@@ -15,7 +15,7 @@
 
 
 const unsigned char qtbl_luminance[4][64] = {
-	// level 1 - high quality
+	/* level 1 - high quality */
 	{
 		8, 6, 6, 8, 12, 14, 16, 17,
 		6, 6, 6, 8, 10, 13, 12, 15,
@@ -27,7 +27,7 @@ const unsigned char qtbl_luminance[4][64] = {
 		17, 15, 24, 35, 39, 39, 39, 39
 	},
 
-	// level 2
+	/* level 2 */
 	{
 		12, 8, 8, 12, 17, 21, 24, 23,
 		8, 9, 9, 11, 15, 19, 18, 23,
@@ -39,7 +39,7 @@ const unsigned char qtbl_luminance[4][64] = {
 		23, 23, 36, 53, 59, 59, 59, 59
 	},
 
-	// level 3
+	/* level 3 */
 	{
 		16, 11, 11, 16, 23, 27, 31, 30,
 		11, 12, 12, 15, 20, 23, 23, 30,
@@ -52,7 +52,7 @@ const unsigned char qtbl_luminance[4][64] = {
 
 	},
 
-	// level 4 - low quality
+	/* level 4 - low quality */
 	{
 		20, 16, 25, 39, 50, 46, 62, 68,
 		16, 18, 23, 38, 38, 53, 65, 68,
@@ -68,19 +68,31 @@ const unsigned char qtbl_luminance[4][64] = {
 };
 
 const unsigned char qtbl_chrominance[4][64] = {
-	// level 1 - high quality
+	/* level 1 - high quality */
 	{
-		9, 8, 9, 11, 14, 17, 19, 24,
-		8, 10, 9, 11, 14, 13, 17, 22,
-		9, 9, 13, 14, 13, 15, 23, 26,
-		11, 11, 14, 14, 15, 20, 26, 33,
-		14, 14, 13, 15, 20, 24, 33, 39,
-		17, 13, 15, 20, 24, 32, 39, 39,
-		19, 17, 23, 26, 33, 39, 39, 39,
-		24, 22, 26, 33, 39, 39, 39, 39
+		 1,  1,  2,  4,  6, 11, 11, 11, 
+		 1,  1,  2,  4,  8, 11, 11, 11, 
+		 2,  2,  3,  4, 11, 11, 11, 11, 
+		 4,  4,  4,  5, 11, 11, 11, 11, 
+		 6,  8, 11, 11, 11, 11, 11, 11, 
+		11, 11, 11, 11, 11, 11, 11, 11, 
+		11, 11, 11, 11, 11, 11, 11, 11, 
+		11, 11, 11, 11, 11, 11, 11, 11
 	},
 
-	// level 2
+	/* level 2 */
+	{
+		 4,  4,  5,  9, 15, 26, 26, 26, 
+		 4,  4,  5, 10, 19, 26, 26, 26, 
+		 5,  5,  8,  9, 26, 26, 26, 26, 
+		 9, 10,  9, 13, 26, 26, 26, 26, 
+		15, 19, 26, 26, 26, 26, 26, 26, 
+		26, 26, 26, 26, 26, 26, 26, 26, 
+		26, 26, 26, 26, 26, 26, 26, 26,
+		26, 26, 26, 26, 26, 26, 26, 26
+	},
+
+	/* level 3 */
 	{
 		13, 11, 13, 16, 20, 20, 29, 37,
 		11, 14, 14, 14, 16, 20, 26, 32,
@@ -92,22 +104,7 @@ const unsigned char qtbl_chrominance[4][64] = {
 		37, 32, 40, 50, 59, 59, 59, 59
 	},
 
-
-	// level 3
-	{
-		17, 15, 17, 21, 20, 26, 38, 48,
-		15, 19, 18, 17, 20, 26, 35, 43,
-		17, 18, 20, 22, 26, 30, 46, 53,
-		21, 17, 22, 28, 30, 39, 53, 64,
-		20, 20, 26, 30, 39, 48, 64, 64,
-		26, 26, 30, 39, 48, 63, 64, 64,
-		38, 35, 46, 53, 64, 64, 64, 64,
-		48, 43, 53, 64, 64, 64, 64, 64
-
-
-	},
-
-	// level 4 - low quality
+	/* level 4 - low quality */
 	{
 		21, 25, 32, 38, 54, 68, 68, 68,
 		25, 28, 24, 38, 54, 68, 68, 68,
@@ -117,7 +114,6 @@ const unsigned char qtbl_chrominance[4][64] = {
 		68, 68, 68, 68, 68, 68, 68, 68,
 		68, 68, 68, 68, 68, 68, 68, 68,
 		68, 68, 68, 68, 68, 68, 68, 68
-
 	}
 
 };
@@ -133,7 +129,7 @@ const unsigned char qtbl0[64] = {
 	0x48, 0x5C, 0x5F, 0x62, 0x70, 0x64, 0x67, 0x63
 };
 
-//Added Quantization Table
+/* Added Quantization Table */
 const unsigned char std_chrominance_quant_tbl_plus[64] = {
 	0x11, 0x12, 0x18, 0x2F, 0x63, 0x63, 0x63, 0x63,
 	0x12, 0x15, 0x1A, 0x42, 0x63, 0x63, 0x63, 0x63,
@@ -145,7 +141,7 @@ const unsigned char std_chrominance_quant_tbl_plus[64] = {
 	0x63, 0x63, 0x63, 0x63, 0x63, 0x63, 0x63, 0x63
 };
 
-//Quantization Table0
+/* Quantization Table0 */
 unsigned char std_luminance_quant_tbl[64] = {
 	1,   1,   2,   1,   1,   2,   2,   2,
 	2,   3,   2,   2,   3,   3,   6,   4,
@@ -157,7 +153,7 @@ unsigned char std_luminance_quant_tbl[64] = {
 	15,  14,  17,  13,  14,  14,  14,   1
 };
 
-//Quantization Table1
+/* Quantization Table1 */
 unsigned char std_chrominance_quant_tbl[64] = {
 	4,   4,   4,   5,   4,   5,   9,   5,
 	5,   9,  15,  10,   8,  10,  15,  26,
@@ -169,11 +165,19 @@ unsigned char std_chrominance_quant_tbl[64] = {
 	26,  26,  26,  26,  26,  26,  26,  26
 };
 
-//Huffman Table
-unsigned char hdctbl0[16]  = {0, 1, 5, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0};
-unsigned char hdctblg0[12] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0xa, 0xb};
+/* Huffman Table */
+unsigned char hdctbl0[16]  = {
+	0, 1, 5, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0
+};
 
-unsigned char hactbl0[16] = {0, 2, 1, 3, 3, 2, 4, 3, 5, 5, 4, 4, 0, 0, 1, 0x7d};
+unsigned char hdctblg0[12] = {
+	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0xa, 0xb
+};
+
+unsigned char hactbl0[16] = {
+	0, 2, 1, 3, 3, 2, 4, 3, 5, 5, 4, 4, 0, 0, 1, 0x7d
+};
+
 const unsigned char hactblg0[162] = {
 	0x01, 0x02, 0x03, 0x00, 0x04, 0x11, 0x05, 0x12,
 	0x21, 0x31, 0x41, 0x06, 0x13, 0x51, 0x61, 0x07,
@@ -198,11 +202,18 @@ const unsigned char hactblg0[162] = {
 	0xf9, 0xfa
 };
 
-//Huffman Table0
-unsigned char len_dc_luminance[16] = { 0, 1, 5, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0 };
-unsigned char val_dc_luminance[12] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
+/* Huffman Table0 */
+unsigned char len_dc_luminance[16] = {
+	0, 1, 5, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0
+};
 
-unsigned char len_ac_luminance[16] = { 0, 2, 1, 3, 3, 2, 4, 3, 5, 5, 4, 4, 0, 0, 1, 0x7d };
+unsigned char val_dc_luminance[12] = {
+	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
+
+unsigned char len_ac_luminance[16] = {
+	0, 2, 1, 3, 3, 2, 4, 3, 5, 5, 4, 4, 0, 0, 1, 0x7d
+};
+
 unsigned char val_ac_luminance[162] = {
 	0x01, 0x02, 0x03, 0x00, 0x04, 0x11, 0x05, 0x12,
 	0x21, 0x31, 0x41, 0x06, 0x13, 0x51, 0x61, 0x07,
@@ -227,11 +238,19 @@ unsigned char val_ac_luminance[162] = {
 	0xf9, 0xfa
 };
 
-//Huffman Table1
-unsigned char len_dc_chrominance[16] = { 0, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0 };
-unsigned char val_dc_chrominance[12] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
+/* Huffman Table1 */
+unsigned char len_dc_chrominance[16] = {
+	0, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0
+};
 
-unsigned char len_ac_chrominance[16] = { 0, 2, 1, 2, 4, 4, 3, 4, 7, 5, 4, 4, 0, 1, 2, 0x77 };
+unsigned char val_dc_chrominance[12] = {
+	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
+};
+
+unsigned char len_ac_chrominance[16] = {
+	0, 2, 1, 2, 4, 4, 3, 4, 7, 5, 4, 4, 0, 1, 2, 0x77
+};
+
 unsigned char val_ac_chrominance[162] = {
 	0x00, 0x01, 0x02, 0x03, 0x11, 0x04, 0x05, 0x21,
 	0x31, 0x06, 0x12, 0x41, 0x51, 0x07, 0x61, 0x71,

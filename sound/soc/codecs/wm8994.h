@@ -1,4 +1,4 @@
-﻿/*
+/*
  * wm8994.h  --  WM8994 Soc Audio driver
  *
  * This program is free software; you can redistribute it and/or modify
@@ -30,70 +30,24 @@ extern struct snd_soc_codec_device soc_codec_dev_wm8994;
 #include "wm8994_def.h"
 
 extern struct snd_soc_dai wm8994_dai;
-#define FEATURE_TTY
+
 #define WM8994_SYSCLK_MCLK     1
 #define WM8994_SYSCLK_FLL      2
 
-#define AUDIO_COMMON_DEBUG 1
-#define SET_AUDIO_LOG
+#define AUDIO_COMMON_DEBUG  0 
 //#define WM8994_REGISTER_DUMP
 #if defined CONFIG_SND_SOC_WM8994_PCM
 #define ATTACH_ADDITINAL_PCM_DRIVER	// for VT call.
 #endif
-
-#define CODEC_MASTER_DURINGCALL
-#define	SETTING_NC
 //------------------------------------------------
 // Definitions of enum type
 //------------------------------------------------
-enum playback_path	{ PLAYBACK_OFF, RCV, SPK, HP, BT, DUAL, RING_SPK, RING_HP, RING_DUAL, EXTRA_DOCK_SPEAKER, TV_OUT, HDMI_TV_OUT, HDMI_SPK, HDMI_DUAL };
-enum call_path	{ CALL_OFF, CALL_RCV, CALL_SPK, CALL_HP, CALL_BT, CALL_3PHP /*CALL_TTYF, CALL_TTYH, CALL_TTYV*/};
-enum mic_path		{ MAIN, SUB, BT_REC, SUB2, VOIP_MAIN, VOIP_SUB, VOIP_BT, VOIP_SUB2, MIC_OFF};
-enum fmradio_path { FMR_OFF, FMR_SPK, FMR_HP, FMR_SPK_MIX, FMR_HP_MIX, FMR_DUAL_MIX};
-enum fmradio_mix_path	{ FMR_MIX_OFF, FMR_MIX_HP, FMR_MIX_SPK, FMR_MIX_DUAL};
+enum audio_path	{ OFF, RCV, SPK, HP, BT, SPK_HP};
+enum mic_path		{ MAIN, SUB, MIC_OFF};
+enum fmradio_audio_path { FMR_OFF, FMR_SPK, FMR_HP, FMR_SPK_MIX, FMR_HP_MIX, FMR_SPK_HP_MIX};
+enum call_state		{ DISCONNECT, CONNECT};
 enum power_state	{ CODEC_OFF, CODEC_ON };
-enum recognition	{REC_OFF, REC_ON};
-enum state{OFF, ON};
-
-#define DEACTIVE				0x00
-#define PLAYBACK_ACTIVE		0x01
-#define CAPTURE_ACTIVE		0x02
-#define CALL_ACTIVE			0x04
-#define FMRADIO_ACTIVE		0x08
-
-#define PCM_STREAM_DEACTIVE		0x00
-#define PCM_STREAM_PLAYBACK	0x01
-#define PCM_STREAM_CAPTURE		0x02
-
-#define CMD_FMR_INPUT_DEACTIVE		0	// Codec Input PGA off for reducing white noise.
-#define CMD_FMR_INPUT_ACTIVE		1	// Codec Input PGA on
-#define CMD_FMR_FLAG_CLEAR		2		// Radio flag clear for shutdown - to reduce pop up noise.
-#define CMD_FMR_END			3			// Codec off in FM radio mode - to reduce pop up noise.
-#define CMD_RECOGNITION_DEACTIVE	4	// Distingush recognition gain. To use default MIC gain.
-#define CMD_RECOGNITION_ACTIVE		5	// Distingush recognition gain. To use MIC gain for recognition.
-#define CMD_CALL_FLAG_CLEAR		6		// Call flag clear for shutdown - to reduce pop up noise.
-#define CMD_CALL_END			7		// Codec off in call mode - to reduce pop up noise.
-
-#define CMD_BTNREC_DEACTIVE			9	
-#define CMD_BTNREC_ACTIVE			10
-
-#define CMD_NC_BYPASS_DEACTIVE 		11	
-#define CMD_NC_BYPASS_ACTIVE		12
-
-#ifdef  FEATURE_TTY
-#define TTY_MODE_OFF	0
-#define TTY_MODE_FULL	1
-#define TTY_MODE_HCO	2
-#define TTY_MODE_VCO	3
-#endif //FEATURE_TTY
-
-
-#define LOOPBACK_MODE_OFF 0
-#define PBA_LOOPBACK_MODE_ON 1
-#define SIMPLETEST_LOOPBACK_MODE_ON 2
-
-#define LOOPBACK_MAIN_MIC 	0
-#define LOOPBACK_SUB_MIC 	1
+enum mic_state		{ MIC_NO_USE, MIC_USE};
 
 typedef void (*select_route)(struct snd_soc_codec *);
 typedef void (*select_mic_route)(struct snd_soc_codec *);
@@ -113,46 +67,23 @@ struct wm8994_priv {
 	unsigned int fs;
 	unsigned int bclk;
 	unsigned int hw_version;		// For wolfson H/W version. 1 = Rev B, 3 = Rev D
-	unsigned int codec_state;
-	unsigned int  stream_state;
-	enum playback_path cur_path;
+	enum audio_path cur_path;
 	enum mic_path rec_path;
-	enum fmradio_path fmradio_path;
-	enum fmradio_mix_path fmr_mix_path;
+	enum fmradio_audio_path fmradio_path;
+	enum call_state call_state;
 	enum power_state power_state;
-	enum state recognition_active;		// for control gain to voice recognition.
-	enum state ringtone_active;
-	enum state btnrec_active;
-	enum state ncbypass_active;
-	enum state prev_ncbypass_active;	
+	enum mic_state mic_state;
 	select_route *universal_playback_path;
 	select_route *universal_voicecall_path;
 	select_mic_route *universal_mic_path;
-	select_route *universal_voipcall_path;
 	int testmode_config_flag;	// for testmode.
 };
-
-#if defined SET_AUDIO_LOG
-extern unsigned int gbAudioLogEnable;		// This variable must be defined in cpufreq.c(drivers/cpufreq.c).
-#endif
 
 #if AUDIO_COMMON_DEBUG
 #define DEBUG_LOG(format,...)\
 	printk ("[ "SUBJECT " (%s,%d) ] " format "\n", __func__, __LINE__, ## __VA_ARGS__);
-#define DEBUG_LOG_INFO(format,...)\
-	printk (KERN_DEBUG "[ "SUBJECT " (%s,%d) ] " format "\n", __func__, __LINE__, ## __VA_ARGS__);
-#else
-#if defined SET_AUDIO_LOG
-#define DEBUG_LOG(format,...)\
-	gbAudioLogEnable ? printk ("[ "SUBJECT " (%s,%d) ] " format "\n", __func__, __LINE__, ## __VA_ARGS__) : 0;
-#define DEBUG_LOG_INFO(format,...)\
-	gbAudioLogEnable ? printk ("[ "SUBJECT " (%s,%d) ] " format "\n", __func__, __LINE__, ## __VA_ARGS__) : \
-		printk (KERN_DEBUG "[ "SUBJECT " (%s,%d) ] " format "\n", __func__, __LINE__, ## __VA_ARGS__);
 #else
 #define DEBUG_LOG(format,...)
-#define DEBUG_LOG_INFO(format,...)\
-	printk (KERN_DEBUG "[ "SUBJECT " (%s,%d) ] " format "\n", __func__, __LINE__, ## __VA_ARGS__);
-#endif
 #endif
 
 #define DEBUG_LOG_ERR(format,...)\
@@ -161,48 +92,23 @@ extern unsigned int gbAudioLogEnable;		// This variable must be defined in cpufr
 // Definitions of function prototype.
 inline unsigned int wm8994_read(struct snd_soc_codec *codec,unsigned int reg);
 int wm8994_write(struct snd_soc_codec *codec, unsigned int reg, unsigned int value);
-void wm8994_shutdown(struct snd_pcm_substream *substream, struct snd_soc_dai *codec_dai);
 int audio_init(void);
 int audio_power(int en);
 void audio_ctrl_mic_bias_gpio(int enable);
-void audio_ctrl_earmic_bias_gpio(int enable);
 void wm8994_set_off(struct snd_soc_codec *codec);
-void wm8994_disable_playback_path(struct snd_soc_codec *codec, enum playback_path path);
-void wm8994_disable_fmradio_path(struct snd_soc_codec *codec, enum fmradio_path path);
+void wm8994_disable_playback_path(struct snd_soc_codec *codec, enum audio_path path);
+void wm8994_disable_fmradio_path(struct snd_soc_codec *codec, enum fmradio_audio_path path);
 void wm8994_disable_rec_path(struct snd_soc_codec *codec,enum mic_path rec_path);
-void wm8994_set_bluetooth_common_setting(struct snd_soc_codec *codec);
-void wm8994_record_main_mic( struct snd_soc_codec *codec);
-void wm8994_record_sub_mic(struct snd_soc_codec *codec) ;
+void  wm8994_record_main_mic( struct snd_soc_codec *codec);
 void wm8994_record_headset_mic( struct snd_soc_codec *codec);
-void wm8994_record_bluetooth(struct snd_soc_codec *codec);
-void wm8994_record_voip_headset_mic(struct snd_soc_codec *codec);
-void wm8994_record_voip_main_mic(struct snd_soc_codec *codec);
-void wm8994_record_voip_sub_mic(struct snd_soc_codec *codec);
-void wm8994_record_voip_bluetooth(struct snd_soc_codec *codec);
 void wm8994_set_playback_receiver(struct snd_soc_codec *codec);
 void wm8994_set_playback_headset(struct snd_soc_codec *codec);
 void wm8994_set_playback_speaker(struct snd_soc_codec *codec);
 void wm8994_set_playback_speaker_headset(struct snd_soc_codec *codec);
-void wm8994_set_playback_bluetooth(struct snd_soc_codec *codec);
-void wm8994_set_playback_extra_dock_speaker(struct snd_soc_codec *codec);
-void wm8994_set_playback_hdmi_tvout(struct snd_soc_codec *codec);
-void wm8994_set_playback_speaker_hdmitvout(struct snd_soc_codec *codec);
-void wm8994_set_playback_speakerheadset_hdmitvout(struct snd_soc_codec *codec);
-void wm8994_set_voicecall_common_setting(struct snd_soc_codec *codec);
 void wm8994_set_voicecall_receiver(struct snd_soc_codec *codec);
 void wm8994_set_voicecall_headset(struct snd_soc_codec *codec);
 void wm8994_set_voicecall_speaker(struct snd_soc_codec *codec);
 void wm8994_set_voicecall_bluetooth(struct snd_soc_codec *codec);
-void wm8994_set_voicecall_3pheadset(struct snd_soc_codec *codec);
-void wm8994_set_voicecall_ttyFull(struct snd_soc_codec *codec);
-void wm8994_set_voicecall_ttyHCO(struct snd_soc_codec *codec);
-void wm8994_set_voicecall_ttyVCO(struct snd_soc_codec *codec);
-void wm8994_set_voipcall_receiver(struct snd_soc_codec *codec);
-void wm8994_set_voipcall_headset(struct snd_soc_codec *codec);
-void wm8994_set_voipcall_headphone(struct snd_soc_codec *codec);
-void wm8994_set_voipcall_speaker(struct snd_soc_codec *codec);
-void wm8994_set_voipcall_bluetooth(struct snd_soc_codec *codec);
-void wm8994_set_fmradio_common(struct snd_soc_codec *codec, int onoff);
 void wm8994_set_fmradio_headset(struct snd_soc_codec *codec);
 void wm8994_set_fmradio_speaker(struct snd_soc_codec *codec);
 void wm8994_set_fmradio_headset_mix(struct snd_soc_codec *codec);

@@ -54,7 +54,7 @@ static char banner[] __initdata = KERN_INFO "S3C MDNIE Driver, (c) 2010 Samsung 
 
 struct clk		*mdnie_clock;
 
-//#define MDNIE_TUNING
+// #define MDNIE_TUNING
 
 /*********** for debug **********************************************************/
 #if 0 
@@ -470,10 +470,9 @@ EXPORT_SYMBOL(mDNIe_txtbuf_to_parsing_for_lightsensor);
 #endif
 
 
-
 int s3c_mdnie_hw_init(void)
 {
-	//printk("MDNIE  INIT ..........\n");
+	printk("MDNIE  INIT ..........\n");
 
 	printk(banner);
 
@@ -497,7 +496,7 @@ int s3c_mdnie_hw_init(void)
 		return -EINVAL;
 	}
 
-	//printk("MDNIE  INIT SUCCESS Addr : 0x%p\n",s3c_mdnie_base);
+	printk("MDNIE  INIT SUCCESS Addr : 0x%p\n",s3c_mdnie_base);
 
 	return 0;
 
@@ -577,7 +576,7 @@ void mDNIe_Mode_Change(mDNIe_data_type *mode)
 	if(mDNIe_Tuning_Mode == TRUE)
 	{
 		gprintk("mDNIe_Mode_Change [mDNIe_Tuning_Mode = TRUE, API is Return] \n");
-		return;
+		//return;
 	}
 	else
 	{
@@ -721,7 +720,7 @@ static ssize_t mdnieset_ui_file_cmd_show(struct device *dev,
 
 		case mDNIe_NAVI:
 			mdnie_ui = 5;
-			break;
+                        break;
 
 		case mDNIe_GALLERY:
 			mdnie_ui = 6;
@@ -779,7 +778,7 @@ static ssize_t mdnieset_ui_file_cmd_store(struct device *dev,
 	return size;
 }
 
-static DEVICE_ATTR(mdnieset_ui_file_cmd,0666, mdnieset_ui_file_cmd_show, mdnieset_ui_file_cmd_store);
+static DEVICE_ATTR(mdnieset_ui_file_cmd,0664, mdnieset_ui_file_cmd_show, mdnieset_ui_file_cmd_store);
 
 static ssize_t mdnieset_outdoor_file_cmd_show(struct device *dev,
         struct device_attribute *attr, char *buf)
@@ -812,7 +811,7 @@ static ssize_t mdnieset_outdoor_file_cmd_store(struct device *dev,
 	return size;
 }
 
-static DEVICE_ATTR(mdnieset_outdoor_file_cmd,0666, mdnieset_outdoor_file_cmd_show, mdnieset_outdoor_file_cmd_store);
+static DEVICE_ATTR(mdnieset_outdoor_file_cmd,0664, mdnieset_outdoor_file_cmd_show, mdnieset_outdoor_file_cmd_store);
 
 void init_mdnie_class(void)
 {

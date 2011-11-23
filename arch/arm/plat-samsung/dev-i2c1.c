@@ -11,6 +11,7 @@
  * published by the Free Software Foundation.
 */
 
+#include <linux/gfp.h>
 #include <linux/kernel.h>
 #include <linux/string.h>
 #include <linux/platform_device.h>
@@ -51,7 +52,7 @@ static struct s3c2410_platform_i2c default_i2c_data1 __initdata = {
 	.flags		= 0,
 	.bus_num	= 1,
 	.slave_addr	= 0x10,
-	.frequency	= 100*1000,
+	.frequency	= 400*1000,
 	.sda_delay	= S3C2410_IICLC_SDA_DELAY5 | S3C2410_IICLC_FILTER_ON,
 };
 

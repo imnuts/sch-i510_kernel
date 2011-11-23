@@ -2,7 +2,7 @@
  * s3c-dma-wrapper.c  --  S3C DMA Platform Wrapper Driver
  *
  * Copyright (c) 2010 Samsung Electronics Co. Ltd
- * 	Jaswinder Singh <jassi.brar@samsung.com>
+ *	Jaswinder Singh <jassi.brar@samsung.com>
  *
  *  This program is free software; you can redistribute  it and/or modify it
  *  under  the terms of  the GNU General  Public License as published by the
@@ -11,16 +11,15 @@
  */
 
 #include <sound/soc.h>
-
-extern struct snd_soc_platform idma_soc_platform;
-extern struct snd_soc_platform s3c24xx_soc_platform;
+#include "s3c-dma.h"
+#include "s3c-idma.h"
 
 static int s3c_wrpdma_hw_params(struct snd_pcm_substream *substream,
 		struct snd_pcm_hw_params *params)
 {
 	struct snd_soc_platform *platform;
 
-#ifdef CONFIG_S5P_LPAUDIO
+#ifdef CONFIG_S5P_INTERNAL_DMA
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
 		platform = &idma_soc_platform;
 	else
@@ -37,7 +36,7 @@ static int s3c_wrpdma_hw_free(struct snd_pcm_substream *substream)
 {
 	struct snd_soc_platform *platform;
 
-#ifdef CONFIG_S5P_LPAUDIO
+#ifdef CONFIG_S5P_INTERNAL_DMA
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
 		platform = &idma_soc_platform;
 	else
@@ -54,7 +53,7 @@ static int s3c_wrpdma_prepare(struct snd_pcm_substream *substream)
 {
 	struct snd_soc_platform *platform;
 
-#ifdef CONFIG_S5P_LPAUDIO
+#ifdef CONFIG_S5P_INTERNAL_DMA
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
 		platform = &idma_soc_platform;
 	else
@@ -71,7 +70,7 @@ static int s3c_wrpdma_trigger(struct snd_pcm_substream *substream, int cmd)
 {
 	struct snd_soc_platform *platform;
 
-#ifdef CONFIG_S5P_LPAUDIO
+#ifdef CONFIG_S5P_INTERNAL_DMA
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
 		platform = &idma_soc_platform;
 	else
@@ -88,7 +87,7 @@ static snd_pcm_uframes_t s3c_wrpdma_pointer(struct snd_pcm_substream *substream)
 {
 	struct snd_soc_platform *platform;
 
-#ifdef CONFIG_S5P_LPAUDIO
+#ifdef CONFIG_S5P_INTERNAL_DMA
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
 		platform = &idma_soc_platform;
 	else
@@ -105,7 +104,7 @@ static int s3c_wrpdma_open(struct snd_pcm_substream *substream)
 {
 	struct snd_soc_platform *platform;
 
-#ifdef CONFIG_S5P_LPAUDIO
+#ifdef CONFIG_S5P_INTERNAL_DMA
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
 		platform = &idma_soc_platform;
 	else
@@ -122,7 +121,7 @@ static int s3c_wrpdma_close(struct snd_pcm_substream *substream)
 {
 	struct snd_soc_platform *platform;
 
-#ifdef CONFIG_S5P_LPAUDIO
+#ifdef CONFIG_S5P_INTERNAL_DMA
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
 		platform = &idma_soc_platform;
 	else
@@ -135,12 +134,12 @@ static int s3c_wrpdma_close(struct snd_pcm_substream *substream)
 		return 0;
 }
 
-static int s3c_wrpdma_ioctl(struct snd_pcm_substream * substream,
+static int s3c_wrpdma_ioctl(struct snd_pcm_substream *substream,
 		unsigned int cmd, void *arg)
 {
 	struct snd_soc_platform *platform;
 
-#ifdef CONFIG_S5P_LPAUDIO
+#ifdef CONFIG_S5P_INTERNAL_DMA
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
 		platform = &idma_soc_platform;
 	else
@@ -158,7 +157,7 @@ static int s3c_wrpdma_mmap(struct snd_pcm_substream *substream,
 {
 	struct snd_soc_platform *platform;
 
-#ifdef CONFIG_S5P_LPAUDIO
+#ifdef CONFIG_S5P_INTERNAL_DMA
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
 		platform = &idma_soc_platform;
 	else
@@ -186,11 +185,11 @@ static struct snd_pcm_ops s3c_wrpdma_ops = {
 static void s3c_wrpdma_pcm_free(struct snd_pcm *pcm)
 {
 	struct snd_soc_platform *gdma_platform;
-#ifdef CONFIG_S5P_LPAUDIO
+#ifdef CONFIG_S5P_INTERNAL_DMA
 	struct snd_soc_platform *idma_platform;
 #endif
 
-#ifdef CONFIG_S5P_LPAUDIO
+#ifdef CONFIG_S5P_INTERNAL_DMA
 	idma_platform = &idma_soc_platform;
 	if (idma_platform->pcm_free)
 		idma_platform->pcm_free(pcm);
@@ -204,14 +203,14 @@ static int s3c_wrpdma_pcm_new(struct snd_card *card,
 		struct snd_soc_dai *dai, struct snd_pcm *pcm)
 {
 	struct snd_soc_platform *gdma_platform;
-#ifdef CONFIG_S5P_LPAUDIO
+#if defined(CONFIG_S5P_INTERNAL_DMA) || defined(CONFIG_SND_S5P_RP)
 	struct snd_soc_platform *idma_platform;
 #endif
 
 	/* sec_fifo i/f always use internal h/w buffers
 	 * irrespective of the xfer method (iDMA or SysDMA) */
 
-#ifdef CONFIG_S5P_LPAUDIO
+#if defined(CONFIG_S5P_INTERNAL_DMA) || defined(CONFIG_SND_S5P_RP)
 	idma_platform = &idma_soc_platform;
 	if (idma_platform->pcm_new)
 		idma_platform->pcm_new(card, dai, pcm);
@@ -225,7 +224,7 @@ static int s3c_wrpdma_pcm_new(struct snd_card *card,
 
 struct snd_soc_platform s3c_dma_wrapper = {
 	.name		= "samsung-audio",
-	.pcm_ops 	= &s3c_wrpdma_ops,
+	.pcm_ops	= &s3c_wrpdma_ops,
 	.pcm_new	= s3c_wrpdma_pcm_new,
 	.pcm_free	= s3c_wrpdma_pcm_free,
 };

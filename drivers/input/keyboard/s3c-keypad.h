@@ -25,11 +25,17 @@ static void __iomem *key_base;
 #err_1
 
 
-#elif defined (CONFIG_MACH_S5PC110_ARIES)
+#elif defined (CONFIG_MACH_S5PC110_ARIES) || defined (CONFIG_MACH_STEALTHV)|| defined (CONFIG_MACH_AEGIS) || defined(CONFIG_MARCH_VIPER)
 
  #define KEYPAD_COLUMNS       2
  #define KEYPAD_ROWS    4
  #define MAX_KEYPAD_NR  8
+#elif defined(CONFIG_MACH_CHIEF)
+ #define KEYPAD_COLUMNS      8
+ #define KEYPAD_ROWS         1 // 7-> 1 for chief
+ // TODO:FORTE_RECHECK!! POWER_KEY 56
+ #define MAX_KEYPAD_NR       9 // 58 -> 9 for chief // 59 -> 58 : 18 key LCD update lock
+
 //#err_2 xxxxx
 
 #elif defined (CONFIG_MACH_SMDKC110 ) || defined (CONFIG_MACH_S5PC110_P1)
@@ -41,10 +47,22 @@ static void __iomem *key_base;
 
 #endif
 
-
-
+/* #define DEBUG_LOG_ENABLE */
 
 #ifdef CONFIG_ANDROID
+#ifdef CONFIG_MACH_CHIEF
+#define L_MENU       139
+#define L_HOME       102
+#define L_SEARCH     217
+#define L_BACK       158
+
+#define L_FOCUS      211
+#define L_CAMERA     212
+#define L_VOL_UP     115
+#define L_VOL_DOWN   114
+
+#define L_POWER      116
+#endif
 int keypad_keycode[] = {
 
 #if defined (CONFIG_MACH_S5PC110_P1P2)
@@ -61,13 +79,20 @@ int keypad_keycode[] = {
 		0,   97,  29,   0,   0,   0,   0,   0,	        //87			
 		0,    0,   0, 150,  0,    0,   0,   0,	        //95			
 		12,  106, 11,  25,  26,  39,  53, 103,      //103				
-		14,  106,  3,  14,  27,  43,  40,  28,      //111			
+		14,  106,  3,  14,  27,  43,  40,  28,      //111		
 
 #err_4
+#elif defined (CONFIG_MACH_CHIEF) // TODO:CHIEF
+          L_VOL_UP, L_MENU, L_CAMERA, L_FOCUS, L_HOME, L_BACK, L_SEARCH, L_VOL_DOWN, L_POWER,
 
 #elif defined (CONFIG_MACH_S5PC110_ARIES)
         57,34,50,49,0,58,57,3
 //#err_5 xxxxx
+
+#elif defined (CONFIG_MACH_STEALTHV)
+		/* use input.h and /androi/device/samsung/PROJECTNAME/qwerty.kl*/
+		0,	KEY_BACK,		KEY_HOME,		KEY_MENU,
+		0,	KEY_VOLUMEDOWN,	KEY_SEARCH,		0
 
 #elif defined (CONFIG_MACH_SMDKC110)
 		1,2,3,4,5,6,7,8,
@@ -111,10 +136,10 @@ int keypad_keycode[] = {
 #elif /*defined( CONFIG_CPU_S5PC110 ) || */defined (CONFIG_CPU_S5PV210 )
 //#err_7 xxxxx
 
-#define KEYPAD_ROW_GPIOCON      S5PV210_GPH3CON
-#define KEYPAD_ROW_GPIOPUD      S5PV210_GPH3PUD
-#define KEYPAD_COL_GPIOCON      S5PV210_GPH2CON
-#define KEYPAD_COL_GPIOPUD      S5PV210_GPH2PUD
+#define KEYPAD_ROW_GPIOCON      (S5PV210_GPH3_BASE + 0x00)	//S5PV210_GPH3CON
+#define KEYPAD_ROW_GPIOPUD      (S5PV210_GPH3_BASE + 0x08)	//S5PV210_GPH3PUD
+#define KEYPAD_COL_GPIOCON      (S5PV210_GPH2_BASE + 0x00)	//S5PV210_GPH2CON
+#define KEYPAD_COL_GPIOPUD      (S5PV210_GPH2_BASE + 0x08)	//S5PV210_GPH2PUD
 #endif
 #endif /* CONFIG_ANDROID */
 

@@ -1,18 +1,21 @@
-/*
- *  bthid.c
+/************************************************************************************
  *
- * Copyright (C) 2010 Broadcom Corporation
+ *  Copyright (C) 2009-2010 Broadcom Corporation
  *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License, version 2, as published by
+ *  the Free Software Foundation (the "GPL").
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
  *
- */
+ *  A copy of the GPL is available at http://www.broadcom.com/licenses/GPLv2.php,
+ *  or by writing to the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+ *  Boston, MA  02111-1307, USA.
+ *
+ ************************************************************************************/
 #include <linux/poll.h>
 #include <linux/miscdevice.h>
 #include <linux/hid.h>
@@ -204,10 +207,16 @@ static int bthid_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 
     printk("######## bthid_ioctl: cmd = %d ########\n", cmd);
 
-    if (cmd != BTHID_IOCTL_RPT_DSCP || p_dev == NULL)
+    if (p_dev == NULL)
     {
         return -EINVAL;
     }
+
+    if (cmd != BTHID_IOCTL_RPT_DSCP )
+    {
+       printk("command is not BTHID_IOCTL_RPT_DSCP. return");     
+       return 0;
+    }   
 
     p_ctrl = kmalloc(sizeof(struct bthid_ctrl), GFP_KERNEL);
     if (p_ctrl == NULL)
@@ -276,19 +285,6 @@ static int bthid_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 }
 
 
-#define BTHID_NAME0 "BtHid"
-
-static const struct hid_device_id bthid_table[] = {
-    { HID_BLUETOOTH_DEVICE(HID_ANY_ID, HID_ANY_ID) },
-    { }
-};
-
-static struct hid_driver bthid_driver = {
-    .name     = BTHID_NAME0,
-    .id_table = bthid_table,
-};
-
-
 static const struct file_operations bthid_fops = {
     .owner   = THIS_MODULE,
     .open    = bthid_open,
@@ -317,13 +313,6 @@ static int __init bthid_init(void)
         return ret;
     }
 
-    ret = hid_register_driver(&bthid_driver);
-    if (ret != 0)
-    {
-        printk("Oops, failed to register HID driver, ret = %d\n", ret);
-        return ret;
-    }
-
     printk("######## bthid_init: done ########\n");
     
     return ret;
@@ -332,8 +321,6 @@ static int __init bthid_init(void)
 static void __exit bthid_exit(void)
 {
     printk("bthid_exit:\n");
-
-    hid_unregister_driver(&bthid_driver);
 
     misc_deregister(&bthid_misc);
     printk("bthid_exit: done\n");

@@ -1,4 +1,4 @@
-/* linux/drivers/serial/samsuing.c
+/* linux/drivers/serial/samsung.c
  *
  * Driver core for Samsung SoC onboard UARTs.
  *
@@ -48,13 +48,13 @@
 
 #include <mach/hardware.h>
 #include <mach/map.h>
-#include <mach/gpio.h>
-#include <mach/regs-gpio.h>
 
 #include <plat/regs-serial.h>
-#include <plat/gpio-cfg.h>
 
 #include "samsung.h"
+
+#include <mach/gpio.h>
+#include <plat/gpio-cfg.h>
 
 /* UART name and device definitions */
 
@@ -166,12 +166,14 @@ static void s3c24xx_serial_enable_ms(struct uart_port *port)
 {
 }
 
-static inline struct s3c24xx_uart_info *s3c24xx_port_to_info(struct uart_port *port)
+static inline struct
+s3c24xx_uart_info *s3c24xx_port_to_info(struct uart_port *port)
 {
 	return to_ourport(port)->info;
 }
 
-static inline struct s3c2410_uartcfg *s3c24xx_port_to_cfg(struct uart_port *port)
+static inline struct
+s3c2410_uartcfg *s3c24xx_port_to_cfg(struct uart_port *port)
 {
 	if (port->dev == NULL)
 		return NULL;
@@ -190,6 +192,15 @@ static int s3c24xx_serial_rx_fifocnt(struct s3c24xx_uart_port *ourport,
 	return (ufstat & info->rx_fifomask) >> info->rx_fifoshift;
 }
 
+#define CSR_GPS_WORK_AROUND_RX_ISR           //it should be applied to
+#define CSR_GPS_WORK_AROUND_UART_DRIVER      //it should be applied to    
+//#define CSR_GPS_DEBUG                    //just debug code                                    
+//#define CSR_GPS_DEBUG_RAW_DATA  //just debug code
+
+
+#ifdef CSR_GPS_DEBUG
+#define GPIO_GPS_DEBUG_NEW S5PV210_GPG1(2)
+#endif
 
 /* ? - where has parity gone?? */
 #define S3C2410_UERSTAT_PARITY (0x1000)
@@ -201,7 +212,32 @@ s3c24xx_serial_rx_chars(int irq, void *dev_id)
 	struct uart_port *port = &ourport->port;
 	struct tty_struct *tty = port->state->port.tty;
 	unsigned int ufcon, ch, flag, ufstat, uerstat;
+#ifdef CSR_GPS_WORK_AROUND_RX_ISR    
+	int max_count = 256;
+    unsigned char received_data [256];
+    unsigned char received_flag [256];
+    int received_data_count = 0;
+#else
 	int max_count = 64;
+#endif
+#ifdef CSR_GPS_DEBUG
+    int overrun = 0;
+    static int gpio_init = 0;
+    static int active_signal = 1;
+#endif
+#ifdef CSR_GPS_DEBUG_RAW_DATA
+    char received_data_string[256*2+1];
+    int i;
+#endif
+#ifdef CSR_GPS_DEBUG
+    if (gpio_init == 0)
+    {
+        s3c_gpio_cfgpin(GPIO_GPS_DEBUG_NEW, S3C_GPIO_OUTPUT);
+        s3c_gpio_setpull(GPIO_GPS_DEBUG_NEW, S3C_GPIO_PULL_NONE);
+        gpio_init = 1;
+    }
+    gpio_set_value(GPIO_GPS_DEBUG_NEW, active_signal); //
+#endif
 
 	while (max_count-- > 0) {
 		ufcon = rd_regl(port, S3C2410_UFCON);
@@ -244,16 +280,35 @@ s3c24xx_serial_rx_chars(int irq, void *dev_id)
 			/* check for break */
 			if (uerstat & S3C2410_UERSTAT_BREAK) {
 				dbg("break!\n");
+#ifdef CSR_GPS_WORK_AROUND_RX_ISR    
+                	       printk(KERN_DEBUG "break!\n");
+#endif
 				port->icount.brk++;
 				if (uart_handle_break(port))
-				    goto ignore_char;
+					goto ignore_char;
 			}
 
 			if (uerstat & S3C2410_UERSTAT_FRAME)
+                     {         
+#ifdef CSR_GPS_WORK_AROUND_RX_ISR    
+                            printk(KERN_DEBUG "frame error!\n");
+#endif
 				port->icount.frame++;
+                     }
 			if (uerstat & S3C2410_UERSTAT_OVERRUN)
+                     {
+#ifdef CSR_GPS_WORK_AROUND_RX_ISR    
+                            printk(KERN_DEBUG "overrun error!\n");
+#endif    
 				port->icount.overrun++;
-
+#ifdef CSR_GPS_DEBUG
+                            if (overrun == 0)
+                            {
+                                overrun = 1;
+                                active_signal = !active_signal;
+                            }
+#endif
+                     }   
 			uerstat &= port->read_status_mask;
 
 			if (uerstat & S3C2410_UERSTAT_BREAK)
@@ -266,17 +321,77 @@ s3c24xx_serial_rx_chars(int irq, void *dev_id)
 		}
 
 		if (uart_handle_sysrq_char(port, ch))
+        {
+                printk(KERN_DEBUG "break-sysrq\n");
 			goto ignore_char;
+        }    
+#ifdef CSR_GPS_WORK_AROUND_RX_ISR    
+                received_data[received_data_count] = ch;
+                received_flag[received_data_count] = flag;
+                received_data_count++;
+        
+#else
 
 		uart_insert_char(port, uerstat, S3C2410_UERSTAT_OVERRUN,
 				 ch, flag);
+#endif
 
  ignore_char:
 		continue;
 	}
+#ifdef CSR_GPS_WORK_AROUND_RX_ISR   
+
+       if (received_data_count)
+       {
+
+#ifdef CSR_GPS_DEBUG_RAW_DATA
+            if (tty->index == 1)
+            {
+                int nibble;
+                unsigned char *ptr_src, *ptr_dst;
+
+                ptr_src = received_data;
+                ptr_dst = received_data_string;
+                
+                for(i=0; i<received_data_count;i++, ptr_src++)
+                {
+                    nibble = (*ptr_src >> 4) &0x0F;
+                    
+                    if (9 < nibble)
+                        *ptr_dst = nibble -10 + 'A';
+                    else 
+                        *ptr_dst = nibble + '0';
+
+                    ptr_dst++;
+
+                    nibble = (*ptr_src) & 0x0F;
+                    
+                    if (9 < nibble)
+                        *ptr_dst = nibble -10 + 'A';
+                    else 
+                        *ptr_dst = nibble + '0';
+
+                    ptr_dst++;
+
+                }
+                *ptr_dst = '\0';
+                printk(KERN_DEBUG "CGPS:%s\n", received_data_string);
+            }
+#endif
+
+            tty_insert_flip_string_flags(tty, (const unsigned char *)received_data, (const char *)received_flag, (size_t) received_data_count);
+
+            tty_flip_buffer_push(tty);
+        }
+
+#else
 	tty_flip_buffer_push(tty);
 
+#endif
  out:
+#ifdef CSR_GPS_DEBUG
+     gpio_set_value(GPIO_GPS_DEBUG_NEW, !active_signal); //oif overrun, gpio toggle
+#endif
 	return IRQ_HANDLED;
 }
 
@@ -355,6 +470,21 @@ static unsigned int s3c24xx_serial_get_mctrl(struct uart_port *port)
 static void s3c24xx_serial_set_mctrl(struct uart_port *port, unsigned int mctrl)
 {
 	/* todo - possibly remove AFC and do manual CTS */
+#if 1
+	if(port->line == 0) {
+	unsigned int umcon = 0;
+	umcon = rd_regl(port, S3C2410_UMCON);
+	if (mctrl & TIOCM_RTS){
+		umcon |= S3C2410_UMCOM_AFC;
+		umcon &= ~(0x7<<7);   /* Clear RTS trigger level */
+		umcon |= (0x1<<7);      /* 56 byte RTS trigger level */
+       }
+	else
+		umcon &= ~S3C2410_UMCOM_AFC;
+
+	wr_regl(port, S3C2410_UMCON, umcon);
+	}
+#endif
 }
 
 static void s3c24xx_serial_break_ctl(struct uart_port *port, int break_state)
@@ -399,8 +529,8 @@ static int s3c24xx_serial_startup(struct uart_port *port)
 	struct s3c24xx_uart_port *ourport = to_ourport(port);
 	int ret;
 
-	dbg("s3c24xx_serial_startup: port=%p (%p)\n",
-	    port->mapbase, port->membase);
+	dbg("s3c24xx_serial_startup: port=%p (%08lx,%p)\n",
+	    port, port->mapbase, port->membase);
 
 	rx_enabled(port) = 1;
 
@@ -759,7 +889,7 @@ static void s3c24xx_serial_set_termios(struct uart_port *port,
 	wr_regl(port, S3C2410_UMCON, umcon);
 
 	if (ourport->info->has_divslot)
-		wr_regl(port, S3C2410_UDIVSLOT, udivslot);
+		wr_regl(port, S3C2443_DIVSLOT, udivslot);
 
 	dbg("uart: ulcon = 0x%08x, ucon = 0x%08x, ufcon = 0x%08x\n",
 	    rd_regl(port, S3C2410_ULCON),
@@ -776,7 +906,8 @@ static void s3c24xx_serial_set_termios(struct uart_port *port,
 	 */
 	port->read_status_mask = S3C2410_UERSTAT_OVERRUN;
 	if (termios->c_iflag & INPCK)
-		port->read_status_mask |= S3C2410_UERSTAT_FRAME | S3C2410_UERSTAT_PARITY;
+		port->read_status_mask |= S3C2410_UERSTAT_FRAME
+				       | S3C2410_UERSTAT_PARITY;
 
 	/*
 	 * Which character status flags should we ignore?
@@ -848,12 +979,20 @@ s3c24xx_serial_verify_port(struct uart_port *port, struct serial_struct *ser)
 	return 0;
 }
 
+static void
+s3c24xx_serial_wake_peer(struct uart_port *port)
+{
+	struct s3c2410_uartcfg *cfg = s3c24xx_port_to_cfg(port);
+
+	if (cfg->wake_peer)
+		cfg->wake_peer(port);
+}
 
 #ifdef CONFIG_SERIAL_SAMSUNG_CONSOLE
 
 static struct console s3c24xx_serial_console;
 
-#define S3C24XX_SERIAL_CONSOLE &s3c24xx_serial_console
+#define S3C24XX_SERIAL_CONSOLE (&s3c24xx_serial_console)
 #else
 #define S3C24XX_SERIAL_CONSOLE NULL
 #endif
@@ -876,6 +1015,7 @@ static struct uart_ops s3c24xx_serial_ops = {
 	.request_port	= s3c24xx_serial_request_port,
 	.config_port	= s3c24xx_serial_config_port,
 	.verify_port	= s3c24xx_serial_verify_port,
+	.wake_peer	= s3c24xx_serial_wake_peer,
 };
 
 
@@ -889,7 +1029,8 @@ static struct uart_driver s3c24xx_uart_drv = {
 	.minor		= S3C24XX_SERIAL_MINOR,
 };
 
-static struct s3c24xx_uart_port s3c24xx_serial_ports[CONFIG_SERIAL_SAMSUNG_UARTS] = {
+static struct s3c24xx_uart_port
+	s3c24xx_serial_ports[CONFIG_SERIAL_SAMSUNG_UARTS] = {
 	[0] = {
 		.port = {
 			.lock		= __SPIN_LOCK_UNLOCKED(s3c24xx_serial_ports[0].port.lock),
@@ -1017,7 +1158,8 @@ static int s3c24xx_serial_cpufreq_transition(struct notifier_block *nb,
 	return 0;
 }
 
-static inline int s3c24xx_serial_cpufreq_register(struct s3c24xx_uart_port *port)
+static inline int
+s3c24xx_serial_cpufreq_register(struct s3c24xx_uart_port *port)
 {
 	port->freq_transition.notifier_call = s3c24xx_serial_cpufreq_transition;
 
@@ -1025,19 +1167,22 @@ static inline int s3c24xx_serial_cpufreq_register(struct s3c24xx_uart_port *port
 					 CPUFREQ_TRANSITION_NOTIFIER);
 }
 
-static inline void s3c24xx_serial_cpufreq_deregister(struct s3c24xx_uart_port *port)
+static inline void
+s3c24xx_serial_cpufreq_deregister(struct s3c24xx_uart_port *port)
 {
 	cpufreq_unregister_notifier(&port->freq_transition,
 				    CPUFREQ_TRANSITION_NOTIFIER);
 }
 
 #else
-static inline int s3c24xx_serial_cpufreq_register(struct s3c24xx_uart_port *port)
+static inline int
+s3c24xx_serial_cpufreq_register(struct s3c24xx_uart_port *port)
 {
 	return 0;
 }
 
-static inline void s3c24xx_serial_cpufreq_deregister(struct s3c24xx_uart_port *port)
+static inline void
+s3c24xx_serial_cpufreq_deregister(struct s3c24xx_uart_port *port)
 {
 }
 #endif
@@ -1113,13 +1258,7 @@ static int s3c24xx_serial_init_port(struct s3c24xx_uart_port *ourport,
 	if (ret > 0)
 		ourport->tx_irq = ret;
 
-	ourport->clk = clk_get(&platdev->dev, "uart");
-	if(ourport->clk == NULL || IS_ERR(ourport->clk)) {
-		dev_err(&platdev->dev, "cannot get clock\n");
-		return -ENODEV;
-	}
-
-	clk_enable(ourport->clk);
+	ourport->clk	= clk_get(&platdev->dev, "uart");
 
 	dbg("port: map=%08x, mem=%08x, irq=%d (%d,%d), clock=%ld\n",
 	    port->mapbase, port->membase, port->irq,
@@ -1129,8 +1268,6 @@ static int s3c24xx_serial_init_port(struct s3c24xx_uart_port *ourport,
 	s3c24xx_serial_resetport(port, cfg);
 
 	s3c_setup_uart_cfg_gpio(cfg->hwport);
-
-	clk_disable(ourport->clk);
 
 	return 0;
 }
@@ -1147,23 +1284,189 @@ static ssize_t s3c24xx_serial_show_clksrc(struct device *dev,
 
 static DEVICE_ATTR(clock_source, S_IRUGO, s3c24xx_serial_show_clksrc, NULL);
 
-/* Device driver serial port probe */
+#ifdef CSR_GPS_WORK_AROUND_UART_DRIVER
 
-static int probe_index;
+#define GPS_UART_CTS_PIN S5PV210_GPA0(6) //dev->xxx->xxx
+#define GPS_UART_RTS_PIN S5PV210_GPA0(7) //dev->xxx->xxx
+
+/////////////////////////////////////////////////////////////////////////////
+// CSR CTS/RTS
+static ssize_t s3c24xx_serial_rts_pullup_detect(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    int i;
+    s3c_gpio_pull_t back_pull;
+    unsigned int back_cfg;
+    
+    back_pull = S3C_GPIO_PULL_NONE; //back_pull = s3c_gpio_getpull(GPS_UART_RTS_PIN); //back up
+    back_cfg = S3C_GPIO_SFN(2); //back_cfg = s3c_gpio_getcfg(GPS_UART_RTS_PIN);
+
+    s3c_gpio_setpull(GPS_UART_RTS_PIN, S3C_GPIO_PULL_DOWN);
+
+    s3c_gpio_cfgpin(GPS_UART_RTS_PIN, S3C_GPIO_OUTPUT);
+    
+    gpio_set_value(GPS_UART_RTS_PIN, 0);        
+    
+    s3c_gpio_cfgpin(GPS_UART_RTS_PIN, S3C_GPIO_INPUT);
+
+    //here, you may need a little delay.
+    for (i=0; i<100; i++); 
+
+    buf[0] = '0' + gpio_get_value(GPS_UART_RTS_PIN);
+
+    s3c_gpio_cfgpin(GPS_UART_RTS_PIN, back_cfg);
+    s3c_gpio_setpull(GPS_UART_RTS_PIN, back_pull);
+    
+    printk(KERN_DEBUG "rts_cts_gate:detect RTS pin pulled_up - %c\n", buf[0]);
+
+    return 1;
+}
+
+static ssize_t s3c24xx_serial_rts_cts_config(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
+{    
+
+    s3c_gpio_pull_t rts_pull_option, cts_pull_option;
+
+    printk(KERN_DEBUG "rts_cts_gate:config [%c%c%c]\n", buf[0],buf[1],buf[2]); 
+
+
+    rts_pull_option = S3C_GPIO_PULL_NONE;
+    cts_pull_option = S3C_GPIO_PULL_NONE;
+
+    if (buf[1] == '-') 
+    {
+        rts_pull_option = S3C_GPIO_PULL_DOWN;
+        printk(KERN_DEBUG "rts_cts_gate: rts pull-down\n"); 
+    }
+    else if (buf[1] == '+') 
+    {
+        rts_pull_option = S3C_GPIO_PULL_UP;
+        printk(KERN_DEBUG "rts_cts_gate: rts pull-up\n"); 
+    }
+    else
+    {
+        rts_pull_option = S3C_GPIO_PULL_NONE;
+         printk(KERN_DEBUG "rts_cts_gate: rts pull-none\n"); 
+    }
+
+    if (buf[2] == '-') 
+    {
+        cts_pull_option = S3C_GPIO_PULL_DOWN;
+        printk(KERN_DEBUG "rts_cts_gate: cts pull-down\n"); 
+    }
+    else if (buf[2] == '+') 
+    {
+        cts_pull_option = S3C_GPIO_PULL_UP;
+        printk(KERN_DEBUG "rts_cts_gate: cts pull-up\n"); 
+    }
+    else
+    {
+        cts_pull_option = S3C_GPIO_PULL_NONE;
+        printk(KERN_DEBUG "rts_cts_gate: cts pull-none\n"); 
+    }
+
+    if( buf[0] == '0' ) // rts/cts
+    {
+        printk(KERN_DEBUG "rts_cts_gate: hw flow control\n");
+
+        s3c_gpio_cfgpin(GPS_UART_RTS_PIN, S3C_GPIO_SFN(2));
+        s3c_gpio_setpull(GPS_UART_RTS_PIN, rts_pull_option);
+
+        s3c_gpio_cfgpin(GPS_UART_CTS_PIN, S3C_GPIO_SFN(2));
+        s3c_gpio_setpull(GPS_UART_CTS_PIN, cts_pull_option);
+
+    }    
+    // rts high cts high   
+    else if( buf[0] == '1' ) // control pins for GPS reset
+    {
+        printk(KERN_DEBUG "rts_cts_gate: RTS-HIGH, CTS-HIGH\n");
+
+        s3c_gpio_cfgpin(GPS_UART_RTS_PIN, S3C_GPIO_OUTPUT);
+        s3c_gpio_setpull(GPS_UART_RTS_PIN, rts_pull_option);
+        gpio_set_value(GPS_UART_RTS_PIN, 1);           
+
+        s3c_gpio_cfgpin(GPS_UART_CTS_PIN, S3C_GPIO_OUTPUT);
+        s3c_gpio_setpull(GPS_UART_CTS_PIN, cts_pull_option);
+        gpio_set_value(GPS_UART_CTS_PIN, 1);    	
+    }
+    // rts high cts input
+    else if( buf[0] == '2' ) // control pins for GPS reset
+    {
+        printk(KERN_DEBUG "rts_cts_gate: RTS-HIGH, CTS-INPUT\n");
+
+        s3c_gpio_cfgpin(GPS_UART_RTS_PIN, S3C_GPIO_OUTPUT);
+        s3c_gpio_setpull(GPS_UART_RTS_PIN, rts_pull_option);
+        gpio_set_value(GPS_UART_RTS_PIN, 1); 
+
+        s3c_gpio_cfgpin(GPS_UART_CTS_PIN, S3C_GPIO_INPUT);
+        s3c_gpio_setpull(GPS_UART_CTS_PIN, cts_pull_option);
+    }
+    // rts input cts input
+    else if( buf[0] == '3' ) // control pins for GPS reset
+    {
+        printk(KERN_DEBUG "rts_cts_gate: RTS-INPUT, CTS-INPUT\n");
+
+        s3c_gpio_cfgpin(GPS_UART_RTS_PIN, S3C_GPIO_INPUT);
+        s3c_gpio_setpull(GPS_UART_RTS_PIN, rts_pull_option);
+
+        s3c_gpio_cfgpin(GPS_UART_CTS_PIN, S3C_GPIO_INPUT);
+        s3c_gpio_setpull(GPS_UART_CTS_PIN, cts_pull_option);
+     }
+    // rts input cts high
+    else if( buf[0] == '4' ) // control pins for GPS reset
+    {
+        printk(KERN_DEBUG "rts_cts_gate: RTS-INPUT, CTS-HIGH\n");
+
+        s3c_gpio_cfgpin(GPS_UART_RTS_PIN, S3C_GPIO_INPUT);
+        s3c_gpio_setpull(GPS_UART_RTS_PIN, rts_pull_option);
+
+        s3c_gpio_cfgpin(GPS_UART_CTS_PIN, S3C_GPIO_OUTPUT);
+        s3c_gpio_setpull(GPS_UART_CTS_PIN, cts_pull_option);
+        gpio_set_value(GPS_UART_CTS_PIN, 1);    	
+    }
+    //test rts high
+    else if (buf[0] == '5') //rts test - ouput 0
+    {
+        printk(KERN_DEBUG "rts_cts_gate: RTS set 0\n");
+
+        s3c_gpio_cfgpin(GPS_UART_RTS_PIN, S3C_GPIO_OUTPUT);
+        s3c_gpio_setpull(GPS_UART_RTS_PIN, rts_pull_option);
+
+        gpio_set_value(GPS_UART_RTS_PIN, 0);
+    }
+    // test rts low
+    else if (buf[0] == '6') //rts test - output 1
+    {
+        printk(KERN_DEBUG "rts_cts_gate:RTS set 1\n");
+
+        s3c_gpio_cfgpin(GPS_UART_RTS_PIN, S3C_GPIO_OUTPUT);
+        s3c_gpio_setpull(GPS_UART_RTS_PIN, rts_pull_option);
+
+        gpio_set_value(GPS_UART_RTS_PIN, 1);
+    }
+
+    return 1;
+}
+
+
+static DEVICE_ATTR(GpsDebugGpio, S_IRGRP |S_IWGRP | S_IRUSR | S_IWUSR |S_IROTH, s3c24xx_serial_rts_pullup_detect, s3c24xx_serial_rts_cts_config);
+#endif
+/* Device driver serial port probe */
 
 int s3c24xx_serial_probe(struct platform_device *dev,
 			 struct s3c24xx_uart_info *info)
 {
 	struct s3c24xx_uart_port *ourport;
-	struct uart_port *port;
 	int ret;
 
-	dbg("s3c24xx_serial_probe(%p, %p) %d\n", dev, info, probe_index);
+	dbg("s3c24xx_serial_probe(%p, %p) %d\n", dev, info, dev->id);
 
-	ourport = &s3c24xx_serial_ports[probe_index];
-	probe_index++;
+	if (dev->id >= ARRAY_SIZE(s3c24xx_serial_ports)) {
+		dev_err(&dev->dev, "unsupported device id %d\n", dev->id);
+		return -ENODEV;
+	}
 
-	port = &ourport->port;
+	ourport = &s3c24xx_serial_ports[dev->id];
+
 	dbg("%s: initialising port %p...\n", __func__, ourport);
 
 	ret = s3c24xx_serial_init_port(ourport, info, dev);
@@ -1174,13 +1477,16 @@ int s3c24xx_serial_probe(struct platform_device *dev,
 	uart_add_one_port(&s3c24xx_uart_drv, &ourport->port);
 	platform_set_drvdata(dev, &ourport->port);
 
-	if(port->cons && port->cons->index == port->line)
-		clk_disable(ourport->clk);
-
 	ret = device_create_file(&dev->dev, &dev_attr_clock_source);
 	if (ret < 0)
 		printk(KERN_ERR "%s: failed to add clksrc attr.\n", __func__);
 
+#ifdef CSR_GPS_WORK_AROUND_UART_DRIVER
+
+	ret = device_create_file(&dev->dev, &dev_attr_GpsDebugGpio);  // woojun
+	if (ret < 0)
+		printk(KERN_ERR "%s: failed to add rts_cts_gate attr.\n", __func__);
+#endif
 	ret = s3c24xx_serial_cpufreq_register(ourport);
 	if (ret < 0)
 		dev_err(&dev->dev, "failed to add cpufreq notifier\n");
@@ -1190,7 +1496,6 @@ int s3c24xx_serial_probe(struct platform_device *dev,
  probe_err:
 	return ret;
 }
-
 EXPORT_SYMBOL_GPL(s3c24xx_serial_probe);
 
 int __devexit s3c24xx_serial_remove(struct platform_device *dev)
@@ -1205,7 +1510,6 @@ int __devexit s3c24xx_serial_remove(struct platform_device *dev)
 
 	return 0;
 }
-
 EXPORT_SYMBOL_GPL(s3c24xx_serial_remove);
 
 /* UART power management code */
@@ -1215,13 +1519,13 @@ EXPORT_SYMBOL_GPL(s3c24xx_serial_remove);
 #include <plat/pm.h>
 
 #define SAVE_UART(va) \
-	SAVE_ITEM((va) + S3C2410_ULCON), \
-	SAVE_ITEM((va) + S3C2410_UCON), \
-	SAVE_ITEM((va) + S3C2410_UFCON), \
-	SAVE_ITEM((va) + S3C2410_UMCON), \
-	SAVE_ITEM((va) + S3C2410_UBRDIV), \
-	SAVE_ITEM((va) + S3C2410_UDIVSLOT), \
-	SAVE_ITEM((va) + S3C2410_UINTMSK)
+	 SAVE_ITEM((va) + S3C2410_ULCON), \
+	 SAVE_ITEM((va) + S3C2410_UCON), \
+	 SAVE_ITEM((va) + S3C2410_UFCON), \
+	 SAVE_ITEM((va) + S3C2410_UMCON), \
+	 SAVE_ITEM((va) + S3C2410_UBRDIV), \
+	 SAVE_ITEM((va) + S3C2410_UDIVSLOT), \
+	 SAVE_ITEM((va) + S3C2410_UINTMSK)
 
 static struct sleep_save uart_save[] = {
 	SAVE_UART(S3C_VA_UARTx(0)),
@@ -1232,52 +1536,16 @@ static struct sleep_save uart_save[] = {
 
 #define SAVE_UART_PORT (ARRAY_SIZE(uart_save) / 4)
 
-static int s3c24xx_serial_suspend(struct platform_device *dev, pm_message_t state)
+static int
+s3c24xx_serial_suspend(struct platform_device *dev, pm_message_t state)
 {
 	struct uart_port *port = s3c24xx_dev_to_port(&dev->dev);
-	unsigned int gpa0_bt_con;
-	unsigned int gpa0_bt_pud;
-	unsigned int gpa0_bt_dat;
 
-	if(port->line == 0) {
-		s3c_gpio_cfgpin(S5PV210_GPA0(3), S3C_GPIO_OUTPUT);
-		s3c_gpio_setpull(S5PV210_GPA0(3), S3C_GPIO_PULL_NONE);
-		gpa0_bt_dat = __raw_readl(S5PV210_GPA0DAT);
-		gpa0_bt_dat |= (1 << 3);
-		__raw_writel(gpa0_bt_dat, S5PV210_GPA0DAT);
-
-		gpa0_bt_con = __raw_readl(S5PV210_GPA0CONPDN);
-		gpa0_bt_con |= (1 << 6);
-		gpa0_bt_con &= ~(1 << 7);
-		__raw_writel(gpa0_bt_con, S5PV210_GPA0CONPDN);
-
-		gpa0_bt_pud = __raw_readl(S5PV210_GPA0PUDPDN);
-		gpa0_bt_pud &= ~(1 << 7 | 1 << 6);
-		__raw_writel(gpa0_bt_pud, S5PV210_GPA0PUDPDN);
-	}
-	else if(port->line == 1) {
-	#if 0
-		s3c_gpio_cfgpin(S5PV210_GPA0(7), S3C_GPIO_OUTPUT);
-		s3c_gpio_setpull(S5PV210_GPA0(7), S3C_GPIO_PULL_NONE);
-		gpa0_bt_dat = __raw_readl(S5PV210_GPA0DAT);
-		gpa0_bt_dat |= (1 << 7);
-		__raw_writel(gpa0_bt_dat, S5PV210_GPA0DAT);
-
-		gpa0_bt_con = __raw_readl(S5PV210_GPA0CONPDN);
-		gpa0_bt_con |= (1 << 14);
-		gpa0_bt_con &= ~(1 << 15);
-		__raw_writel(gpa0_bt_con, S5PV210_GPA0CONPDN);
-
-		gpa0_bt_pud = __raw_readl(S5PV210_GPA0PUDPDN);
-		gpa0_bt_pud &= ~(1 << 15 | 1 << 14);
-		__raw_writel(gpa0_bt_pud, S5PV210_GPA0PUDPDN);
-	#endif
-	}
-
-	s3c_pm_do_save(uart_save + port->line * SAVE_UART_PORT, SAVE_UART_PORT);
-
-	if (port)
+	if (port) {
 		uart_suspend_port(&s3c24xx_uart_drv, port);
+		s3c_pm_do_save(uart_save + port->line * SAVE_UART_PORT,
+				SAVE_UART_PORT);
+	}
 
 	return 0;
 }
@@ -1286,35 +1554,14 @@ static int s3c24xx_serial_resume(struct platform_device *dev)
 {
 	struct uart_port *port = s3c24xx_dev_to_port(&dev->dev);
 	struct s3c24xx_uart_port *ourport = to_ourport(port);
-	unsigned int gpa0_bt_dat;
 
 	if (port) {
 		clk_enable(ourport->clk);
 		s3c24xx_serial_resetport(port, s3c24xx_port_to_cfg(port));
-		s3c_pm_do_restore(uart_save + port->line * SAVE_UART_PORT, SAVE_UART_PORT);
-		uart_resume_port(&s3c24xx_uart_drv, port);
 		clk_disable(ourport->clk);
-	}
-
-	if(port->line == 0) {
-		s3c_gpio_cfgpin(S5PV210_GPA0(3), S3C_GPIO_OUTPUT);
-		gpa0_bt_dat = __raw_readl(S5PV210_GPA0DAT);
-		gpa0_bt_dat &= ~(1 << 3);
-		__raw_writel(gpa0_bt_dat, S5PV210_GPA0DAT);
-
-		s3c_gpio_cfgpin(S5PV210_GPA0(3), S3C_GPIO_SFN(2));
-		s3c_gpio_setpull(S5PV210_GPA0(3), S3C_GPIO_PULL_NONE);
-	}
-	else if(port->line == 1) {
-	#if 0
-		s3c_gpio_cfgpin(S5PV210_GPA0(7), S3C_GPIO_OUTPUT);
-		gpa0_bt_dat = __raw_readl(S5PV210_GPA0DAT);
-		gpa0_bt_dat &= ~(1 << 7);
-		__raw_writel(gpa0_bt_dat, S5PV210_GPA0DAT);
-
-		s3c_gpio_cfgpin(S5PV210_GPA0(7), S3C_GPIO_SFN(2));
-		s3c_gpio_setpull(S5PV210_GPA0(7), S3C_GPIO_PULL_NONE);
-	#endif
+		s3c_pm_do_restore(uart_save + port->line * SAVE_UART_PORT,
+				SAVE_UART_PORT);
+		uart_resume_port(&s3c24xx_uart_drv, port);
 	}
 
 	return 0;
@@ -1333,7 +1580,6 @@ int s3c24xx_serial_init(struct platform_driver *drv,
 
 	return platform_driver_register(drv);
 }
-
 EXPORT_SYMBOL_GPL(s3c24xx_serial_init);
 
 /* module initialisation code */
@@ -1372,7 +1618,7 @@ s3c24xx_serial_console_txrdy(struct uart_port *port, unsigned int ufcon)
 	unsigned long ufstat, utrstat;
 
 	if (ufcon & S3C2410_UFCON_FIFOMODE) {
-		/* fifo mode - check ammount of data in fifo registers... */
+		/* fifo mode - check amount of data in fifo registers... */
 
 		ufstat = rd_regl(port, S3C2410_UFSTAT);
 		return (ufstat & info->tx_fifofull) ? 0 : 1;
@@ -1485,9 +1731,8 @@ static int s3c24xx_serial_init_ports(struct s3c24xx_uart_info **info)
 
 	platdev_ptr = s3c24xx_uart_devs;
 
-	for (i = 0; i < CONFIG_SERIAL_SAMSUNG_UARTS; i++, ptr++, platdev_ptr++) {
+	for (i = 0; i < CONFIG_SERIAL_SAMSUNG_UARTS; i++, ptr++, platdev_ptr++)
 		s3c24xx_serial_init_port(ptr, info[i], *platdev_ptr);
-	}
 
 	return 0;
 }
@@ -1510,7 +1755,6 @@ s3c24xx_serial_console_setup(struct console *co, char *options)
 		co->index = 0;
 
 	port = &s3c24xx_serial_ports[co->index].port;
-	clk_enable(s3c24xx_serial_ports[co->index].clk);
 
 	/* is the port configured? */
 

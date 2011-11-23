@@ -33,6 +33,10 @@
 #include <linux/bootmem.h>
 #include <linux/syscalls.h>
 #include <linux/kexec.h>
+#include <linux/kdb.h>
+#include <linux/ratelimit.h>
+#include <linux/kmsg_dump.h>
+#include <linux/syslog.h>
 
 #include <asm/uaccess.h>
 
@@ -60,7 +64,7 @@ extern void printascii(char *);
 
 /* We show everything that is MORE important than this.. */
 #define MINIMUM_CONSOLE_LOGLEVEL 1 /* Minimum loglevel we let people use */
-#define DEFAULT_CONSOLE_LOGLEVEL 2 /* anything MORE serious than KERN_DEBUG */
+#define DEFAULT_CONSOLE_LOGLEVEL 7 /* anything MORE serious than KERN_DEBUG */
 
 DECLARE_WAIT_QUEUE_HEAD(log_wait);
 
@@ -70,8 +74,6 @@ int console_printk[4] = {
 	MINIMUM_CONSOLE_LOGLEVEL,	/* minimum_console_loglevel */
 	DEFAULT_CONSOLE_LOGLEVEL,	/* default_console_loglevel */
 };
-
-static int saved_console_loglevel = -1;
 
 /*
  * Low level drivers may need that to know if they can schedule in
@@ -147,6 +149,7 @@ static char __log_buf[__LOG_BUF_LEN];
 static char *log_buf = __log_buf;
 static int log_buf_len = __LOG_BUF_LEN;
 static unsigned logged_chars; /* Number of chars produced since last read+clear operation */
+static int saved_console_loglevel = -1;
 
 #ifdef CONFIG_KEXEC
 /*
@@ -179,11 +182,11 @@ struct struct_kernel_log_mark {
 };
 
 static struct struct_kernel_log_mark kernel_log_mark = {
-       .special_mark_1 = (('*' << 24) | ('^' << 16) | ('^' << 8) | ('*' << 0)),
-       .special_mark_2 = (('I' << 24) | ('n' << 16) | ('f' << 8) | ('o' << 0)),
-       .special_mark_3 = (('H' << 24) | ('e' << 16) | ('r' << 8) | ('e' << 0)),
-       .special_mark_4 = (('k' << 24) | ('l' << 16) | ('o' << 8) | ('g' << 0)),
-       .p__log_buf = __log_buf, 
+	.special_mark_1 = (('*' << 24) | ('^' << 16) | ('^' << 8) | ('*' << 0)),
+	.special_mark_2 = (('I' << 24) | ('n' << 16) | ('f' << 8) | ('o' << 0)),
+	.special_mark_3 = (('H' << 24) | ('e' << 16) | ('r' << 8) | ('e' << 0)),
+	.special_mark_4 = (('k' << 24) | ('l' << 16) | ('o' << 8) | ('g' << 0)),
+	.p__log_buf = __log_buf, 
 };
 
 static int __init log_buf_len_setup(char *str)
@@ -231,6 +234,85 @@ out:
 }
 
 __setup("log_buf_len=", log_buf_len_setup);
+
+#ifdef CONFIG_SEC_LOG
+/*
+ * Example usage: sec_log=256K@0x45000000
+ *
+ * In above case, log_buf size is 256KB and its physical base address
+ * is 0x45000000. Actually, *(int *)(base - 8) is log_magic and *(int
+ * *)(base - 4) is log_ptr. Therefore we reserve (size + 8) bytes from
+ * (base - 8)
+ */
+#define LOG_MAGIC 0x4d474f4c /* "LOGM" */
+
+/* These variables are also protected by logbuf_lock */
+static unsigned *sec_log_ptr;
+static char *sec_log_buf;
+static unsigned sec_log_size;
+
+static inline void emit_sec_log_char(char c)
+{
+	if (sec_log_buf && sec_log_ptr) {
+		sec_log_buf[*sec_log_ptr & (sec_log_size - 1)] = c;
+		(*sec_log_ptr)++;
+	}
+}
+
+static int __init sec_log_setup(char *str)
+{
+	unsigned size = memparse(str, &str);
+	unsigned long flags;
+
+	if (size && (size == roundup_pow_of_two(size)) && (*str == '@')) {
+		unsigned long long base = 0;
+		unsigned *sec_log_mag;
+		unsigned start;
+
+		base = simple_strtoul(++str, &str, 0);
+		if (reserve_bootmem(base - 8, size + 8, BOOTMEM_EXCLUSIVE)) {
+			pr_err("%s: failed reserving size %d + 8 "
+			       "at base 0x%llx - 8\n", __func__, size, base);
+			goto out;
+		}
+		sec_log_mag = phys_to_virt(base) - 8;
+		sec_log_ptr = phys_to_virt(base) - 4;
+		sec_log_buf = phys_to_virt(base);
+		sec_log_size = size;
+		pr_info("%s: *sec_log_mag:%x *sec_log_ptr:%x "
+			"sec_log_buf:%p sec_log_size:%d\n",
+			__func__, *sec_log_mag, *sec_log_ptr, sec_log_buf,
+			sec_log_size);
+
+		spin_lock_irqsave(&logbuf_lock, flags);
+
+		if (*sec_log_mag != LOG_MAGIC) {
+			*sec_log_ptr = 0;
+			*sec_log_mag = LOG_MAGIC;
+		}
+
+		start = min(con_start, log_start);
+		while (start != log_end) {
+			emit_sec_log_char(__log_buf
+					  [start++ & (__LOG_BUF_LEN - 1)]);
+		}
+		spin_unlock_irqrestore(&logbuf_lock, flags);
+	}
+	/* sec_getlog_supply_kloginfo(sec_log_buf); */
+
+ out:
+	return 1;
+}
+
+__setup("sec_log=", sec_log_setup);
+
+#else
+
+static inline void emit_sec_log_char(char c)
+{
+}
+
+#endif
 
 #ifdef CONFIG_BOOT_PRINTK_DELAY
 
@@ -347,23 +429,23 @@ int log_buf_copy(char *dest, int idx, int len)
  *	9 -- Return number of unread characters in the log buffer
  *     10 -- Return size of the log buffer
  */
-int do_syslog(int type, char __user *buf, int len)
+int do_syslog(int type, char __user *buf, int len, bool from_file)
 {
 	unsigned i, j, limit, count;
 	int do_clear = 0;
 	char c;
 	int error = 0;
 
-	error = security_syslog(type);
+	error = security_syslog(type, from_file);
 	if (error)
 		return error;
 
 	switch (type) {
-	case 0:		/* Close log */
+	case SYSLOG_ACTION_CLOSE:	/* Close log */
 		break;
-	case 1:		/* Open log */
+	case SYSLOG_ACTION_OPEN:	/* Open log */
 		break;
-	case 2:		/* Read from log */
+	case SYSLOG_ACTION_READ:	/* Read from log */
 		error = -EINVAL;
 		if (!buf || len < 0)
 			goto out;
@@ -394,10 +476,12 @@ int do_syslog(int type, char __user *buf, int len)
 		if (!error)
 			error = i;
 		break;
-	case 4:		/* Read/clear last kernel messages */
+	/* Read/clear last kernel messages */
+	case SYSLOG_ACTION_READ_CLEAR:
 		do_clear = 1;
 		/* FALL THRU */
-	case 3:		/* Read last kernel messages */
+	/* Read last kernel messages */
+	case SYSLOG_ACTION_READ_ALL:
 		error = -EINVAL;
 		if (!buf || len < 0)
 			goto out;
@@ -450,21 +534,25 @@ int do_syslog(int type, char __user *buf, int len)
 			}
 		}
 		break;
-	case 5:		/* Clear ring buffer */
+	/* Clear ring buffer */
+	case SYSLOG_ACTION_CLEAR:
 		logged_chars = 0;
 		break;
-	case 6:		/* Disable logging to console */
+	/* Disable logging to console */
+	case SYSLOG_ACTION_CONSOLE_OFF:
 		if (saved_console_loglevel == -1)
 			saved_console_loglevel = console_loglevel;
 		console_loglevel = minimum_console_loglevel;
 		break;
-	case 7:		/* Enable logging to console */
+	/* Enable logging to console */
+	case SYSLOG_ACTION_CONSOLE_ON:
 		if (saved_console_loglevel != -1) {
 			console_loglevel = saved_console_loglevel;
 			saved_console_loglevel = -1;
 		}
 		break;
-	case 8:		/* Set level of messages printed to console */
+	/* Set level of messages printed to console */
+	case SYSLOG_ACTION_CONSOLE_LEVEL:
 		error = -EINVAL;
 		if (len < 1 || len > 8)
 			goto out;
@@ -475,10 +563,12 @@ int do_syslog(int type, char __user *buf, int len)
 		saved_console_loglevel = -1;
 		error = 0;
 		break;
-	case 9:		/* Number of chars in the log buffer */
+	/* Number of chars in the log buffer */
+	case SYSLOG_ACTION_SIZE_UNREAD:
 		error = log_end - log_start;
 		break;
-	case 10:	/* Size of the log buffer */
+	/* Size of the log buffer */
+	case SYSLOG_ACTION_SIZE_BUFFER:
 		error = log_buf_len;
 		break;
 	default:
@@ -491,8 +581,24 @@ out:
 
 SYSCALL_DEFINE3(syslog, int, type, char __user *, buf, int, len)
 {
-	return do_syslog(type, buf, len);
+	return do_syslog(type, buf, len, SYSLOG_FROM_CALL);
 }
+
+#ifdef	CONFIG_KGDB_KDB
+/* kdb dmesg command needs access to the syslog buffer.  do_syslog()
+ * uses locks so it cannot be used during debugging.  Just tell kdb
+ * where the start and end of the physical and logical logs are.  This
+ * is equivalent to do_syslog(3).
+ */
+void kdb_syslog_data(char *syslog_data[4])
+{
+	syslog_data[0] = log_buf;
+	syslog_data[1] = log_buf + log_buf_len;
+	syslog_data[2] = log_buf + log_end -
+		(logged_chars < log_buf_len ? logged_chars : log_buf_len);
+	syslog_data[3] = log_buf + log_end;
+}
+#endif	/* CONFIG_KGDB_KDB */
 
 /*
  * Call the console drivers on a range of log_buf
@@ -598,6 +704,8 @@ static void emit_log_char(char c)
 		con_start = log_end - log_buf_len;
 	if (logged_chars < log_buf_len)
 		logged_chars++;
+
+	emit_sec_log_char(c);
 }
 
 /*
@@ -667,6 +775,14 @@ asmlinkage int printk(const char *fmt, ...)
 	va_list args;
 	int r;
 
+#ifdef CONFIG_KGDB_KDB
+	if (unlikely(kdb_trap_printk)) {
+		va_start(args, fmt);
+		r = vkdb_printf(fmt, args);
+		va_end(args);
+		return r;
+	}
+#endif
 	va_start(args, fmt);
 	r = vprintk(fmt, args);
 	va_end(args);
@@ -1009,7 +1125,7 @@ int update_console_cmdline(char *name, int idx, char *name_new, int idx_new, cha
 	return -1;
 }
 
-int console_suspend_enabled = 0;// amit: enable uart suspend logs.
+int console_suspend_enabled = 1;
 EXPORT_SYMBOL(console_suspend_enabled);
 
 static int __init console_suspend_disable(char *str)
@@ -1455,11 +1571,11 @@ late_initcall(disable_boot_consoles);
  */
 DEFINE_RATELIMIT_STATE(printk_ratelimit_state, 5 * HZ, 10);
 
-int printk_ratelimit(void)
+int __printk_ratelimit(const char *func)
 {
-	return __ratelimit(&printk_ratelimit_state);
+	return ___ratelimit(&printk_ratelimit_state, func);
 }
-EXPORT_SYMBOL(printk_ratelimit);
+EXPORT_SYMBOL(__printk_ratelimit);
 
 /**
  * printk_timed_ratelimit - caller-controlled printk ratelimiting
@@ -1483,4 +1599,123 @@ bool printk_timed_ratelimit(unsigned long *caller_jiffies,
 	return false;
 }
 EXPORT_SYMBOL(printk_timed_ratelimit);
+
+static DEFINE_SPINLOCK(dump_list_lock);
+static LIST_HEAD(dump_list);
+
+/**
+ * kmsg_dump_register - register a kernel log dumper.
+ * @dumper: pointer to the kmsg_dumper structure
+ *
+ * Adds a kernel log dumper to the system. The dump callback in the
+ * structure will be called when the kernel oopses or panics and must be
+ * set. Returns zero on success and %-EINVAL or %-EBUSY otherwise.
+ */
+int kmsg_dump_register(struct kmsg_dumper *dumper)
+{
+	unsigned long flags;
+	int err = -EBUSY;
+
+	/* The dump callback needs to be set */
+	if (!dumper->dump)
+		return -EINVAL;
+
+	spin_lock_irqsave(&dump_list_lock, flags);
+	/* Don't allow registering multiple times */
+	if (!dumper->registered) {
+		dumper->registered = 1;
+		list_add_tail(&dumper->list, &dump_list);
+		err = 0;
+	}
+	spin_unlock_irqrestore(&dump_list_lock, flags);
+
+	return err;
+}
+EXPORT_SYMBOL_GPL(kmsg_dump_register);
+
+/**
+ * kmsg_dump_unregister - unregister a kmsg dumper.
+ * @dumper: pointer to the kmsg_dumper structure
+ *
+ * Removes a dump device from the system. Returns zero on success and
+ * %-EINVAL otherwise.
+ */
+int kmsg_dump_unregister(struct kmsg_dumper *dumper)
+{
+	unsigned long flags;
+	int err = -EINVAL;
+
+	spin_lock_irqsave(&dump_list_lock, flags);
+	if (dumper->registered) {
+		dumper->registered = 0;
+		list_del(&dumper->list);
+		err = 0;
+	}
+	spin_unlock_irqrestore(&dump_list_lock, flags);
+
+	return err;
+}
+EXPORT_SYMBOL_GPL(kmsg_dump_unregister);
+
+static const char const *kmsg_reasons[] = {
+	[KMSG_DUMP_OOPS]	= "oops",
+	[KMSG_DUMP_PANIC]	= "panic",
+	[KMSG_DUMP_KEXEC]	= "kexec",
+};
+
+static const char *kmsg_to_str(enum kmsg_dump_reason reason)
+{
+	if (reason >= ARRAY_SIZE(kmsg_reasons) || reason < 0)
+		return "unknown";
+
+	return kmsg_reasons[reason];
+}
+
+/**
+ * kmsg_dump - dump kernel log to kernel message dumpers.
+ * @reason: the reason (oops, panic etc) for dumping
+ *
+ * Iterate through each of the dump devices and call the oops/panic
+ * callbacks with the log buffer.
+ */
+void kmsg_dump(enum kmsg_dump_reason reason)
+{
+	unsigned long end;
+	unsigned chars;
+	struct kmsg_dumper *dumper;
+	const char *s1, *s2;
+	unsigned long l1, l2;
+	unsigned long flags;
+
+	/* Theoretically, the log could move on after we do this, but
+	   there's not a lot we can do about that. The new messages
+	   will overwrite the start of what we dump. */
+	spin_lock_irqsave(&logbuf_lock, flags);
+	end = log_end & LOG_BUF_MASK;
+	chars = logged_chars;
+	spin_unlock_irqrestore(&logbuf_lock, flags);
+
+	if (logged_chars > end) {
+		s1 = log_buf + log_buf_len - logged_chars + end;
+		l1 = logged_chars - end;
+
+		s2 = log_buf;
+		l2 = end;
+	} else {
+		s1 = "";
+		l1 = 0;
+
+		s2 = log_buf + end - logged_chars;
+		l2 = logged_chars;
+	}
+
+	if (!spin_trylock_irqsave(&dump_list_lock, flags)) {
+		printk(KERN_ERR "dump_kmsg: dump list lock is held during %s, skipping dump\n",
+				kmsg_to_str(reason));
+		return;
+	}
+	list_for_each_entry(dumper, &dump_list, list)
+		dumper->dump(dumper, reason, s1, l1, s2, l2);
+	spin_unlock_irqrestore(&dump_list_lock, flags);
+}
 #endif

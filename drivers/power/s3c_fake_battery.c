@@ -458,16 +458,6 @@ void s3c_cable_check_status(int flag)
 }
 EXPORT_SYMBOL(s3c_cable_check_status);
 
-void s3c_cable_changed(void)
-{
-	printk(KERN_ERR "%s: do nothing!\n", __func__);
-}
-
-void s3c_cable_charging(void)
-{
-	printk(KERN_ERR "%s: do nothing!\n", __func__);
-}
-
 #ifdef CONFIG_PM
 static int s3c_bat_suspend(struct platform_device *pdev, 
 		pm_message_t state)

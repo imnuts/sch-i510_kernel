@@ -1,6 +1,8 @@
 config SND_S3C24XX_SOC
 	tristate "Samsung S5P Audio Drivers"
 	depends on ARCH_S5PV210
+	#tristate "SoC Audio for the Samsung S3CXXXX chips"
+	#depends on ARCH_S3C2410 || ARCH_S3C64XX
 	select S3C64XX_DMA if ARCH_S3C64XX
 	help
 	  Say Y or M if you want to add support for codecs attached to
@@ -25,35 +27,24 @@ config SND_S3C2412_SOC_I2S
 config SND_S3C64XX_SOC_I2S
 	tristate
 	select SND_S3C_I2SV2_SOC
-#	select S3C64XX_DMA
+	select S3C64XX_DMA
 
-config SND_C110_PCM
-	tristate "PCM-wm8994 device"
-	depends on SND_S3C64XX_SOC_I2S
-	select SND_S3C_SOC_PCM
- 	select SND_SOC_WM8994_PCM 
-
-config SND_S3C64XX_SOC_WM8580
+config SND_S5PC1XX_SOC_I2S
 	tristate
+	select SND_S3C_I2SV2_SOC
+	select S5PC1XX_DMA
 
-config SND_S5PV2XX_SOC_WM8580
+config SND_S3C64XX_SOC_I2S_V4
 	tristate
+	select SND_S3C_I2SV2_SOC
+	select S3C64XX_DMA
 
-config SND_S5PV2XX_SOC_WM8580_PCM
-	tristate
-
-config SND_ARIES_SOC_WM8994
-	tristate
-
-config SND_S3C2443_SOC_AC97
-	tristate
-	select S3C2410_DMA
-	select AC97_BUS
-	select SND_SOC_AC97_BUS
-	
 config SND_S3C_SOC_AC97
 	tristate
 	select SND_SOC_AC97_BUS
+
+config SND_S5P_SOC_WM8994
+	tristate
 
 config SND_S3C24XX_SOC_NEO1973_WM8753
 	tristate "SoC I2S Audio support for NEO1973 - WM8753"
@@ -81,43 +72,48 @@ config SND_S3C24XX_SOC_JIVE_WM8750
 	help
 	  Sat Y if you want to add support for SoC audio on the Jive.
 
-config  SND_ARIES_WM8994
-	tristate "SoC I2S Audio support for WM8994-I2S on UNIVERSAL"
-	depends on SND_S3C24XX_SOC && (MACH_S5PC110_ARIES || MACH_S5PC110_P1)
-	select SND_ARIES_SOC_WM8994 if (MACH_S5PC110_ARIES || MACH_S5PC110_P1)
-	select SND_SOC_WM8994
-	select SND_S3C64XX_SOC_I2S 
-
-config	SND_ARIES_WM8994_MASTER
-	bool "WM8994 master"
-	depends on SND_ARIES_SOC_WM8994
-	default n
-	help
-	  Say Y if you want to run SoC as I2S-Slave and CODEC as I2S-Master.
-
-
-config SND_SMDK_WM8580
-	tristate "SoC I2S Audio support for WM8580 on SMDK"
-	depends on SND_S3C24XX_SOC && (MACH_SMDK6400 || MACH_SMDK6410 || MACH_SMDKV210 || MACH_SMDKC110)
-	select SND_S3C64XX_SOC_WM8580 if (MACH_SMDK6410 || MACH_SMDK6400)
-	select SND_S5PV2XX_SOC_WM8580 if (MACH_SMDKV210 || MACH_SMDKC110)
+config SND_S3C64XX_SOC_WM8580
+	tristate "SoC I2S Audio support for WM8580 on SMDK64XX"
+	depends on SND_S3C24XX_SOC && MACH_SMDK6410
 	select SND_SOC_WM8580
-	select SND_S3C64XX_SOC_I2S
+	select SND_S3C64XX_SOC_I2S_V4
 	help
-	  Sat Y if you want to add support for SoC audio on the SMDK with WM8580 codec.
+	  Say Y if you want to add support for SoC audio on the SMDK6410.
 
-config  WM8580_MASTER
-	bool "WM8580 Codec is I2S Master"
-	depends on SND_S5PV2XX_SOC_WM8580
-	default n
+config  SND_S5P_WM8994 
+	tristate "SoC I2S Audio support for WM8994-I2S on UNIVERSAL"
+	depends on SND_S3C24XX_SOC
+	select SND_S5P_SOC_WM8994
+	select SND_SOC_WM8994
+	select SND_S5PC1XX_SOC_I2S 
+
+config	SND_S5P_WM8994_MASTER
+	bool "WM8994 master"
+	depends on SND_S5P_SOC_WM8994
+	default y 
 	help
 	  Say Y if you want to run SoC as I2S-Slave and CODEC as I2S-Master.
+
+config  S5P_INTERNAL_DMA
+	bool "IIS operate with Internal DMA"
+	depends on SND_S5P_SOC_WM8994
+	default y
+	help
+	  Say Y for IIS to operate with Internal DMA(IIS's own DMA)
+	 
+config SND_C110_PCM
+	tristate "PCM-wm8994 device"
+	depends on SND_S5P_WM8994
+	select SND_S3C_SOC_PCM
+ 	select SND_SOC_WM8994_PCM
 
 config SND_S3C24XX_SOC_SMDK2443_WM9710
 	tristate "SoC AC97 Audio support for SMDK2443 - WM9710"
 	depends on SND_S3C24XX_SOC && MACH_SMDK2443
-	select SND_S3C2443_SOC_AC97
+	select S3C2410_DMA
+	select AC97_BUS
 	select SND_SOC_AC97_CODEC
+	select SND_S3C_SOC_AC97
 	help
 	  Say Y if you want to add support for SoC audio on smdk2443
 	  with the WM9710.
@@ -125,8 +121,10 @@ config SND_S3C24XX_SOC_SMDK2443_WM9710
 config SND_S3C24XX_SOC_LN2440SBC_ALC650
 	tristate "SoC AC97 Audio support for LN2440SBC - ALC650"
 	depends on SND_S3C24XX_SOC && ARCH_S3C2410
-	select SND_S3C2443_SOC_AC97
+	select S3C2410_DMA
+	select AC97_BUS
 	select SND_SOC_AC97_CODEC
+	select SND_S3C_SOC_AC97
 	help
 	  Say Y if you want to add support for SoC audio on ln2440sbc
 	  with the ALC650.
@@ -159,25 +157,8 @@ config SND_S3C24XX_SOC_SIMTEC_HERMES
 
 config SND_SOC_SMDK_WM9713
 	tristate "SoC AC97 Audio support for SMDK with WM9713"
-	depends on SND_S3C24XX_SOC && (MACH_SMDKV210 || MACH_SMDKC110)
+	depends on SND_S3C24XX_SOC && MACH_SMDK6410
 	select SND_SOC_WM9713
 	select SND_S3C_SOC_AC97
 	help
-	  Sat Y if you want to add support for SoC AC97 audio on the SMDK.
-
-config SND_SMDK_WM8580_PCM
-	tristate "SoC PCM Audio support for WM8580 on SMDK"
-	depends on SND_S3C24XX_SOC && (MACH_SMDKV210 || MACH_SMDKC110)
-	select SND_S5PV2XX_SOC_WM8580_PCM if (MACH_SMDKV210 || MACH_SMDKC110)
-	select SND_S3C_SOC_PCM
-	select SND_SOC_WM8580
-	help
-	  Say Y if you want to add support for SoC PCM audio on the SMDK.
-
-config ANDROID_BUF_NUM
-	int "Default number of Audio Ring Buffer"
-	default "4"
-	depends on !S5P_LPAUDIO && (SND_SMDK_WM8580 || SND_SMDK_WM8580_PCM || SND_SOC_SMDK_WM9713)
-	help
-		Number of Audio Ring Buffer for Android Platform.
-
+	  Sat Y if you want to add support for SoC audio on the SMDK.

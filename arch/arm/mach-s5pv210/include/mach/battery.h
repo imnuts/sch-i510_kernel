@@ -7,7 +7,6 @@ typedef enum
 	PM_CHARGER_TA,
 	PM_CHARGER_USB_CABLE, //after enumeration
 	PM_CHARGER_USB_INSERT,// when usb is connected.
-	PM_CHARGER_WIRELESS,
 	PM_CHARGER_DEFAULT
 } charging_device_type;
 

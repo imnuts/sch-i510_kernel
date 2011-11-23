@@ -22,7 +22,6 @@
 #include <plat/map-s5p.h>
 #include <mach/regs-gpio.h>
 #include <mach/map.h>
-#include <mach/pd.h>
 #include <plat/regs-fimc.h>
 
 struct platform_device; /* don't need the contents */
@@ -32,12 +31,12 @@ void s3c_fimc0_cfg_gpio(struct platform_device *pdev)
 	int i = 0;
 
 	/* CAM A port(b0010) : PCLK, VSYNC, HREF, DATA[0-4] */
-	for (i=0; i < 8; i++) {
+	for (i = 0; i < 8; i++) {
 		s3c_gpio_cfgpin(S5PV210_GPE0(i), S3C_GPIO_SFN(2));
 		s3c_gpio_setpull(S5PV210_GPE0(i), S3C_GPIO_PULL_NONE);
 	}
 	/* CAM A port(b0010) : DATA[5-7], CLKOUT(MIPI CAM also), FIELD */
-	for (i=0; i < 4; i++) {
+	for (i = 0; i < 3; i++) {
 		s3c_gpio_cfgpin(S5PV210_GPE1(i), S3C_GPIO_SFN(2));
 		s3c_gpio_setpull(S5PV210_GPE1(i), S3C_GPIO_PULL_NONE);
 	}
@@ -47,12 +46,12 @@ void s3c_fimc0_cfg_gpio(struct platform_device *pdev)
 	s3c_gpio_setpull(S5PV210_GPE1(4), S3C_GPIO_PULL_NONE);
 
 	/* CAM B port(b0011) : DATA[0-7] */
-	for (i=0; i < 8; i++) {
+	for (i = 0; i < 8; i++) {
 		s3c_gpio_cfgpin(S5PV210_GPJ0(i), S3C_GPIO_SFN(3));
 		s3c_gpio_setpull(S5PV210_GPJ0(i), S3C_GPIO_PULL_NONE);
 	}
 	/* CAM B port(b0011) : PCLK, VSYNC, HREF, FIELD, CLCKOUT */
-	for (i=0; i < 5; i++) {
+	for (i = 0; i < 5; i++) {
 		s3c_gpio_cfgpin(S5PV210_GPJ1(i), S3C_GPIO_SFN(3));
 		s3c_gpio_setpull(S5PV210_GPJ1(i), S3C_GPIO_PULL_NONE);
 	}
@@ -66,7 +65,6 @@ int s3c_fimc_clk_on(struct platform_device *pdev, struct clk *clk)
 	struct clk *sclk_fimc_lclk = NULL;
 	struct clk *mout_fimc_lclk = NULL;
 	struct clk *mout_mpll = NULL;
-	int ret;
 
 	mout_mpll = clk_get(&pdev->dev, "mout_mpll");
 	if (IS_ERR(mout_mpll)) {
@@ -99,12 +97,6 @@ int s3c_fimc_clk_on(struct platform_device *pdev, struct clk *clk)
 	clk_put(mout_mpll);
 	clk_put(mout_fimc_lclk);
 
-	ret = s5pv210_pd_enable("fimc_pd");
-	if (ret < 0) {
-		dev_err(&pdev->dev, "failed to enable fimc power domain\n");
-		goto err_clk3;
-	}
-
 	clk_enable(clk);
 
 	return 0;
@@ -121,15 +113,10 @@ err_clk1:
 
 int s3c_fimc_clk_off(struct platform_device *pdev, struct clk *clk)
 {
-	int ret;
-
 	clk_disable(clk);
 	clk_put(clk);
 
 	clk = NULL;
-	ret = s5pv210_pd_disable("fimc_pd");
-	if (ret < 0)
-		dev_err(&pdev->dev, "failed to disable fimc power domain\n");
 
 	return 0;
 }

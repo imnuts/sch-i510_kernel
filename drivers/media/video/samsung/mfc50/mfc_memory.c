@@ -18,10 +18,10 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <mach/map.h>
-#include <asm/io.h>
-#include <asm/uaccess.h>
+#include <linux/io.h>
+#include <linux/uaccess.h>
 #include <asm/sizes.h>
-#include <asm/memory.h>
+#include <linux/memory.h>
 #include <plat/media.h>
 
 #include "mfc_memory.h"
@@ -31,6 +31,7 @@
 void __iomem *mfc_sfr_base_vaddr;
 unsigned int mfc_port0_base_paddr, mfc_port1_base_paddr;
 unsigned char *mfc_port0_base_vaddr, *mfc_port1_base_vaddr;
+unsigned int  mfc_port0_memsize, mfc_port1_memsize;
 
 unsigned int mfc_get_fw_buff_paddr(void)
 {
@@ -44,12 +45,12 @@ unsigned char *mfc_get_fw_buff_vaddr(void)
 
 unsigned int mfc_get_port0_buff_paddr(void)
 {
-	return mfc_port0_base_paddr + MFC_FW_MAX_SIZE;  
+	return mfc_port0_base_paddr + MFC_FW_MAX_SIZE;
 }
 
 unsigned char *mfc_get_port0_buff_vaddr(void)
 {
-	return mfc_port0_base_vaddr + MFC_FW_MAX_SIZE;	
+	return mfc_port0_base_vaddr + MFC_FW_MAX_SIZE;
 }
 
 unsigned char *mfc_get_port1_buff_vaddr(void)
@@ -61,3 +62,4 @@ unsigned int mfc_get_port1_buff_paddr(void)
 {
 	return mfc_port1_base_paddr;
 }
+

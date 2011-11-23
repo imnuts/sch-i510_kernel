@@ -6,6 +6,7 @@
  * published by the Free Software Foundation.
 */
 
+#include <linux/gfp.h>
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
 
@@ -57,7 +58,7 @@ static int __init s3c_nand_copy_set(struct s3c2410_nand_set *set)
 		if (!ptr)
 			return -ENOMEM;
 	}
-
+	
 	if (set->nr_map && set->nr_chips) {
 		size = sizeof(int) * set->nr_chips;
 		ptr = kmemdup(set->nr_map, size, GFP_KERNEL);
@@ -75,7 +76,7 @@ static int __init s3c_nand_copy_set(struct s3c2410_nand_set *set)
 		if (!ptr)
 			return -ENOMEM;
 	}
-
+	
 	return 0;
 }
 
@@ -88,7 +89,7 @@ void __init s3c_nand_set_platdata(struct s3c2410_platform_nand *nand)
 	/* note, if we get a failure in allocation, we simply drop out of the
 	 * function. If there is so little memory available at initialisation
 	 * time then there is little chance the system is going to run.
-	 */
+	 */ 
 
 	npd = kmemdup(nand, sizeof(struct s3c2410_platform_nand), GFP_KERNEL);
 	if (!npd) {
@@ -111,7 +112,7 @@ void __init s3c_nand_set_platdata(struct s3c2410_platform_nand *nand)
 			printk(KERN_ERR "%s: no memory for sets\n", __func__);
 			return;
 		}
-
+		
 		for (i = 0; i < npd->nr_sets; i++) {
 			ret = s3c_nand_copy_set(to);
 			if (ret) {

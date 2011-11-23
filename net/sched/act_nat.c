@@ -159,6 +159,9 @@ static int tcf_nat(struct sk_buff *skb, struct tc_action *a,
 			iph->daddr = new_addr;
 
 		csum_replace4(&iph->check, addr, new_addr);
+	} else if ((iph->frag_off & htons(IP_OFFSET)) ||
+		   iph->protocol != IPPROTO_ICMP) {
+		goto out;
 	}
 
 	ihl = iph->ihl * 4;
@@ -202,7 +205,7 @@ static int tcf_nat(struct sk_buff *skb, struct tc_action *a,
 	{
 		struct icmphdr *icmph;
 
-		if (!pskb_may_pull(skb, ihl + sizeof(*icmph) + sizeof(*iph)))
+		if (!pskb_may_pull(skb, ihl + sizeof(*icmph)))
 			goto drop;
 
 		icmph = (void *)(skb_network_header(skb) + ihl);
@@ -212,6 +215,10 @@ static int tcf_nat(struct sk_buff *skb, struct tc_action *a,
 		    (icmph->type != ICMP_PARAMETERPROB))
 			break;
 
+		if (!pskb_may_pull(skb, ihl + sizeof(*icmph) + sizeof(*iph)))
+			goto drop;
+
+		icmph = (void *)(skb_network_header(skb) + ihl);
 		iph = (void *)(icmph + 1);
 		if (egress)
 			addr = iph->daddr;
@@ -240,13 +247,14 @@ static int tcf_nat(struct sk_buff *skb, struct tc_action *a,
 			iph->saddr = new_addr;
 
 		inet_proto_csum_replace4(&icmph->checksum, skb, addr, new_addr,
-					 1);
+					 0);
 		break;
 	}
 	default:
 		break;
 	}
 
+out:
 	return action;
 
 drop:

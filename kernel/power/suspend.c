@@ -15,10 +15,13 @@
 #include <linux/console.h>
 #include <linux/cpu.h>
 #include <linux/syscalls.h>
-#include <linux/cpufreq.h>
-#ifdef CONFIG_CPU_FREQ
-#include <mach/cpu-freq-v210.h>
-#endif
+#include <linux/gfp.h>
+#include <linux/io.h>
+#include <linux/kernel.h>
+#include <linux/list.h>
+#include <linux/mm.h>
+#include <linux/slab.h>
+#include <linux/suspend.h>
 
 #include "power.h"
 
@@ -196,6 +199,7 @@ static int suspend_enter(suspend_state_t state)
 int suspend_devices_and_enter(suspend_state_t state)
 {
 	int error;
+	gfp_t saved_mask;
 
 	if (!suspend_ops)
 		return -ENOSYS;
@@ -206,6 +210,7 @@ int suspend_devices_and_enter(suspend_state_t state)
 			goto Close;
 	}
 	suspend_console();
+	saved_mask = clear_gfp_allowed_mask(GFP_IOFS);
 	suspend_test_start();
 	error = dpm_suspend_start(PMSG_SUSPEND);
 	if (error) {
@@ -222,6 +227,7 @@ int suspend_devices_and_enter(suspend_state_t state)
 	suspend_test_start();
 	dpm_resume_end(PMSG_RESUME);
 	suspend_test_finish("resume devices");
+	set_gfp_allowed_mask(saved_mask);
 	resume_console();
  Close:
 	if (suspend_ops->end)
@@ -258,57 +264,15 @@ static void suspend_finish(void)
  *	Then, do the setup for suspend, enter the state, and cleaup (after
  *	we've woken up).
  */
-
-#ifdef CONFIG_CPU_FREQ
-bool gbClockFix = false;
-static bool userSpaceGovernor=false;
-static unsigned int g_cpuspeed=0;
-extern bool g_dvfs_fix_lock_limit;
-extern int s5pc110_pm_target(unsigned int target_freq);
-extern unsigned int s5pc110_getspeed(unsigned int cpu);
-#endif
 int enter_state(suspend_state_t state)
 {
 	int error;
-	struct cpufreq_policy policy;
 
 	if (!valid_state(state))
 		return -ENODEV;
 
 	if (!mutex_trylock(&pm_mutex))
 		return -EBUSY;
-
-
-#ifdef CONFIG_CPU_FREQ
-#if 1
-	// change cpufreq governor to performance
-	// if conservative governor
-	if(is_userspace_gov())
-	{
-		g_cpuspeed = s5pc110_getspeed(0);
-		printk("userspace cpu speed %d \n",g_cpuspeed);
-		userSpaceGovernor=true;
-    	} else if(is_conservative_gov()) {
-		/*Fix the upper transition scaling*/
-		g_dvfs_fix_lock_limit = true;
-		s5pc110_lock_dvfs_high_level(DVFS_LOCK_TOKEN_7, LEV_800MHZ);
-		gbClockFix = true;
-
-		error = cpufreq_get_policy(&policy, 0);
-		if(error)
-		{
-			printk("Failed to get policy\n");
-			goto Unlock;
-		}
-
-		cpufreq_driver_target(&policy, 800000, CPUFREQ_RELATION_L);
-	}
-	
-#else
-//	cpufreq_direct_set_policy(0, "userspace");
-//	cpufreq_direct_store_scaling_setspeed(0, "800000", 0);
-#endif
-#endif
 
 	printk(KERN_INFO "PM: Syncing filesystems ... ");
 	sys_sync();
@@ -330,25 +294,6 @@ int enter_state(suspend_state_t state)
 	suspend_finish();
  Unlock:
 	mutex_unlock(&pm_mutex);
-#ifdef CONFIG_CPU_FREQ
-#if 1
-	if(userSpaceGovernor)
-	{
-		s5pc110_pm_target(g_cpuspeed);
-		printk("recover userspace cpu speed %d \n",g_cpuspeed);
-		g_cpuspeed=0;
-		userSpaceGovernor=false;
-	}
-	// change cpufreq to original one
-	if(gbClockFix) {
-		g_dvfs_fix_lock_limit = false;
-		s5pc110_unlock_dvfs_high_level(DVFS_LOCK_TOKEN_7);
-		gbClockFix = false;
-	}
-#else
-//	cpufreq_direct_set_policy(0, "conservative");
-#endif
-#endif
 	return error;
 }
 

@@ -112,15 +112,14 @@ static int fimc_s_ctrl(struct file *filp, void *fh, struct v4l2_control *c)
 	return ret;
 }
 
-static int fimc_s_ext_ctrls(struct file *filp, void *fh, struct v4l2_ext_controls *c)
+static int fimc_s_ext_ctrls(struct file *filp, void *fh,
+				struct v4l2_ext_controls *c)
 {
 	struct fimc_control *ctrl = ((struct fimc_prv_data *)fh)->ctrl;
 	int ret = -1;
 
 	if (ctrl->cap != NULL) {
 		ret = fimc_s_ext_ctrls_capture(fh, c);
-	} else if (ctrl->out != NULL) {
-		/* How about "ret = fimc_s_ext_ctrls_output(fh, c);"? */
 	} else {
 		fimc_err("%s: Invalid case\n", __func__);
 		return -EINVAL;

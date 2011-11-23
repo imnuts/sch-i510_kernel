@@ -67,11 +67,7 @@ void rtc_time_to_tm(unsigned long time, struct rtc_time *tm)
 		year -= 1;
 		days += 365 + is_leap_year(year);
 	}
-#ifdef CONFIG_RTC_DRV_S3C
-	tm->tm_year = year - 2000;
-#else
 	tm->tm_year = year - 1900;
-#endif
 	tm->tm_yday = days + 1;
 
 	for (month = 0; month < 11; month++) {
@@ -97,7 +93,6 @@ EXPORT_SYMBOL(rtc_time_to_tm);
  */
 int rtc_valid_tm(struct rtc_time *tm)
 {
-#ifndef CONFIG_RTC_DRV_S3C
 	if (tm->tm_year < 70
 		|| ((unsigned)tm->tm_mon) >= 12
 		|| tm->tm_mday < 1
@@ -106,7 +101,7 @@ int rtc_valid_tm(struct rtc_time *tm)
 		|| ((unsigned)tm->tm_min) >= 60
 		|| ((unsigned)tm->tm_sec) >= 60)
 		return -EINVAL;
-#endif
+
 	return 0;
 }
 EXPORT_SYMBOL(rtc_valid_tm);
@@ -116,13 +111,8 @@ EXPORT_SYMBOL(rtc_valid_tm);
  */
 int rtc_tm_to_time(struct rtc_time *tm, unsigned long *time)
 {
-#ifdef CONFIG_RTC_DRV_S3C
-	*time = mktime(tm->tm_year + 2000, tm->tm_mon + 1, tm->tm_mday,
-			tm->tm_hour, tm->tm_min, tm->tm_sec);
-#else
 	*time = mktime(tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
 			tm->tm_hour, tm->tm_min, tm->tm_sec);
-#endif
 	return 0;
 }
 EXPORT_SYMBOL(rtc_tm_to_time);

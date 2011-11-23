@@ -170,11 +170,11 @@ int s3cfb_set_clock(struct s3cfb_global *ctrl)
 	if (strcmp(pdata->clk_name, "sclk_fimd") == 0) {
 		cfg |= S3C_VIDCON0_CLKSEL_SCLK;
 		src_clk = clk_get_rate(ctrl->clock);
-		printk(KERN_INFO "FIMD src sclk = %d\n", src_clk);
+//		printk(KERN_INFO "FIMD src sclk = %d\n", src_clk);
 	} else {
 		cfg |= S3C_VIDCON0_CLKSEL_HCLK;
 		src_clk = ctrl->clock->parent->rate;
-		printk(KERN_INFO "FIMD src hclk = %d\n", src_clk);
+//		printk(KERN_INFO "FIMD src hclk = %d\n", src_clk);
 	}
 
 	vclk = ctrl->fb[pdata->default_win]->var.pixclock;
@@ -209,7 +209,19 @@ int s3cfb_set_polarity(struct s3cfb_global *ctrl)
 
 	pol = &ctrl->lcd->polarity;
 	cfg = 0;
+#if defined(CONFIG_MACH_VIPER) || defined(CONFIG_MACH_CHIEF)
+	if (pol->rise_vclk)
+		cfg |= S3C_VIDCON1_IVCLK_FALLING_EDGE;
 
+	if (pol->inv_hsync)
+		cfg |= S3C_VIDCON1_IHSYNC_NORMAL;
+
+	if (pol->inv_vsync)
+		cfg |= S3C_VIDCON1_IVSYNC_NORMAL;
+
+	if (pol->inv_vden)
+		cfg |= S3C_VIDCON1_IVDEN_NORMAL;
+#else
 	if (pol->rise_vclk)
 		cfg |= S3C_VIDCON1_IVCLK_RISING_EDGE;
 
@@ -221,7 +233,7 @@ int s3cfb_set_polarity(struct s3cfb_global *ctrl)
 
 	if (pol->inv_vden)
 		cfg |= S3C_VIDCON1_IVDEN_INVERT;
-
+#endif
 	writel(cfg, ctrl->regs + S3C_VIDCON1);
 
 	return 0;
@@ -405,15 +417,15 @@ int s3cfb_window_on(struct s3cfb_global *ctrl, int id)
 	struct s3c_platform_fb *pdata = to_fb_plat(ctrl->dev);
 	u32 cfg;
 
-	cfg = readl(ctrl->regs + S3C_WINCON(id));
-	cfg |= S3C_WINCON_ENWIN_ENABLE;
-	writel(cfg, ctrl->regs + S3C_WINCON(id));
-
 	if (pdata->hw_ver == 0x62) {
 		cfg = readl(ctrl->regs + S3C_WINSHMAP);
 		cfg |= S3C_WINSHMAP_CH_ENABLE(id);
 		writel(cfg, ctrl->regs + S3C_WINSHMAP);
 	}
+
+	cfg = readl(ctrl->regs + S3C_WINCON(id));
+	cfg |= S3C_WINCON_ENWIN_ENABLE;
+	writel(cfg, ctrl->regs + S3C_WINCON(id));
 
 	dev_dbg(ctrl->dev, "[fb%d] turn on\n", id);
 
@@ -595,6 +607,18 @@ int s3cfb_set_buffer_address(struct s3cfb_global *ctrl, int id)
 		id, start_addr, end_addr);
 
 	return 0;
+}
+
+int s3cfb_set_alpha_value_width(struct s3cfb_global *ctrl, int id)
+{
+       struct fb_info *fb = ctrl->fb[id];
+       struct fb_var_screeninfo *var = &fb->var;
+
+       if (var->bits_per_pixel == 32 && var->transp.length > 0)
+               writel(1, ctrl->regs + S3C_BLENDCON);
+       else
+               writel(0, ctrl->regs + S3C_BLENDCON);
+
 }
 
 int s3cfb_set_alpha_blending(struct s3cfb_global *ctrl, int id)

@@ -27,18 +27,20 @@
 #define MFC_MAX_INSTANCE_NUM (CONFIG_VIDEO_MFC_MAX_INSTANCE)
 #endif
 
-#define 	SET_MEM_1080P	1
-#define	SET_MEM_720P		0
+#define SET_MEM_1080P	1
+#define	SET_MEM_720P	0
 
-#if	SET_MEM_1080P	
-//--------------------------	Memory Configuration for 1080P
-/* MFC_FW_TOTAL_BUF_SIZE should be aligned to 4KB (page size) : icarus */
+#if SET_MEM_1080P
+/*
+ * Memory Configuration for 1080P
+ * MFC_FW_TOTAL_BUF_SIZE should be aligned to 4KB (page size)
+ */
 #define MFC_FW_TOTAL_BUF_SIZE (ALIGN_TO_4KB(MFC_FW_MAX_SIZE + MFC_MAX_INSTANCE_NUM * MFC_FW_BUF_SIZE))
-#define MFC_FW_MAX_SIZE       (2 *1024 * 1024) /* 2MB : 2x1024x1024                  */
+#define MFC_FW_MAX_SIZE       (512 * 1024) /* 512KB : 512x1024                  */
 #define MFC_FW_BUF_SIZE       (512 * 1024)     /* 512KB : 512x1024 size per instance */
 
 #define RISC_BUF_SIZE         (0x80000)        /* 512KB : 512x1024 size per instance */
-#define CPB_BUF_SIZE          (0x300000)       /* 3MB   : 3x1024x1024 for decoder    */
+#define CPB_BUF_SIZE          (0x180000)       /* 1.5MB   : 1.5x1024x1024 for decoder    */
 #define DESC_BUF_SIZE         (0x20000)        /* 128KB : 128x1024                   */
 #define SHARED_BUF_SIZE       (0x10000)        /* 64KB  :  64x1024                   */
 #define PRED_BUF_SIZE         (0x10000)        /* 64KB  :  64x1024                   */
@@ -58,9 +60,9 @@
 #define H263ENC_CONTEXT_SIZE  (64 * 1024)      /* 10KB  ->  64KB for alignment       */
 
 #else
-//--------------------------	Memory Configuration for 720P
+/* Memory Configuration for 720P */
 #define MFC_FW_TOTAL_BUF_SIZE (ALIGN_TO_4KB(MFC_FW_MAX_SIZE + MFC_MAX_INSTANCE_NUM * MFC_FW_BUF_SIZE))
-#define MFC_FW_MAX_SIZE       (2 *1024 * 1024) /* 2MB : 2x1024x1024                  */
+#define MFC_FW_MAX_SIZE       (2 * 1024 * 1024) /* 2MB : 2x1024x1024                  */
 #define MFC_FW_BUF_SIZE       (512 * 1024)     /* 512KB : 512x1024 size per instance */
 
 #define RISC_BUF_SIZE         (0x80000)        /* 512KB : 512x1024 size per instance */
@@ -88,9 +90,10 @@
 unsigned int mfc_get_fw_buf_phys_addr(void);
 unsigned int mfc_get_risc_buf_phys_addr(int instNo);
 
-extern unsigned char *mfc_port0_base_vaddr; // port1
-extern unsigned char *mfc_port1_base_vaddr; // port0
+extern unsigned char *mfc_port0_base_vaddr; /* port1 */
+extern unsigned char *mfc_port1_base_vaddr; /* port0 */
 extern unsigned int mfc_port0_base_paddr, mfc_port1_base_paddr;
+extern unsigned int  mfc_port0_memsize, mfc_port1_memsize;
 
 unsigned int mfc_get_fw_buff_paddr(void);
 unsigned char *mfc_get_fw_buff_vaddr(void);

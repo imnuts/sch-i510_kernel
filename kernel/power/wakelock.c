@@ -24,9 +24,8 @@
 #endif
 #include "power.h"
 #ifdef CONFIG_SVNET_WHITELIST
-#include <linux/delay.h>
 #include "portlist.h"
-#endif /* CONFIG_SVNET_WHITELIST */
+#endif
 
 enum {
 	DEBUG_EXIT_SUSPEND = 1U << 0,
@@ -228,7 +227,7 @@ static void print_active_locks(int type)
 				pr_info("wake lock %s, expired\n", lock->name);
 		} else {
 			pr_info("active wake lock %s\n", lock->name);
-			if ((!debug_mask) & DEBUG_EXPIRE)
+			if (!(debug_mask & DEBUG_EXPIRE))
 				print_expired = false;
 		}
 	}
@@ -277,20 +276,18 @@ static void suspend(struct work_struct *work)
 	}
 
 #ifdef CONFIG_SVNET_WHITELIST
-	// call process white list
-	ret = process_whilte_list();
+	ret = process_white_list();
 	if (unlikely(ret !=0)) {
-		printk("fail to send whitelist\n");
+		pr_info("suspend: fail to send whitelist\n");
 		return;
 	} else {
-//		msleep(1000); // watch suspend condition change
 		if (has_wake_lock(WAKE_LOCK_SUSPEND)) {
 			if (debug_mask & DEBUG_SUSPEND)
-				pr_info("suspend: abort suspend after processing white list\n");
+				pr_info("suspend: abort suspend after white list\n");
 			return;
 		}
-	} 
-#endif /* CONFIG_SVNET_WHITELIST */
+	}
+#endif
 
 	entry_event_num = current_event_num;
 	sys_sync();
@@ -304,7 +301,7 @@ static void suspend(struct work_struct *work)
 		rtc_time_to_tm(ts.tv_sec, &tm);
 		pr_info("suspend: exit suspend, ret = %d "
 			"(%d-%02d-%02d %02d:%02d:%02d.%09lu UTC)\n", ret,
-			tm.tm_year + 2000, tm.tm_mon + 1, tm.tm_mday,
+			tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
 			tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec);
 	}
 	if (current_event_num == entry_event_num) {
@@ -558,50 +555,6 @@ static const struct file_operations wakelock_stats_fops = {
 	.release = single_release,
 };
 
-#ifdef CONFIG_S5P_LPAUDIO
-static int has_wake_lock_internal(const char *name)
-{
-	int ret = 0;
-	unsigned long irqflags;
-	struct wake_lock *lock, *n;
-
-	spin_lock_irqsave(&list_lock, irqflags);
-	list_for_each_entry_safe(lock, n, &active_wake_locks[WAKE_LOCK_SUSPEND], link) {
-		if (lock->flags & WAKE_LOCK_AUTO_EXPIRE) {
-			long timeout = lock->expires - jiffies;
-			if (timeout > 0) {
-				if (strcmp(lock->name, name) == 0) {
-					ret = 1;
-					spin_unlock_irqrestore(&list_lock, irqflags);
-					return ret;
-				}
-			}
-		} else {
-			if (strcmp(lock->name, name) == 0) {
-				ret = 1;
-				spin_unlock_irqrestore(&list_lock, irqflags);
-				return ret;
-			}
-		}
-	}
-	spin_unlock_irqrestore(&list_lock, irqflags);
-	return ret;
-}
-
-int has_audio_wake_lock(void)
-{
-	int ret = 0;
-
-	if (has_wake_lock_internal("AudioOutLock") &&
-		!has_wake_lock_internal("vbus_present")) {
-		ret = 1;
-		return ret;
-	}
-	return ret;
-}
-EXPORT_SYMBOL(has_audio_wake_lock);
-#endif /* CONFIG_S5P_LPAUDIO */
-
 static int __init wakelocks_init(void)
 {
 	int ret;
@@ -615,9 +568,9 @@ static int __init wakelocks_init(void)
 			"deleted_wake_locks");
 #endif
 	wake_lock_init(&main_wake_lock, WAKE_LOCK_SUSPEND, "main");
-	wake_lock_init(&sync_wake_lock, WAKE_LOCK_SUSPEND, "sync_system");
 	wake_lock(&main_wake_lock);
 	wake_lock_init(&unknown_wakeup, WAKE_LOCK_SUSPEND, "unknown_wakeups");
+	wake_lock_init(&sync_wake_lock, WAKE_LOCK_SUSPEND, "sync_system");
 
 	ret = platform_device_register(&power_device);
 	if (ret) {
@@ -640,7 +593,7 @@ static int __init wakelocks_init(void)
 	if (sync_work_queue == NULL) {
 		pr_err("%s: failed to create sync_work_queue\n", __func__);
 		ret = -ENOMEM;
-		goto err_suspend_work_queue;
+		goto err_sync_work_queue;
 	}
 
 #ifdef CONFIG_WAKELOCK_STAT
@@ -649,13 +602,15 @@ static int __init wakelocks_init(void)
 
 	return 0;
 
+err_sync_work_queue:
+	destroy_workqueue(suspend_work_queue);
 err_suspend_work_queue:
 	platform_driver_unregister(&power_driver);
 err_platform_driver_register:
 	platform_device_unregister(&power_device);
 err_platform_device_register:
-	wake_lock_destroy(&unknown_wakeup);
 	wake_lock_destroy(&sync_wake_lock);
+	wake_lock_destroy(&unknown_wakeup);
 	wake_lock_destroy(&main_wake_lock);
 #ifdef CONFIG_WAKELOCK_STAT
 	wake_lock_destroy(&deleted_wake_locks);
@@ -668,12 +623,12 @@ static void  __exit wakelocks_exit(void)
 #ifdef CONFIG_WAKELOCK_STAT
 	remove_proc_entry("wakelocks", NULL);
 #endif
-	destroy_workqueue(suspend_work_queue);
 	destroy_workqueue(sync_work_queue);
+	destroy_workqueue(suspend_work_queue);
 	platform_driver_unregister(&power_driver);
 	platform_device_unregister(&power_device);
-	wake_lock_destroy(&unknown_wakeup);
 	wake_lock_destroy(&sync_wake_lock);
+	wake_lock_destroy(&unknown_wakeup);
 	wake_lock_destroy(&main_wake_lock);
 #ifdef CONFIG_WAKELOCK_STAT
 	wake_lock_destroy(&deleted_wake_locks);

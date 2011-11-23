@@ -1,4 +1,4 @@
-/*
+﻿/*
  * s3c-dma.c  --  ALSA Soc Audio Layer
  *
  * (c) 2006 Wolfson Microelectronics PLC.
@@ -32,6 +32,8 @@
 
 #include "s3c-dma.h"
 
+#define NEW_DMA
+
 static const struct snd_pcm_hardware s3c_dma_hardware = {
 	.info			= SNDRV_PCM_INFO_INTERLEAVED |
 				    SNDRV_PCM_INFO_BLOCK_TRANSFER |
@@ -43,11 +45,11 @@ static const struct snd_pcm_hardware s3c_dma_hardware = {
 				    SNDRV_PCM_FMTBIT_U16_LE |
 				    SNDRV_PCM_FMTBIT_U8 |
 				    SNDRV_PCM_FMTBIT_S8,
-	.channels_min		= 1,
+	.channels_min		= 2,
 	.channels_max		= 2,
 	.buffer_bytes_max	= 128*1024,
 	.period_bytes_min	= 128,
-	.period_bytes_max	= 16*1024,
+	.period_bytes_max	= 32 * 1024,
 	.periods_min		= 2,
 	.periods_max		= 128,
 	.fifo_size		= 32,
@@ -65,9 +67,6 @@ struct s3c24xx_runtime_data {
 	struct s3c_dma_params *params;
 };
 
-extern unsigned int ring_buf_index;
-extern unsigned int period_index;
-
 /* s3c_dma_enqueue
  *
  * place a dma buffer onto the queue for the dma system
@@ -75,23 +74,53 @@ extern unsigned int period_index;
 */
 static void s3c_dma_enqueue(struct snd_pcm_substream *substream)
 {
-
 	struct s3c24xx_runtime_data *prtd = substream->runtime->private_data;
 	dma_addr_t pos = prtd->dma_pos;
-	unsigned long len = prtd->dma_period;
+	unsigned int limit;
 	int ret;
 
-	pr_debug("Entered %s\n", __FUNCTION__);
+	pr_debug("Entered %s\n", __func__);
 
-	if ((pos + len) > prtd->dma_end) {
-		len  = prtd->dma_end - pos;
-		pr_debug(KERN_DEBUG "%s: corrected dma len %ld\n",
-		       __FUNCTION__, len);
+	if (s3c_dma_has_circular())
+		limit = (prtd->dma_end - prtd->dma_start) / prtd->dma_period;
+	else
+		limit = prtd->dma_limit;
+
+	pr_debug("%s: loaded %d, limit %d\n",
+				__func__, prtd->dma_loaded, limit);
+
+	
+#ifdef NEW_DMA
+	ret = s3c2410_dma_enqueue_autoload (prtd->params->channel,
+		substream, pos, prtd->dma_period, limit);
+	if (ret == 0) {
+		prtd->dma_loaded += limit;
+		pos += prtd->dma_period;
 	}
+#else
+	while (prtd->dma_loaded < limit) {
+		unsigned long len = prtd->dma_period;
 
-	pr_debug("enqing at %x, %d bytes\n", pos, len);
-	ret = s3c2410_dma_enqueue(prtd->params->channel, substream, pos, len);
+		pr_debug("dma_loaded: %d\n", prtd->dma_loaded);
 
+		if ((pos + len) > prtd->dma_end) {
+			len  = prtd->dma_end - pos;
+			pr_debug(KERN_DEBUG "%s: corrected dma len %ld\n",
+			       __func__, len);
+		}
+
+		ret = s3c2410_dma_enqueue(prtd->params->channel,
+			substream, pos, len);
+
+		if (ret == 0) {
+			prtd->dma_loaded++;
+			pos += prtd->dma_period;
+			if (pos >= prtd->dma_end)
+				pos = prtd->dma_start;
+		} else
+			break;
+	}
+#endif
 	prtd->dma_pos = pos;
 }
 
@@ -109,17 +138,15 @@ static void s3c24xx_audio_buffdone(struct s3c2410_dma_chan *channel,
 
 	prtd = substream->runtime->private_data;
 
-	/* By Jung */
-	prtd->dma_pos += prtd->dma_period;
-	if (prtd->dma_pos >= prtd->dma_end)
-		prtd->dma_pos = prtd->dma_start;
-
-	//if (substream) //fixed 68937 (REVERSE_INULL) prevent defect
+	if (substream)
 		snd_pcm_period_elapsed(substream);
 
 	spin_lock(&prtd->lock);
 	if (prtd->state & ST_RUNNING && !s3c_dma_has_circular()) {
+		prtd->dma_loaded--;
+#ifndef NEW_DMA
 		s3c_dma_enqueue(substream);
+#endif
 	}
 
 	spin_unlock(&prtd->lock);
@@ -131,17 +158,13 @@ static int s3c_dma_hw_params(struct snd_pcm_substream *substream,
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct s3c24xx_runtime_data *prtd = runtime->private_data;
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	struct s3c_dma_params *dma = rtd->dai->cpu_dai->dma_data;
 	unsigned long totbytes = params_buffer_bytes(params);
-	unsigned int  periods  = params_periods(params);
+	struct s3c_dma_params *dma =
+		snd_soc_dai_get_dma_data(rtd->dai->cpu_dai, substream);
 	int ret = 0;
 
-	pr_debug("Entered %s\n", __func__);
 
-	/* By Jung */
-	if(substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
-		totbytes *= CONFIG_ANDROID_BUF_NUM;
-	}
+	pr_debug("Entered %s\n", __func__);
 
 	/* return if this is a bufferless transfer e.g.
 	 * codec <--> BT codec or GSM modem -- lg FIXME */
@@ -185,9 +208,12 @@ static int s3c_dma_hw_params(struct snd_pcm_substream *substream,
 	prtd->dma_start = runtime->dma_addr;
 	prtd->dma_pos = prtd->dma_start;
 	prtd->dma_end = prtd->dma_start + totbytes;
+
+	pr_debug("[PCM] DmaAddr=@%x Total=%lubytes PrdSz=%u #Prds=%u dma_area=0x%x\n",
+			prtd->dma_start, totbytes, params_period_bytes(params),
+			params_periods(params), (unsigned int)runtime->dma_area);
+
 	spin_unlock_irq(&prtd->lock);
-	printk("DmaAddr=@%x Total=%lubytes PrdSz=%u #Prds=%u, dmaEnd 0x%x\n",
-				runtime->dma_addr, totbytes, params_period_bytes(params), periods, prtd->dma_end);
 
 	return 0;
 }
@@ -236,13 +262,10 @@ static int s3c_dma_prepare(struct snd_pcm_substream *substream)
 	s3c2410_dma_config(prtd->params->channel,
 			   prtd->params->dma_size);
 
-	prtd->dma_pos  = prtd->dma_start;
-	if(substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
-		ring_buf_index = 0;
-		period_index   = 0;
-	}
 	/* flush the DMA channel */
 	s3c2410_dma_ctrl(prtd->params->channel, S3C2410_DMAOP_FLUSH);
+	prtd->dma_loaded = 0;
+	prtd->dma_pos = prtd->dma_start;
 
 	/* enqueue dma buffers */
 	s3c_dma_enqueue(substream);
@@ -260,18 +283,15 @@ static int s3c_dma_trigger(struct snd_pcm_substream *substream, int cmd)
 	spin_lock(&prtd->lock);
 
 	switch (cmd) {
-	case SNDRV_PCM_TRIGGER_RESUME:
-		s3c_dma_enqueue(substream);
 	case SNDRV_PCM_TRIGGER_START:
+	case SNDRV_PCM_TRIGGER_RESUME:
 	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
 		prtd->state |= ST_RUNNING;
 		s3c2410_dma_ctrl(prtd->params->channel, S3C2410_DMAOP_START);
 		break;
 
-	case SNDRV_PCM_TRIGGER_SUSPEND:
-		if (prtd->dma_loaded)
-			prtd->dma_loaded--;
 	case SNDRV_PCM_TRIGGER_STOP:
+	case SNDRV_PCM_TRIGGER_SUSPEND:
 	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
 		prtd->state &= ~ST_RUNNING;
 		s3c2410_dma_ctrl(prtd->params->channel, S3C2410_DMAOP_STOP);
@@ -298,16 +318,13 @@ s3c_dma_pointer(struct snd_pcm_substream *substream)
 	pr_debug("Entered %s\n", __func__);
 
 	spin_lock(&prtd->lock);
-#if 0
 	s3c2410_dma_getposition(prtd->params->channel, &src, &dst);
 
 	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE)
 		res = dst - prtd->dma_start;
 	else
 		res = src - prtd->dma_start;
-#else
-	res = prtd->dma_pos - prtd->dma_start;
-#endif
+
 	spin_unlock(&prtd->lock);
 
 	pr_debug("Pointer %x %x\n", src, dst);
@@ -317,17 +334,10 @@ s3c_dma_pointer(struct snd_pcm_substream *substream)
 	 * not having loaded the new values for the channel before being
 	 * callled... (todo - fix )
 	 */
-	/* By Jung */
-	if(substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
-		if (res >= snd_pcm_lib_buffer_bytes(substream) * CONFIG_ANDROID_BUF_NUM) {
-			if (res == snd_pcm_lib_buffer_bytes(substream) * CONFIG_ANDROID_BUF_NUM)
-				res = 0;
-		}
-	} else {
-		if (res >= snd_pcm_lib_buffer_bytes(substream)) {
-			if (res == snd_pcm_lib_buffer_bytes(substream))
-				res = 0;
-		}
+
+	if (res >= snd_pcm_lib_buffer_bytes(substream)) {
+		if (res == snd_pcm_lib_buffer_bytes(substream))
+			res = 0;
 	}
 
 	return bytes_to_frames(substream->runtime, res);
@@ -400,7 +410,6 @@ static int s3c_preallocate_dma_buffer(struct snd_pcm *pcm, int stream)
 	size_t size = s3c_dma_hardware.buffer_bytes_max;
 
 	pr_debug("Entered %s\n", __func__);
-
 	buf->dev.type = SNDRV_DMA_TYPE_DEV;
 	buf->dev.dev = pcm->card->dev;
 	buf->private_data = NULL;
@@ -409,9 +418,6 @@ static int s3c_preallocate_dma_buffer(struct snd_pcm *pcm, int stream)
 	if (!buf->area)
 		return -ENOMEM;
 	buf->bytes = size;
-
-	printk("%s: VA-%p, PA-%X, %ubytes\n", __func__, buf->area, buf->addr, buf->bytes);
-
 	return 0;
 }
 
@@ -423,12 +429,7 @@ static void s3c_dma_free_dma_buffers(struct snd_pcm *pcm)
 
 	pr_debug("Entered %s\n", __func__);
 
-//#ifdef CONFIG_S5P_LPAUDIO
-#if 0
-	for (stream = 1; stream < 2; stream++) {
-#else
 	for (stream = 0; stream < 2; stream++) {
-#endif
 		substream = pcm->streams[stream].substream;
 		if (!substream)
 			continue;
@@ -456,14 +457,12 @@ static int s3c_dma_new(struct snd_card *card,
 		card->dev->dma_mask = &s3c_dma_mask;
 	if (!card->dev->coherent_dma_mask)
 		card->dev->coherent_dma_mask = 0xffffffff;
-//#ifndef CONFIG_S5P_LPAUDIO //sayanta
 	if (dai->playback.channels_min) {
 		ret = s3c_preallocate_dma_buffer(pcm,
 			SNDRV_PCM_STREAM_PLAYBACK);
 		if (ret)
 			goto out;
 	}
-//#endif
 	if (dai->capture.channels_min) {
 		ret = s3c_preallocate_dma_buffer(pcm,
 			SNDRV_PCM_STREAM_CAPTURE);
@@ -475,8 +474,8 @@ static int s3c_dma_new(struct snd_card *card,
 }
 
 struct snd_soc_platform s3c24xx_pcm_soc_platform = {
-	.name		= "s3c24xx-audio",
-	.pcm_ops 	= &s3c_dma_ops,
+	.name		= "s3c24xx-pcm-audio",
+	.pcm_ops	= &s3c_dma_ops,
 	.pcm_new	= s3c_dma_new,
 	.pcm_free	= s3c_dma_free_dma_buffers,
 };

@@ -249,8 +249,9 @@ struct m5moLS_userset {
 #define M5MO_LS_AF_CONTINUOUS_ON		1
 
 #define M5MO_LS_AF_STATUS_MOVING		5
-#define M5MO_LS_AF_STATUS_SUCCESS		2
-#define M5MO_LS_AF_STATUS_FAILED		0
+#define M5MO_LS_AF_STATUS_SUCCESS		0x01
+#define M5MO_LS_AF_STATUS_FAILED		0x00
+#define M5MO_LS_AF_STATUS_CANCEL           0x02
 
 /* Image Effect */
 #define M5MO_LS_EFFECT_OFF				1

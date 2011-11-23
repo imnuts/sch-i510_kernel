@@ -19,6 +19,7 @@
  */
 
 #include <linux/errno.h>
+#include <linux/slab.h>
 #include <linux/kernel.h>
 #include <linux/list.h>
 #include <linux/string.h>
@@ -127,7 +128,7 @@ int usb_gadget_config_buf(
  * with identifiers (for interfaces, strings, endpoints, and more)
  * as needed by a given function instance.
  */
-struct usb_descriptor_header **__init
+struct usb_descriptor_header **
 usb_copy_descriptors(struct usb_descriptor_header **src)
 {
 	struct usb_descriptor_header **tmp;
@@ -174,7 +175,7 @@ usb_copy_descriptors(struct usb_descriptor_header **src)
  * intended use is to help remembering the endpoint descriptor to use
  * when enabling a given endpoint.
  */
-struct usb_endpoint_descriptor *__init
+struct usb_endpoint_descriptor *
 usb_find_endpoint(
 	struct usb_descriptor_header **src,
 	struct usb_descriptor_header **copy,
@@ -190,48 +191,23 @@ usb_find_endpoint(
 	return NULL;
 }
 
-struct usb_descriptor_header **
-usb_copy_descriptors_realloc(struct usb_descriptor_header **src)
-{
-	struct usb_descriptor_header **tmp;
-	unsigned bytes;
-	unsigned n_desc;
-	void *mem;
-	struct usb_descriptor_header **ret;
 
-	/* count descriptors and their sizes; then add vector size */
-	for (bytes = 0, n_desc = 0, tmp = src; *tmp; tmp++, n_desc++)
-		bytes += (*tmp)->bLength;
-	bytes += (n_desc + 1) * sizeof(*tmp);
-
-	mem = kmalloc(bytes, GFP_KERNEL);
-	if (!mem)
-		return NULL;
-
-	/* fill in pointers starting at "tmp",
-	 * to descriptors copied starting at "mem";
-	 * and return "ret"
-	 */
-	tmp = mem;
-	ret = mem;
-	mem += (n_desc + 1) * sizeof(*tmp);
-	while (*src) {
-		memcpy(mem, *src, (*src)->bLength);
-		*tmp = mem;
-		tmp++;
-		mem += (*src)->bLength;
-		src++;
-	}
-	*tmp = NULL;
-
-	return ret;
-}
-
-struct usb_endpoint_descriptor *
-usb_find_endpoint_realloc(
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
+/**
+ * usb_find_descriptor - find a copy of an descriptor header
+ * @src: original vector of descriptors
+ * @copy: copy of @src
+ * @match: descriptor found in @src
+ *
+ * This returns the copy of the @match descriptor made for @copy.  Its
+ * intended use is to help remembering the interface descriptor to use
+ * when changing a interface.
+ */
+struct usb_descriptor_header *
+usb_find_descriptor_header(
 	struct usb_descriptor_header **src,
 	struct usb_descriptor_header **copy,
-	struct usb_endpoint_descriptor *match
+	struct usb_descriptor_header *match
 )
 {
 	while (*src) {
@@ -243,3 +219,81 @@ usb_find_endpoint_realloc(
 	return NULL;
 }
 
+int usb_change_interface_num(
+	struct usb_descriptor_header **src,
+	struct usb_descriptor_header **copy,
+	struct usb_interface_descriptor *match,
+	int num)
+{
+	struct usb_descriptor_header *find_desc = NULL;
+
+	find_desc = usb_find_descriptor_header(
+		src, copy, (struct usb_descriptor_header *)match);
+	if (find_desc) {
+		((struct usb_interface_descriptor *)find_desc)
+		    ->bInterfaceNumber = num;
+		return 1;
+	}
+	return 0;
+}
+
+int usb_change_iad_num(
+	struct usb_descriptor_header **src,
+	struct usb_descriptor_header **copy,
+	struct usb_interface_assoc_descriptor *match,
+	int num)
+{
+	struct usb_descriptor_header *find_desc = NULL;
+
+	find_desc = usb_find_descriptor_header(
+		src, copy, (struct usb_descriptor_header *)match);
+	if (find_desc) {
+		((struct usb_interface_assoc_descriptor *)find_desc)
+		    ->bFirstInterface = num;
+		return 1;
+	}
+	return 0;
+}
+
+int usb_change_cdc_union_num(
+	struct usb_descriptor_header **src,
+	struct usb_descriptor_header **copy,
+	struct usb_cdc_union_desc *match,
+	int num,
+	int master)
+{
+	struct usb_descriptor_header *find_desc = NULL;
+
+	find_desc = usb_find_descriptor_header(
+		src, copy, (struct usb_descriptor_header *)match);
+	if (find_desc) {
+		if (master) {
+			((struct usb_cdc_union_desc *)find_desc)
+			    ->bMasterInterface0 = num;
+		} else {
+			((struct usb_cdc_union_desc *)find_desc)
+			    ->bSlaveInterface0 = num;
+		}
+		return 1;
+	}
+	return 0;
+}
+
+int usb_change_cdc_call_mgmt_num(
+	struct usb_descriptor_header **src,
+	struct usb_descriptor_header **copy,
+	struct usb_cdc_call_mgmt_descriptor *match,
+	int num)
+{
+	struct usb_descriptor_header *find_desc = NULL;
+
+	find_desc = usb_find_descriptor_header(
+		src, copy, (struct usb_descriptor_header *)match);
+	if (find_desc) {
+		((struct usb_cdc_call_mgmt_descriptor *)find_desc)
+		    ->bDataInterface = num;
+		return 1;
+	}
+	return 0;
+}
+#endif

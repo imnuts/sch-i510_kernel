@@ -15,6 +15,8 @@
 #ifndef __LINUX_USB_GADGET_H
 #define __LINUX_USB_GADGET_H
 
+#include <linux/slab.h>
+
 struct usb_ep;
 
 /**
@@ -428,6 +430,9 @@ struct usb_gadget_ops {
 	int	(*pullup) (struct usb_gadget *, int is_on);
 	int	(*ioctl)(struct usb_gadget *,
 				unsigned code, unsigned long param);
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE    
+        int    (*vbus_detect)(struct usb_gadget*);
+#endif
 };
 
 /**
@@ -492,9 +497,13 @@ static inline void set_gadget_data(struct usb_gadget *gadget, void *data)
 	{ dev_set_drvdata(&gadget->dev, data); }
 static inline void *get_gadget_data(struct usb_gadget *gadget)
 	{ return dev_get_drvdata(&gadget->dev); }
+static inline struct usb_gadget *dev_to_usb_gadget(struct device *dev)
+{
+	return container_of(dev, struct usb_gadget, dev);
+}
 
 /* iterates the non-control endpoints; 'tmp' is a struct usb_ep pointer */
-#define gadget_for_each_ep(tmp,gadget) \
+#define gadget_for_each_ep(tmp, gadget) \
 	list_for_each_entry(tmp, &(gadget)->ep_list, ep_list)
 
 
@@ -692,6 +701,25 @@ static inline int usb_gadget_disconnect(struct usb_gadget *gadget)
 	return gadget->ops->pullup(gadget, 0);
 }
 
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE  
+/**
+ * usb_gadget_vbus_detect - 
+ * @gadget:the peripheral being disconnected
+ *
+ * check usb vbus state 
+ *
+ * This routine is used askon mode 
+ * some power consumption issue, so we need to check ubs vbus state
+ *
+ * Returns zero on low state of vbus , else high state of vbus.
+ */
+static inline int usb_gadget_vbus_detect(struct usb_gadget *gadget)
+{
+	if (!gadget->ops->vbus_detect)
+		return -EOPNOTSUPP;
+	return gadget->ops->vbus_detect(gadget);
+}
+#endif
 
 /*-------------------------------------------------------------------------*/
 
@@ -874,23 +902,40 @@ struct usb_endpoint_descriptor *usb_find_endpoint(
 	struct usb_descriptor_header **copy,
 	struct usb_endpoint_descriptor *match);
 
-//10.10.19 Endpoint Realloc Nina ++ 
-//struct usb_descriptor_header **
-//usb_copy_descriptors_realloc(struct usb_descriptor_header **src);
-
-struct usb_descriptor_header **usb_copy_descriptors_realloc(
-		struct usb_descriptor_header **);
-
-
-struct usb_endpoint_descriptor *
-usb_find_endpoint_realloc(
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
+/* return copy of descriptor header given original descriptor set */
+struct usb_descriptor_header *
+usb_find_descriptor_header(
 	struct usb_descriptor_header **src,
 	struct usb_descriptor_header **copy,
-	struct usb_endpoint_descriptor *match
-);
-//10.10.19 Endpoint Realloc Nina --
+	struct usb_descriptor_header *match);
 
+int usb_change_interface_num(
+	struct usb_descriptor_header **src,
+	struct usb_descriptor_header **copy,
+	struct usb_interface_descriptor *match,
+	int num);
 
+int usb_change_iad_num(
+	struct usb_descriptor_header **src,
+	struct usb_descriptor_header **copy,
+	struct usb_interface_assoc_descriptor *match,
+	int num);
+
+#include <linux/usb/cdc.h>
+int usb_change_cdc_union_num(
+	struct usb_descriptor_header **src,
+	struct usb_descriptor_header **copy,
+	struct usb_cdc_union_desc *match,
+	int num,
+	int master);
+
+int usb_change_cdc_call_mgmt_num(
+	struct usb_descriptor_header **src,
+	struct usb_descriptor_header **copy,
+	struct usb_cdc_call_mgmt_descriptor *match,
+	int num);
+#endif
 /**
  * usb_free_descriptors - free descriptors returned by usb_copy_descriptors()
  * @v: vector of descriptors
@@ -907,29 +952,11 @@ static inline void usb_free_descriptors(struct usb_descriptor_header **v)
 extern struct usb_ep *usb_ep_autoconfig(struct usb_gadget *,
 			struct usb_endpoint_descriptor *) __devinit;
 
-
-extern struct usb_ep *usb_ep_mtpconfig (struct usb_gadget *,
-	struct usb_endpoint_descriptor *);
-
 extern void usb_ep_autoconfig_reset(struct usb_gadget *) __devinit;
 
-//10.10.22 ACM_RNDIS EP realloc +
-extern struct usb_ep *usb_specific_ep_config (struct usb_gadget *,
-	struct usb_endpoint_descriptor *);
-
-struct usb_ep *usb_specific_ep_realloc (
-	struct usb_gadget		*gadget,
-	struct usb_endpoint_descriptor	*desc
-);
-//10.10.22 ACM_RNDIS EP realloc -
-
-
-//10.10.19 Endpoint Realloc Nina ++
-struct usb_ep *usb_ep_autoconfig_realloc (
-	struct usb_gadget		*gadget,
-	struct usb_endpoint_descriptor	*desc
-);
-void usb_ep_autoconfig_reset_realloc (struct usb_gadget *gadget);
-//10.10.19 Endpoint Realloc Nina --
+#ifdef CONFIG_USB_ANDRPID_SHARE_ENDPOINT
+extern struct usb_ep *usb_ep_fixedconfig_alloc(struct usb_gadget *,
+			struct usb_endpoint_descriptor *) __devinit;
+#endif
 
 #endif /* __LINUX_USB_GADGET_H */
