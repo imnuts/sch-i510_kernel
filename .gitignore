@@ -93,14 +93,16 @@ GSYMS
 GTAGS
 
 *.orig
+*.rej
 *~
 \#*#
 
 # update files
-update_*/*.zip
-update_*/*.tar
-update_*/kernel_update/zImage
+update*/*.zip
+update*/*.tar
+update*/kernel_update/zImage
 *.zip
+*.tar.md5
 
 # Auto-generated files
 errlog.txt
