@@ -21,6 +21,9 @@
 #include <plat/map-base.h>
 #include <mach/regs-clock.h>
 #include "wm8994_samsung.h"
+#ifdef CONFIG_SND_VOODOO
+#include "wm8994_voodoo.h"
+#endif
 
 /* Debug Feature */
 #define SUBJECT "wm8994_stealthv.c"

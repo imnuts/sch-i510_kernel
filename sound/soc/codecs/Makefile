@@ -51,21 +51,40 @@ snd-soc-wm8988-objs := wm8988.o
 snd-soc-wm8990-objs := wm8990.o
 snd-soc-wm8993-objs := wm8993.o
 ifeq ($(CONFIG_MACH_STEALTHV),y)
+ifeq ($(CONFIG_SND_VOODOO),y)
+snd-soc-wm8994-objs := wm8994_samsung.o wm8994_stealthv.o wm8994_voodoo.o
+else
 snd-soc-wm8994-objs := wm8994_samsung.o wm8994_stealthv.o
+endif
 ifeq ($(CONFIG_SND_SOC_A1026),y)
 snd-soc-a1026-objs := A1026_i2c_drv.o
 endif
 else
 ifeq ($(CONFIG_MACH_AEGIS),y)
+ifeq ($(CONFIG_SND_VOODOO),y)
+snd-soc-wm8994-objs := wm8994_samsung.o wm8994_aegis.o wm8994_voodoo.o
+else
 snd-soc-wm8994-objs := wm8994_samsung.o wm8994_aegis.o
+endif
 else
 ifeq ($(CONFIG_MACH_VIPER),y)
+ifeq ($(CONFIG_SND_VOODOO),y)
+snd-soc-wm8994-objs := wm8994_samsung.o wm8994_viper.o wm8994_voodoo.o
+else
 snd-soc-wm8994-objs := wm8994_samsung.o wm8994_viper.o
+endif
 else
 ifeq ($(CONFIG_MACH_CHIEF),y)
+ifeq ($(CONFIG_SND_VOODOO),y)
+snd-soc-wm8994-objs := wm8994_samsung.o wm8994_chief.o wm8994_voodoo.o
+else
 snd-soc-wm8994-objs := wm8994_samsung.o wm8994_chief.o
+endif
+ifeq ($(CONFIG_SND_VOODOO),y)
+snd-soc-wm8994-objs := wm8994_samsung.o wm8994_aries.o wm8994_voodoo.o
 else
 snd-soc-wm8994-objs := wm8994_samsung.o wm8994_aries.o
+endif
 endif
 endif
 endif
