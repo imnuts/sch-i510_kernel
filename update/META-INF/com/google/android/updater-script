@@ -9,8 +9,6 @@ set_perm_recursive(0, 2000, 0755, 0755, "/system/xbin");
 set_perm(0, 0, 0755, "/tmp/kernel_update/bmlwrite");
 ui_print("Installing Kernel...");
 run_program("/tmp/kernel_update/bmlwrite", "/tmp/kernel_update/zImage", "/dev/block/bml8");
-ui_print("Installing Recovery...");
-run_program("/tmp/kernel_update/bmlwrite", "/tmp/kernel_update/zImage", "/dev/block/bml9");
 ui_print("Your kernel has been updated.");
 show_progress(0.2, 10);
 show_progress(0.1, 0);
