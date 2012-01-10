@@ -27,7 +27,7 @@ make clean mrproper > /dev/null 2>&1
 rm -f update/*.zip update/kernel_update/zImage
 
 make ARCH=arm charge_defconfig 1>/dev/null 2>"$WORK"/errlog.txt
-make -j6 CROSS_COMPILE=/opt/toolchains/arm-2010q1/bin/arm-none-linux-gnueabi- ARCH=arm HOSTCFLAGS="-g -O3" 1>"$WORK"/stdlog.txt 2>>"$WORK"/errlog.txt
+make -j3 CROSS_COMPILE=/opt/toolchains/arm-2010q1/bin/arm-none-linux-gnueabi- ARCH=arm HOSTCFLAGS="-g -O3" 1>"$WORK"/stdlog.txt 2>>"$WORK"/errlog.txt
 if [ $? != 0 ]; then
 		echo -e "FAIL!\n"
 		cd ..
@@ -44,6 +44,7 @@ if [ $CONFIG == novoodoo ]; then
 	tar -c recovery.bin > "$DATE"_charge_recovery.tar
 	md5sum -t "$DATE"_charge_recovery.tar >> "$DATE"_charge_recovery.tar
 	mv "$DATE"_charge_recovery.tar "$DATE"_charge_recovery.tar.md5
+	rm recovery.bin
 fi
 cd update
 zip -r -q kernel_update.zip .
