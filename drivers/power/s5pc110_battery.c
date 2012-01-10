@@ -1094,37 +1094,8 @@ static int batt_auth_full_check = 0;
 
 static unsigned int s3c_bat_check_v_f(struct chg_data *chg)
 {
-	int retval = 0;
-
-	if (chg->acc_status == ACC_TYPE_JIG) {
-		chg->bat_info.batt_health = POWER_SUPPLY_HEALTH_GOOD;
-		batt_auth_full_check = 1;
-		return 1;
-	}
-
-#if !defined (CONFIG_MACH_VIPER) && !defined (CONFIG_MACH_CHIEF)
-	if (batt_auth_full_check == 0) {
-		retval = verizon_batt_auth_full_check();
-		batt_auth_full_check = 1;
-		if (!retval) {
-			chg->bat_info.batt_health = POWER_SUPPLY_HEALTH_UNSPEC_FAILURE;
-			bat_info("/BATT_ID/ full check failed\n");
-			return 0;
-		}
-		bat_info("/BATT_ID/ full check passed\n");
-	} else {
-		retval = verizon_batt_auth_check();
-		if (!retval) {
-			bat_info("/BATT_ID/ normal check failed\n");
-			//chg->bat_info.batt_health = POWER_SUPPLY_HEALTH_UNSPEC_FAILURE;
-			/* Stop charging if battery auth failed (battery not present) without health change */
-			chg->charging = 0;
-			s5p_bat_charging_control(chg);
-			return 0;
-		}
-	}
-#endif
-
+	chg->bat_info.batt_health = POWER_SUPPLY_HEALTH_GOOD;
+	batt_auth_full_check = 1;
 	return 1;
 }
 #endif
@@ -1302,12 +1273,7 @@ static ssize_t s3c_bat_show_attrs(struct device *dev,
 		break;
 #ifdef CONFIG_BATTERY_VZW_AUTH
 	case AUTH_BATTERY:
-		if (chg->acc_status == ACC_TYPE_JIG)
-			i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n", 1);	/* ignore when jig is inserted */
-		else
-			i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
-				(chg->bat_info.batt_health == POWER_SUPPLY_HEALTH_UNSPEC_FAILURE) ?
-				0 : 1);
+		i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n", 1);	/* ignore when jig is inserted */
 		break;
 #endif
 #ifdef CONFIG_WIRELESS_CHARGING
