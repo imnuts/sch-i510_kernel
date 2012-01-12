@@ -659,7 +659,7 @@ static long  mtpg_ioctl(struct file *fd, unsigned int code, unsigned long arg)
 #ifdef  CONFIG_USB_ANDROID_ACCESSORY
 			if (dev->cdev && dev->cdev->gadget && (!dev->cdev->accessory_mode))
 #else
-			if (dev->cdev && dev->cdev->gadget )
+			if (dev->cdev && dev->cdev->gadget)
 #endif
 			{
 				printk("[%s] B4 disconnecting gadget\tline = [%d] \n", __func__,__LINE__);
@@ -925,7 +925,7 @@ static int __init mtpg_function_bind(struct usb_configuration *c, struct usb_fun
 
 	mtpg_interface_desc.bInterfaceNumber = id;
 
-#ifdef  CONFIG_USB_ANDRPID_SHARE_ENDPOINT
+#ifdef  CONFIG_USB_ANDROID_SHARE_ENDPOINT
 	ep = usb_ep_fixedconfig_alloc(cdev->gadget, &fs_mtpg_in_desc);
 #else
 	ep = usb_ep_autoconfig(cdev->gadget, &fs_mtpg_in_desc);
@@ -937,8 +937,8 @@ static int __init mtpg_function_bind(struct usb_configuration *c, struct usb_fun
 	ep->driver_data = mtpg;		/* claim the endpoint */
 	mtpg->bulk_in = ep;
 	the_mtpg->bulk_in = ep;
-
-#ifdef  CONFIG_USB_ANDRPID_SHARE_ENDPOINT
+    
+#ifdef  CONFIG_USB_ANDROID_SHARE_ENDPOINT
 	ep = usb_ep_fixedconfig_alloc(cdev->gadget, &fs_mtpg_out_desc);
 #else
 	ep = usb_ep_autoconfig(cdev->gadget, &fs_mtpg_out_desc);
@@ -1106,7 +1106,7 @@ static void mtp_complete_cancel_io(struct usb_ep *ep,
 		struct usb_request *req)
 {
 	int i;
-#ifdef CONFIG_USB_ANDRPID_SHARE_ENDPOINT                    
+#ifdef CONFIG_USB_ANDROID_SHARE_ENDPOINT                    
 	struct mtpg_dev	*dev = the_mtpg;
 #else
 	struct mtpg_dev	*dev = ep->driver_data;

@@ -109,6 +109,7 @@ struct adp5587_kpad {
 	struct input_dev *input;
 	struct delayed_work work;
 	struct delayed_work backlightoff;
+	struct delayed_work hall_ic_work;
 	unsigned long delay;
 	unsigned int keycode[ADP5587_KEYMAPSIZE];
 };
@@ -132,6 +133,12 @@ struct i2c_client *client_clone;
 extern unsigned char Quattro_hw_version;
 
 #define HALL_IC_PORT_CHANGE 2
+
+//hall_ic_delay_work queue
+static struct workqueue_struct *hall_ic_workqueue = NULL;
+static void hall_ic_handler(struct work_struct *unused);
+unsigned int hall_ic_workqueue_statue = 0;
+
 
 static int adp5587_read(struct i2c_client *client, u8 reg)
 {
@@ -187,7 +194,7 @@ static ssize_t key_store(struct device *dev, struct device_attribute *attr, char
 	else
 		adp5587_write(client_clone, ADP5587_REG_DAT_OUT3, 0x00); /* Status is W1C */
 }
-static DEVICE_ATTR(key , S_IRUGO | S_IWUSR | S_IWOTH | S_IXOTH, key_show, key_store);
+static DEVICE_ATTR(key , 0664, key_show, key_store);
 
 static ssize_t led_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -205,7 +212,19 @@ static ssize_t led_store(struct device *dev, struct device_attribute *attr, char
 	else
 		key_led_onoff(false);
 }
-static DEVICE_ATTR(led , S_IRUGO | S_IWUSR | S_IWOTH | S_IXOTH, led_show, led_store);
+static DEVICE_ATTR(led , 0664, led_show, led_store);
+
+static ssize_t slide_on_off_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int lid_status = gpio_get_value(HALL_GPIO);
+	// 1 => slide open
+	// 0 => slide close
+
+	return sprintf(buf, "%d\n", lid_status );
+}
+
+static DEVICE_ATTR(slide_on_off , 0664, slide_on_off_show, NULL);
+
 
 #ifdef FEATURE_DISABLE_SUBKEY
 static int keypad_backlight_power(int mainkey);
@@ -320,15 +339,18 @@ static void adp5587_work(struct work_struct *work)
 				else{
 					input_report_key(kpad->input, keycode, keypress);
 					input_sync(kpad->input);
-				
-					printk("[input_report_key] key %d, keycode %d, keypress %d\n", key, keycode, keypress);
+#ifdef CONFIG_SEC_KEY_DBG					
+					printk("[qwerty] key %d, keycode %d, keypress %d\n", key, keycode, keypress);
+#else
+					printk("[qwerty]\n");
+#endif
 					lockup_capture_check(keycode, keypress);
 				}
 			}
 		}
 	}
 	adp5587_write(client, ADP5587_REG_INT_STAT, status); /* Status is W1C */
-	printk(" Scheduling delayed work for backlight off in adp5587_work \n");
+	//printk(" Scheduling delayed work for backlight off in adp5587_work \n");
 }
 
 static irqreturn_t adp5587_irq(int irq, void *handle)
@@ -373,31 +395,49 @@ static void key_led_onoff(bool sw)
 #if defined(CONFIG_MACH_AEGIS) || defined(CONFIG_MACH_VIPER) || defined(CONFIG_MACH_CHIEF)
 static irqreturn_t slide_irq(int irq, void *handle)
 {
+	printk("slide_irq\n");
 	struct adp5587_kpad *kpad = handle;
+
+	if(hall_ic_workqueue_statue == 1) {
+		printk("%s : delayed workqueue cancel reqeust\n",__func__);
+		cancel_delayed_work(&kpad->hall_ic_work);
+		hall_ic_workqueue_statue = 0;
+	}
+
+	queue_delayed_work(hall_ic_workqueue,&kpad->hall_ic_work,HZ/10);
+	hall_ic_workqueue_statue = 1;
+
+	return IRQ_HANDLED;
+}
+#endif
+
+static void hall_ic_handler(struct work_struct *work)
+{
+	printk("%s called\n",__func__);
+	struct adp5587_kpad *kpad = container_of(work, struct adp5587_kpad, hall_ic_work.work);
 	struct input_dev *input = kpad->input;
 	int lid_status = gpio_get_value(HALL_GPIO);
 
 	if (lid_status)
 	{
 		input->sw[SW_LID] = 1;
-		slide_on_off=1;					
-		printk("slide On\n");		
-		// key_led_onoff(true);
+		slide_on_off=1; 
+#ifdef CONFIG_SEC_KEY_DBG		
+		printk("slide On\n");	
+#endif
 	}
 	else{
 		input->sw[SW_LID] = 0;
-		slide_on_off=0;		
+		slide_on_off=0; 	
+#ifdef CONFIG_SEC_KEY_DBG		
 		printk("slide Off\n");				
-		//key_led_onoff(false);
+#endif
 	}
-
 
 	input_report_switch(input, SW_LID, (lid_status ? 0: 1));
 	input_sync(input);
-
-	return IRQ_HANDLED;
+	hall_ic_workqueue_statue = 0;
 }
-#endif
 
 static int __devinit adp5587_setup(struct i2c_client *client)
 {
@@ -441,6 +481,10 @@ static int __devinit adp5587_probe(struct i2c_client *client, const struct i2c_d
 	printk("|         ADP5587 Keyboard Probe!!!         |\n");
 	printk("+-------------------------------------------+\n");
 
+	gpio_set_value(GPIO_RST, GPIO_LEVEL_LOW);
+	udelay(100);
+	gpio_set_value(GPIO_RST, GPIO_LEVEL_HIGH);
+
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_SMBUS_BYTE_DATA)) {
 		dev_err(&client->dev, "SMBUS Byte Data not Supported\n");
 		return -EIO;
@@ -482,6 +526,13 @@ static int __devinit adp5587_probe(struct i2c_client *client, const struct i2c_d
         }
 	#endif
 	INIT_DELAYED_WORK(&kpad->work, adp5587_work);
+	INIT_DELAYED_WORK(&kpad->hall_ic_work, hall_ic_handler);
+	
+	hall_ic_workqueue = create_singlethread_workqueue("hall_ic");
+	if(hall_ic_workqueue == NULL) {
+		printk("[Adp5587-keys:ERROR]:Can't not create workqueue for hall_ic\n");
+	}
+	
 	/* Initializing delayed work for Back light off */
 	ret = adp5587_read(client, ADP5587_REG_DEV_ID);
 	if (ret < 0) {
@@ -497,7 +548,7 @@ static int __devinit adp5587_probe(struct i2c_client *client, const struct i2c_d
 	if (WA_DELAYED_READOUT_REVID(revid))
 		kpad->delay = msecs_to_jiffies(30);
 	
-	input->name = client->name;
+	input->name = "sec_keypad";
 	input->phys = "adp5587-keys/input0";
 	input->dev.parent = &client->dev;
 
@@ -542,10 +593,14 @@ static int __devinit adp5587_probe(struct i2c_client *client, const struct i2c_d
 
 	input_set_capability(input, EV_SW, SW_LID);
 
-	if(gpio_get_value(HALL_GPIO))
-		input->sw[SW_LID] = 0;
-	else
+	if(gpio_get_value(HALL_GPIO)){
 		input->sw[SW_LID] = 1;
+		slide_on_off=1;
+	}
+	else{
+		input->sw[SW_LID] = 0;
+		slide_on_off=0;
+	}
 
 	__clear_bit(KEY_RESERVED, input->keybit);
 
@@ -599,6 +654,7 @@ static int __devexit adp5587_remove(struct i2c_client *client)
 	adp5587_write(client, ADP5587_REG_CFG, 0);
 	free_irq(client->irq, kpad);
 	cancel_delayed_work_sync(&kpad->work);
+	flush_workqueue(&hall_ic_workqueue);
 	input_unregister_device(kpad->input);
 	i2c_set_clientdata(client, NULL);
 	kfree(kpad);
@@ -614,6 +670,11 @@ static int adp5587_suspend(struct i2c_client *client, pm_message_t mesg)
 	dev_err(&client->dev, "adp5587_suspend(), keypad_backlight OFF\n");
 
 	disable_irq(client->irq);
+	if(hall_ic_workqueue_statue == 1) {
+		printk("%s : delayed workqueue cancel reqeust\n",__func__);
+		cancel_delayed_work(&kpad->hall_ic_work);
+		hall_ic_workqueue_statue = 0;
+	}
 	cancel_delayed_work_sync(&kpad->work);
 
 	if (device_may_wakeup(&client->dev))
@@ -682,7 +743,10 @@ static int __init adp5587_init(void)
 
 	if (device_create_file(key_dev, &dev_attr_led) < 0)
 		printk("Failed to create device file(%s)!\n", dev_attr_led.attr.name);
-
+	
+	if (device_create_file(key_dev, &dev_attr_slide_on_off) < 0)
+		printk("Failed to create device file(%s)!\n", dev_attr_slide_on_off.attr.name);	
+	
 	return i2c_add_driver(&adp5587_driver);
 }
 

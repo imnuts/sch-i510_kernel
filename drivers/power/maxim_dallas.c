@@ -319,7 +319,7 @@ int verizon_batt_auth_full_check(void)
 	int retval = 0;
 
 	/* Retry 3 times */
-	for (i = 0; i < 3; i++) {
+	for (i = 0; i < 4; i++) {
 
 		msleep(100);
 

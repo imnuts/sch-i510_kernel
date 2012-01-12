@@ -187,7 +187,7 @@ ep_matches (
 	return 1;
 }
 
-#ifdef CONFIG_USB_ANDRPID_SHARE_ENDPOINT
+#ifdef CONFIG_USB_ANDROID_SHARE_ENDPOINT
 /*
  * This should work with endpoints from controller drivers sharing the
  * same endpoint naming convention.  By example:
@@ -459,7 +459,7 @@ struct usb_ep *usb_ep_autoconfig (
 			ep = find_ep (gadget, "ep12-bulk");
 			if (ep && ep_matches (gadget, ep, desc))
 				return ep;
-#ifndef  CONFIG_USB_ANDRPID_SHARE_ENDPOINT
+#ifndef  CONFIG_USB_ANDROID_SHARE_ENDPOINT
 			ep = find_ep (gadget, "ep14-bulk");
 			if (ep && ep_matches (gadget, ep, desc))
 				return ep;
@@ -481,7 +481,7 @@ struct usb_ep *usb_ep_autoconfig (
 			ep = find_ep (gadget, "ep13-bulk");
 			if (ep && ep_matches (gadget, ep, desc))
 				return ep;
-#ifndef CONFIG_USB_ANDRPID_SHARE_ENDPOINT
+#ifndef CONFIG_USB_ANDROID_SHARE_ENDPOINT
 			ep = find_ep (gadget, "ep15-bulk");
 			if (ep && ep_matches (gadget, ep, desc))
 				return ep;
@@ -521,7 +521,7 @@ void usb_ep_autoconfig_reset (struct usb_gadget *gadget)
 	epnum = 0;
 }
 
-#ifdef CONFIG_USB_ANDRPID_SHARE_ENDPOINT
+#ifdef CONFIG_USB_ANDROID_SHARE_ENDPOINT
 /**
  * usb_ep_fixedconfig_alloc - share endpoint
  * @gadget: device for which some function

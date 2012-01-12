@@ -426,7 +426,7 @@ void android_register_function(struct android_usb_function *f)
 		bind_functions(dev);
 #ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
 /* Change usb mode when device register last function driver */
-		samsung_enable_function(USBSTATUS_SAMSUNG_KIES);
+		samsung_enable_function(USBSTATUS_UMS);
 #  ifdef CSY_USE_SAFE_USB_SWITCH
 /* soonyong.cho : If usb switch can call usb cable handler safely, you don't need below code.
  *		  Below codes are used for to turn on always.
@@ -601,14 +601,14 @@ void android_enable_function(struct usb_function *f, int enable)
 		}
 
 	}
-	else { /* for disable : Return old mode. If Non-GED model changes policy, below code has to be modified. */
+	else { /* for disable : Return old mode. If Non-GED model changes policy, below code has to be modified. */               
 		if (!strcmp(f->name, "rndis") && dev->debugging_usb_mode)
 			ret = set_product(dev, USBSTATUS_ADB);
 #ifdef CONFIG_USB_ANDROID_ACCESSORY 
 		else if (!strcmp(f->name, "accessory")&& dev->debugging_usb_mode)  
 			ret = set_product(dev, USBSTATUS_ADB);
 #endif   
-		else
+		else 
 			ret = set_product(dev, dev->current_usb_mode);
 
 
@@ -637,7 +637,7 @@ void android_enable_function(struct usb_function *f, int enable)
 	/* force reenumeration */
 	CSY_DBG_ESS("dev->cdev=0x%p, dev->cdev->gadget=0x%p, dev->cdev->gadget->speed=0x%x, mode=%d\n",
 		dev->cdev, dev->cdev->gadget, dev->cdev->gadget->speed, dev->current_usb_mode);
-	usb_composite_force_reset(dev->cdev);
+	    usb_composite_force_reset(dev->cdev);
 
 	CSY_DBG_ESS("finished setting pid=0x%x\n",product_id);
 }
@@ -895,29 +895,42 @@ static ssize_t UsbMenuSel_switch_show(struct device *dev, struct device_attribut
 static ssize_t UsbMenuSel_switch_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
 {
 	int value;
+        static int prev_value=0xffff;
 	sscanf(buf, "%d", &value);
+
+        if ( prev_value == value )
+        {
+            if (value == 3 ) 
+                askonstatus=0xabcd;
+            CSY_DBG_ESS("UsbMenuSel_switch_store : return (%d)\n", value);
+            return size;
+        }
 
 	switch(value) {
 		case 0:
 			CSY_DBG_ESS("Enable KIES(%d)\n", value);
+                        prev_value = value;
 			samsung_enable_function(USBSTATUS_SAMSUNG_KIES);
 			break;
 		case 1:
 			CSY_DBG_ESS("Enable MTP(%d)\n", value);
+                        prev_value = value;
 			samsung_enable_function(USBSTATUS_MTPONLY);
 			break;
 		case 2:
 			CSY_DBG_ESS("Enable UMS(%d)\n", value);
+                        prev_value = value;
 			samsung_enable_function(USBSTATUS_UMS);
 			break;
 		case 3:
 			CSY_DBG_ESS("Enable ASKON(%d)\n", value);
+                        prev_value = value;
 			samsung_enable_function(USBSTATUS_ASKON);
 			break;
 		default:
 			CSY_DBG("Fail : value(%d) is not invaild.\n", value);
 	}
-	return size;
+        	return size;
 }
 
 /* soonyong.cho : attribute of sysfs for usb menu switch */

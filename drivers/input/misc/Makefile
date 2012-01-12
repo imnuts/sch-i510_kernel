@@ -3,7 +3,7 @@
 #
 
 # Each configuration option enables a list of files.
-
+ccflags-y := -DCONFIG_INPUT_YAS_MAGNETOMETER_POSITION=0
 obj-$(CONFIG_INPUT_88PM860X_ONKEY)	+= 88pm860x_onkey.o
 obj-$(CONFIG_INPUT_AD714X)		+= ad714x.o
 obj-$(CONFIG_INPUT_AD714X_I2C)		+= ad714x-i2c.o
@@ -14,8 +14,10 @@ obj-$(CONFIG_INPUT_ATI_REMOTE2)		+= ati_remote2.o
 obj-$(CONFIG_INPUT_ATLAS_BTNS)		+= atlas_btns.o
 obj-$(CONFIG_INPUT_BFIN_ROTARY)		+= bfin_rotary.o
 obj-$(CONFIG_INPUT_BMA023)		+= bma023.o
-obj-$(CONFIG_INPUT_YAS529)		+= yas529.o
+obj-$(CONFIG_INPUT_YAS529)		+= yas_mag_kernel_driver.o
+obj-$(CONFIG_INPUT_YAS530)		+= yas_mag_kernel_driver.o
 obj-$(CONFIG_INPUT_ORIENTATION)		+= orientation.o
+obj-$(CONFIG_INPUT_ORIENTATION_YAS530)		+= yas_ori_kernel_driver.o
 obj-$(CONFIG_INPUT_CM109)		+= cm109.o
 obj-$(CONFIG_INPUT_COBALT_BTNS)		+= cobalt_btns.o
 obj-$(CONFIG_INPUT_DM355EVM)		+= dm355evm_keys.o

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * wm8994_samsung.h  --  WM8994 Soc Audio driver
  *
  * This program is free software; you can redistribute it and/or modify
@@ -41,6 +41,8 @@ extern struct snd_soc_dai wm8994_dai;
 
 #define FEATURE_TTY
 #define FEATURE_FACTORY_LOOPBACK
+
+#define CONFIG_VOIP
 
 #ifdef FEATURE_TTY
 #include <linux/proc_fs.h>
@@ -121,7 +123,9 @@ Codec Output Path BIT
 #define VOICECALL_TTY_HCO	(0x01 << 7)
 #define VOICECALL_TTY_VCO	(0x01 << 8)
 #endif
-
+#ifdef CONFIG_SND_SOC_A1026
+#define VOICECALL_NC_RCV	(0x01 << 9)
+#endif
 
 #define RECORDING_MAIN		(0x01 << 1)
 #define RECORDING_MAIN2 	(0x01 << 2)
@@ -146,10 +150,18 @@ Codec Output Path BIT
 
 #define PLAYBACK_GAIN_NUM	48
 #ifdef FEATURE_TTY
+#ifdef CONFIG_SND_SOC_A1026
+#define VOICECALL_GAIN_NUM	51
+#else
 #define VOICECALL_GAIN_NUM	46
+#endif
+#else /* FEATURE_TTY */
+#ifdef CONFIG_SND_SOC_A1026
+#define VOICECALL_GAIN_NUM	37
 #else
 #define VOICECALL_GAIN_NUM	32
 #endif
+#endif /* FEATURE_TTY */
 #define RECORDING_GAIN_NUM	46
 #define FMRADIO_GAIN_NUM	34
 
@@ -169,6 +181,10 @@ Codec Output Path BIT
 #define CMD_NC_BYPASS_ACTIVE		9 /* Noise suppressor bypass on */
 #endif
 #define CMD_MUTE_CODEC_CALL_PATH        10 /* Mute codec call path */
+#ifdef CONFIG_VOIP
+#define CMD_VOIP_START                  11 /* Start VoIP */
+#define CMD_VOIP_STOP                   12 /* Stop VoIP */
+#endif
 /*
  * Definitions of enum type
  */
@@ -238,7 +254,10 @@ struct wm8994_priv {
 #ifdef CONFIG_SND_SOC_A1026
 	enum nc_state ncbypass_active;
 	enum nc_state prev_ncbypass_active;
-#endif	
+#endif
+#ifdef CONFIG_VOIP
+	int voip_start_flag;
+#endif
 };
 
 struct gain_info_t {

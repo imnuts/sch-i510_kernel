@@ -35,7 +35,14 @@
 #include <linux/videodev2_samsung.h>
 #include <linux/delay.h>
 #include <plat/regs-fimc.h>
+#include <mach/gpio.h>
+#if defined CONFIG_MACH_AEGIS
+#include <mach/gpio-aegis.h>
+#endif
 
+#if defined CONFIG_MACH_CHIEF
+#include <mach/gpio-chief.h>
+#endif
 #include "fimc.h"
 
 #define CLEAR_FIMC2_BUFF
@@ -397,6 +404,8 @@ static inline void fimc_irq_cap(struct fimc_control *ctrl)
 
 	fimc_hwset_clear_irq(ctrl);
 	if (fimc_hwget_overflow_state(ctrl)) {
+#if 0 // cmk 2011.07.20 Remove ESD Codes to prevent lockup when scrolling the phone option menu while recording.
+      // msleep code and s/w reset codes can cause 100% lockup.
 		/* s/w reset -- added for recovering module in ESD state*/
 		cfg = readl(ctrl->regs + S3C_CIGCTRL);
 		cfg |= (S3C_CIGCTRL_SWRST);
@@ -406,6 +415,11 @@ static inline void fimc_irq_cap(struct fimc_control *ctrl)
 		cfg = readl(ctrl->regs + S3C_CIGCTRL);
 		cfg &= ~S3C_CIGCTRL_SWRST;
 		writel(cfg, ctrl->regs + S3C_CIGCTRL);
+#else
+        fimc_warn("%s: Warning! fimc overflow occurred!!\n", __func__);
+        
+        return;  // Recommended code by seuni.park(LSI s/w solution, 2011.07.20).
+#endif // !CONFIG_TIKAL_USCC
 	}
 	pp = ((fimc_hwget_frame_count(ctrl) + 2) % 4);
 	if (cap->fmt.field == V4L2_FIELD_INTERLACED_TB) {
@@ -721,12 +735,117 @@ static u32 fimc_poll(struct file *filp, poll_table *wait)
 static
 ssize_t fimc_read(struct file *filp, char *buf, size_t count, loff_t *pos)
 {
-	return 0;
+	int err = 0;
+	
+	printk("%s, for factory test\n", __func__);
+#if defined CONFIG_MACH_AEGIS
+	err = gpio_request(GPIO_CAM_FLASH_SET, "GPD0");		//GPIO_CAM_FLASH_SET
+	if (err) 
+	{
+		 printk(KERN_ERR "failed to request GPD0 for camera control\n");
+		 return err;
+	}
+	err = gpio_request(GPIO_CAM_FLASH_EN, "GPD1");		//GPIO_CAM_FLASH_EN
+	if (err) 
+	{
+		 printk(KERN_ERR "failed to request GPD1 for camera control\n");
+		 return err;
+	}
+	gpio_direction_output(GPIO_CAM_FLASH_SET, 0);
+	gpio_direction_output(GPIO_CAM_FLASH_EN, 0);
+
+	gpio_free(GPIO_CAM_FLASH_EN);
+	gpio_free(GPIO_CAM_FLASH_SET);	
+#elif defined CONFIG_MACH_CHIEF
+	err = gpio_request(GPIO_CAM_FLASH_SET, "GPJ0(2)");		//GPIO_CAM_FLASH_SET
+	if (err) 
+	{
+		 printk(KERN_ERR "failed to request GPJ0(2) for camera control\n");
+		 return err;
+	}
+	err = gpio_request(GPIO_CAM_FLASH_EN, "GPJ0(7)");		//GPIO_CAM_FLASH_EN
+	if (err) 
+	{
+		 printk(KERN_ERR "failed to request GPJ0(7) for camera control\n");
+		 return err;
+	}
+	gpio_direction_output(GPIO_CAM_FLASH_SET, 0);
+	gpio_direction_output(GPIO_CAM_FLASH_EN, 0);
+
+	gpio_free(GPIO_CAM_FLASH_EN);
+	gpio_free(GPIO_CAM_FLASH_SET);	
+#endif
+	
+	return err;
 }
 
 static
 ssize_t fimc_write(struct file *filp, const char *b, size_t c, loff_t *offset)
 {
+	int i = 0;
+	int err = 0;
+	
+	printk("%s, for factory test\n", __func__);
+#if defined CONFIG_MACH_AEGIS
+	err = gpio_request(GPIO_CAM_FLASH_SET, "GPD0");		//GPIO_CAM_FLASH_SET
+	if (err) 
+	{
+		 printk(KERN_ERR "failed to request GPD0 for camera control\n");
+		 return err;
+	}
+	err = gpio_request(GPIO_CAM_FLASH_EN, "GPD1");		//GPIO_CAM_FLASH_EN
+	if (err) 
+	{
+		 printk(KERN_ERR "failed to request GPD1 for camera control\n");
+		 return err;
+	}
+	//movie mode
+	gpio_direction_output(GPIO_CAM_FLASH_EN, 0);
+	for (i = 8; i > 1; i--)
+	{
+		 //gpio on
+		 gpio_direction_output(GPIO_CAM_FLASH_SET, 1);
+		 udelay(1);
+		 //gpio off
+		 gpio_direction_output(GPIO_CAM_FLASH_SET, 0);
+		 udelay(1);
+	}
+	gpio_direction_output(GPIO_CAM_FLASH_SET, 1);
+	mdelay(2);
+
+	gpio_free(GPIO_CAM_FLASH_EN);
+	gpio_free(GPIO_CAM_FLASH_SET);
+#elif defined CONFIG_MACH_CHIEF
+	err = gpio_request(GPIO_CAM_FLASH_SET, "GPJ0(2)");		//GPIO_CAM_FLASH_SET
+	if (err) 
+	{
+		 printk(KERN_ERR "failed to request GPJ0(2) for camera control\n");
+		 return err;
+	}
+	err = gpio_request(GPIO_CAM_FLASH_EN, "GPJ0(7)");		//GPIO_CAM_FLASH_EN
+	if (err) 
+	{
+		 printk(KERN_ERR "failed to request GPJ0(7) for camera control\n");
+		 return err;
+	}
+	//movie mode
+	gpio_direction_output(GPIO_CAM_FLASH_EN, 0);
+	for (i = 8; i > 1; i--)
+	{
+		 //gpio on
+		 gpio_direction_output(GPIO_CAM_FLASH_SET, 1);
+		 udelay(1);
+		 //gpio off
+		 gpio_direction_output(GPIO_CAM_FLASH_SET, 0);
+		 udelay(1);
+	}
+	gpio_direction_output(GPIO_CAM_FLASH_SET, 1);
+	mdelay(2);
+
+	gpio_free(GPIO_CAM_FLASH_EN);
+	gpio_free(GPIO_CAM_FLASH_SET);	
+#endif
+
 	return 0;
 }
 

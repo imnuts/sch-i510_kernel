@@ -7,51 +7,59 @@ DATE=$(date +%m%d)
 # execution!
 cd ..
 
-# check for voodoo/non-voodoo
-if [ "$1" != "V" ]; then
-	CONFIG="novoodoo"
-	cd charge_initramfs
+# check for device we're building for
+if [ "$1" == "strat" ]; then
+	DEVICE="stratosphere"
+	cd "$DEVICE"_initramfs
 	git checkout gingerbread
 	mv .git ../
 else
-	CONFIG="voodoo"
-	cd charge_initramfs
-	git checkout gingerbread-voodoo
+	DEVICE="charge"
+	cd "$DEVICE"_initramfs
+	git checkout gingerbread
 	mv .git ../
 fi
 
 # build the kernel
 cd $WORK
-echo "***** Building : $CONFIG *****"
-make clean mrproper > /dev/null 2>&1
+echo "***** Building for $DEVICE *****"
+make mrproper > /dev/null 2>&1
 rm -f update/*.zip update/kernel_update/zImage
 
-make ARCH=arm charge_defconfig 1>/dev/null 2>"$WORK"/errlog.txt
-make -j3 CROSS_COMPILE=/opt/toolchains/arm-2010q1/bin/arm-none-linux-gnueabi- ARCH=arm HOSTCFLAGS="-g -O3" 1>"$WORK"/stdlog.txt 2>>"$WORK"/errlog.txt
+if [ $DEVICE == stratosphere ]; then
+make ARCH=arm EXTRAVERSION=.7 "$DEVICE"_defconfig 1>/dev/null 2>"$WORK"/errlog.txt
+make -j3 EXTRAVERSION=.7 HOSTCFLAGS="-g -O3" 1>"$WORK"/stdlog.txt 2>>"$WORK"/errlog.txt
+else
+make ARCH=arm "$DEVICE"_defconfig 1>/dev/null 2>"$WORK"/errlog.txt
+make -j3 HOSTCFLAGS="-g -O3" 1>"$WORK"/stdlog.txt 2>>"$WORK"/errlog.txt
+fi
 if [ $? != 0 ]; then
-		echo -e "FAIL!\n"
+		echo -e "FAIL!\n\n"
 		cd ..
-		mv .git charge_initramfs/
+		mv .git "$DEVICE"_initramfs/
 		exit 1
 	else
 		echo -e "Success!\n"
 		rm -f "$WORK"/*log.txt
 fi
 
+# Build a recovery odin file
+cp arch/arm/boot/zImage recovery.bin
+tar -c recovery.bin > "$DATE"_"$DEVICE"_recovery.tar
+md5sum -t "$DATE"_"$DEVICE"_recovery.tar >> "$DATE"_"$DEVICE"_recovery.tar
+mv "$DATE"_"$DEVICE"_recovery.tar "$DATE"_"$DEVICE"_recovery.tar.md5
+rm recovery.bin
+
+# Make the CWM Zip
 cp arch/arm/boot/zImage update/kernel_update/zImage
-if [ $CONFIG == novoodoo ]; then
-	cp arch/arm/boot/zImage recovery.bin
-	tar -c recovery.bin > "$DATE"_charge_recovery.tar
-	md5sum -t "$DATE"_charge_recovery.tar >> "$DATE"_charge_recovery.tar
-	mv "$DATE"_charge_recovery.tar "$DATE"_charge_recovery.tar.md5
-	rm recovery.bin
-fi
 cd update
 zip -r -q kernel_update.zip .
-mv kernel_update.zip ../"$DATE"_charge_"$CONFIG".zip
-cd ../../
-mv .git charge_initramfs/
-cd $WORK
-echo -e "***** Successfully compiled: $CONFIG *****\n"
+mv kernel_update.zip ../"$DATE"_"$DEVICE".zip
 
-if [ "$1" == "A" ]; then ./build_kernel.sh V; fi
+# Finish up
+cd ../../
+mv .git "$DEVICE"_initramfs/
+cd $WORK
+echo -e "***** Successfully compiled for $DEVICE *****\n"
+
+if [ "$1" == "A" ]; then ./build_kernel.sh strat; fi

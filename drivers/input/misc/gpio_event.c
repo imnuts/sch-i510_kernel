@@ -16,10 +16,16 @@
 #include <linux/earlysuspend.h>
 #include <linux/module.h>
 #include <linux/input.h>
+#include <linux/gpio.h>
 #include <linux/gpio_event.h>
 #include <linux/hrtimer.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
+#include <linux/interrupt.h>
+#include <linux/wakelock.h>
+
+int during_call = 0;
+static int volume_key_wakeup = 0;
 
 struct gpio_event {
 	struct gpio_event_input_devs *input_devs;
@@ -104,18 +110,32 @@ err_no_func:
 #ifdef CONFIG_HAS_EARLYSUSPEND
 void gpio_event_suspend(struct early_suspend *h)
 {
+	if(during_call==1){
+		enable_irq_wake(gpio_to_irq(S5PV210_GPH3(1)));
+		enable_irq_wake(gpio_to_irq(S5PV210_GPH3(2)));		
+		volume_key_wakeup=1;		
+	}
+	else if((during_call==0)&&(volume_key_wakeup==1)){
+		disable_irq_wake(gpio_to_irq(S5PV210_GPH3(1)));
+		disable_irq_wake(gpio_to_irq(S5PV210_GPH3(2)));		
+		volume_key_wakeup=0;		
+	}
+#if 0
 	struct gpio_event *ip;
 	ip = container_of(h, struct gpio_event, early_suspend);
 	gpio_event_call_all_func(ip, GPIO_EVENT_FUNC_SUSPEND);
 	ip->info->power(ip->info, 0);
+#endif	
 }
 
 void gpio_event_resume(struct early_suspend *h)
 {
+#if 0
 	struct gpio_event *ip;
 	ip = container_of(h, struct gpio_event, early_suspend);
 	ip->info->power(ip->info, 1);
 	gpio_event_call_all_func(ip, GPIO_EVENT_FUNC_RESUME);
+#endif	
 }
 #endif
 
@@ -169,16 +189,16 @@ static int gpio_event_probe(struct platform_device *pdev)
 	}
 	ip->input_devs->count = dev_count;
 	ip->info = event_info;
-	if (event_info->power) {
+
 #ifdef CONFIG_HAS_EARLYSUSPEND
+	if (event_info->power) {
 		ip->early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN + 1;
 		ip->early_suspend.suspend = gpio_event_suspend;
 		ip->early_suspend.resume = gpio_event_resume;
 		register_early_suspend(&ip->early_suspend);
-#endif
 		ip->info->power(ip->info, 1);
 	}
-
+#endif
 	err = gpio_event_call_all_func(ip, GPIO_EVENT_FUNC_INIT);
 	if (err)
 		goto err_call_all_func_failed;
@@ -198,10 +218,10 @@ static int gpio_event_probe(struct platform_device *pdev)
 err_input_register_device_failed:
 	gpio_event_call_all_func(ip, GPIO_EVENT_FUNC_UNINIT);
 err_call_all_func_failed:
-	if (event_info->power) {
 #ifdef CONFIG_HAS_EARLYSUSPEND
-		unregister_early_suspend(&ip->early_suspend);
+	unregister_early_suspend(&ip->early_suspend);
 #endif
+	if (event_info->power) {
 		ip->info->power(ip->info, 0);
 	}
 	for (i = 0; i < registered; i++)
@@ -222,10 +242,10 @@ static int gpio_event_remove(struct platform_device *pdev)
 	int i;
 
 	gpio_event_call_all_func(ip, GPIO_EVENT_FUNC_UNINIT);
-	if (ip->info->power) {
 #ifdef CONFIG_HAS_EARLYSUSPEND
-		unregister_early_suspend(&ip->early_suspend);
+	unregister_early_suspend(&ip->early_suspend);
 #endif
+	if (ip->info->power) {
 		ip->info->power(ip->info, 0);
 	}
 	for (i = 0; i < ip->input_devs->count; i++)

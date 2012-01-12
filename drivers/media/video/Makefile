@@ -91,6 +91,7 @@ obj-$(CONFIG_SOC_CAMERA_TW9910)		+= tw9910.o
 obj-$(CONFIG_VIDEO_S5KA3DFX) 	+= s5ka3dfx.o
 obj-$(CONFIG_VIDEO_S5K4ECGX) 	+= s5k4ecgx.o
 obj-$(CONFIG_VIDEO_SR030PC30) 	+= sr030pc30.o
+obj-$(CONFIG_VIDEO_S5K5CCGX) 	+= s5k5ccgx.o
 ifeq ($(CONFIG_TIKAL_USCC),y)
 obj-$(CONFIG_VIDEO_SR130PC10) 	+= sr130pc10_tikal.o
 else

@@ -113,8 +113,10 @@ static void early_suspend(struct work_struct *work)
 	if (debug_mask & DEBUG_SUSPEND)
 		pr_info("early_suspend: call handlers\n");
 	list_for_each_entry(pos, &early_suspend_handlers, link) {
-		if (pos->suspend != NULL)
+		if (pos->suspend != NULL) {
+			pr_err("%s %x\n", __func__, pos->suspend);
 			pos->suspend(pos);
+		}
 	}
 	mutex_unlock(&early_suspend_lock);
 

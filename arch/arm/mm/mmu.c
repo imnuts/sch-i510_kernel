@@ -295,6 +295,10 @@ static void __init build_mem_type_table(void)
 	cachepolicy = CPOLICY_WRITEALLOC;
 #endif
 
+#ifdef SECCONFIG_CACHE_WRITE_THROUGH
+	cachepolicy = CPOLICY_WRITETHROUGH;
+#endif
+
 	/*
 	 * Strip out features not present on earlier architectures.
 	 * Pre-ARMv5 CPUs don't have TEX bits.  Pre-ARMv6 CPUs or those

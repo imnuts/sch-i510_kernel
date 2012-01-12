@@ -954,7 +954,7 @@ extern struct usb_ep *usb_ep_autoconfig(struct usb_gadget *,
 
 extern void usb_ep_autoconfig_reset(struct usb_gadget *) __devinit;
 
-#ifdef CONFIG_USB_ANDRPID_SHARE_ENDPOINT
+#ifdef CONFIG_USB_ANDROID_SHARE_ENDPOINT
 extern struct usb_ep *usb_ep_fixedconfig_alloc(struct usb_gadget *,
 			struct usb_endpoint_descriptor *) __devinit;
 #endif

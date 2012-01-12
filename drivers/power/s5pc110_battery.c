@@ -51,6 +51,8 @@
 
 extern unsigned int HWREV;
 
+extern int during_call;
+
 #define BAT_POLLING_INTERVAL	10000
 #define BAT_WAITING_INTERVAL	20000	/* 20 sec */
 #define BAT_WAITING_COUNT	(BAT_WAITING_INTERVAL / BAT_POLLING_INTERVAL)
@@ -68,6 +70,9 @@ extern unsigned int HWREV;
 #define USE_CAMERA	(0x1 << 5)
 #define USE_DATA_CALL	(0x1 << 6)
 #define USE_LTE		(0x1 << 7)
+#ifdef CONFIG_MACH_AEGIS
+#define USE_GPS		(0x1 << 8)
+#endif
 
 /* Discharging reason */
 #define DISCONNECT_BAT_FULL		0x1
@@ -203,9 +208,14 @@ static struct device_attribute s3c_battery_attrs[] = {
 	SEC_BATTERY_ATTR(camera),
 	SEC_BATTERY_ATTR(data_call),
 	SEC_BATTERY_ATTR(lte),
+#ifdef CONFIG_MACH_AEGIS
+	SEC_BATTERY_ATTR(gps),
+#endif
 	SEC_BATTERY_ATTR(batt_use),
 	SEC_BATTERY_ATTR(control_temp),	/* test purpose */
 };
+
+static void quick_charging_control(struct chg_data *chg, int enable);
 
 static void max8998_lowbat_config(struct chg_data *chg, int on)
 {
@@ -373,6 +383,9 @@ static int s5p_bat_charging_control(struct chg_data *chg)
 		s3c_clean_chg_current(chg);
 	}
 	else {
+#ifdef CONFIG_MACH_AEGIS
+		quick_charging_control(chg, 0);	/* Disable max8998 charger */
+#endif
 		if (chg->cable_status == CABLE_TYPE_AC) {
 			if (chg->batt_use == 0)
 				chg->pdata->charger_ic->start_charging(CHG_CURR_TA);
@@ -511,22 +524,22 @@ static bool max8998_set_esafe(struct max8998_charger_callbacks *ptr, u8 esafe)
 #ifdef CONFIG_MACH_AEGIS
 static void aegis_handle_acc_vbus(struct chg_data *chg)
 {
-	int vbus;
+	int vbus = gpio_get_value(VIA_USB_OFF) ? 0: 1;
 
-#ifdef CONFIG_CHARGER_FAN5403
-	if (lpm_charging_mode)
-		vbus = chg->pdata->charger_ic->get_vbus_status();
-	else
-#endif
-		vbus = gpio_get_value(VIA_USB_OFF) ? 0: 1;
-
-	if ((chg->acc_status != ACC_TYPE_NONE)
-		&& (chg->acc_status != ACC_TYPE_USB)) {
-		if (vbus)
-			chg->cable_status = CABLE_TYPE_AC;
-		else
-			chg->cable_status = CABLE_TYPE_NONE;
-	} else if (vbus == 0)
+	if (vbus) {
+		switch (chg->acc_status) {
+			case ACC_TYPE_NONE:
+				chg->cable_status = CABLE_TYPE_NONE;
+				break;
+			case ACC_TYPE_USB:
+				chg->cable_status = CABLE_TYPE_USB;
+				break;
+			default:
+				chg->cable_status = CABLE_TYPE_AC;
+				break;
+				
+		}
+	} else
 		chg->cable_status = CABLE_TYPE_NONE;
 
 #ifdef CONFIG_CHARGER_FAN5403
@@ -1000,7 +1013,8 @@ static int s3c_cable_status_update(struct chg_data *chg)
 
 		if ((chg->cable_status == CABLE_TYPE_NONE) &&
 			((chg->acc_status == ACC_TYPE_CAR_DOCK) ||
-			 (chg->acc_status == ACC_TYPE_DESK_DOCK))) {
+			 (chg->acc_status == ACC_TYPE_DESK_DOCK) ||
+			 (chg->acc_status == ACC_TYPE_JIG))) {
 			chg->cable_status = CABLE_TYPE_AC;
 		}
 #endif
@@ -1198,6 +1212,10 @@ static void s3c_bat_use_module(struct chg_data *chg, int module, int enable)
 			pr_info("/BATT_USE/ use module (data call) 0x%x\n", chg->batt_use);
 		else if (module == USE_LTE)
 			pr_info("/BATT_USE/ use module (lte) 0x%x\n", chg->batt_use);
+#ifdef CONFIG_MACH_AEGIS
+		else if (module == USE_GPS)
+			pr_info("/BATT_USE/ use module (gps) 0x%x\n", chg->batt_use);
+#endif
 	} else {
 		if (chg->batt_use == 0) {
 			pr_info("/BATT_USE/ nothing to clear\n");
@@ -1329,6 +1347,12 @@ static ssize_t s3c_bat_show_attrs(struct device *dev,
 		i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
 			(chg->batt_use & USE_LTE) ? 1 : 0);
 		break;
+#ifdef CONFIG_MACH_AEGIS
+	case BATT_USE_GPS:
+		i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
+			(chg->batt_use & USE_GPS) ? 1 : 0);
+		break;
+#endif
 	case BATT_USE:
 		i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
 			chg->batt_use);
@@ -1365,6 +1389,7 @@ static ssize_t s3c_bat_store_attrs(struct device *dev, struct device_attribute *
 		break;
 	case BATT_USE_CALL:
 		if (sscanf(buf, "%d\n", &x) == 1) {
+			during_call = x;
 			s3c_bat_use_module(chg, USE_CALL, x);
 			ret = count;
 		}
@@ -1411,6 +1436,14 @@ static ssize_t s3c_bat_store_attrs(struct device *dev, struct device_attribute *
 			ret = count;
 		}
 		break;
+#ifdef CONFIG_MACH_AEGIS
+	case BATT_USE_GPS:
+		if (sscanf(buf, "%d\n", &x) == 1) {
+			s3c_bat_use_module(chg, USE_GPS, x);
+			ret = count;
+		}
+		break;
+#endif
 	case CONTROL_TEMP:	/* test purpose */
 		if (sscanf(buf, "%d\n", &x) == 1) {
 			batt_temp_test = x;
@@ -1905,13 +1938,14 @@ static __devinit int max8998_charger_probe(struct platform_device *pdev)
 	queue_work(chg->monitor_wqueue, &chg->bat_work);
 
 #ifdef CONFIG_MACH_AEGIS
-	/* vbus irq */
-	s3c_gpio_cfgpin(VIA_USB_OFF, S3C_GPIO_SFN(0xf));
-	s3c_gpio_setpull(VIA_USB_OFF, S3C_GPIO_PULL_NONE);
+	if (lpm_charging_mode == 0) {
+		s3c_gpio_cfgpin(VIA_USB_OFF, S3C_GPIO_SFN(0xf));
+		s3c_gpio_setpull(VIA_USB_OFF, S3C_GPIO_PULL_NONE);
 
-	ret = request_threaded_irq(IRQ_EINT_GROUP(3, 4), NULL, aegis_vbus_irq,
-				   (IRQF_TRIGGER_RISING|IRQF_TRIGGER_FALLING),
-				   "vbus-irq", chg);
+		ret = request_threaded_irq(IRQ_EINT_GROUP(3, 4), NULL, aegis_vbus_irq,
+					   (IRQF_TRIGGER_RISING|IRQF_TRIGGER_FALLING),
+					   "vbus-irq", chg);
+	}
 #endif
 
 	return 0;

@@ -519,10 +519,10 @@
 #define GPIO_GPS_RXD_AF			2
 #define GPIO_GPS_TXD			S5PV210_GPA0(5)
 #define GPIO_GPS_TXD_AF			2
-#define GPIO_GPS_CTS			__NC__
-#define GPIO_GPS_CTS_AF			0
-#define GPIO_GPS_RTS			__NC__
-#define GPIO_GPS_RTS_AF			0
+#define GPIO_GPS_CTS			S5PV210_GPA0(6)
+#define GPIO_GPS_CTS_AF			2
+#define GPIO_GPS_RTS			S5PV210_GPA0(7)
+#define GPIO_GPS_RTS_AF			2
 
 #endif
 /* end of __GPIO_ARIES_H_ */

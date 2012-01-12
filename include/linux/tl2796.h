@@ -25,6 +25,7 @@ struct s5p_panel_data {
 	const u16 *gamma_update;
 	const u16 **acl_table;
 	const u16 *acl_init;
+	const u16 **elvss_table;
 	int gamma_table_size;
 };
 

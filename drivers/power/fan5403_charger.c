@@ -45,23 +45,18 @@ static struct workqueue_struct	*chg_wqueue;
 
 static void _fan5403_print_register(void)
 {
-	printk("------------- _fan5403_debug -------------\n");
-	printk("%s: CONTROL0\t0x%x\n", __func__,
-		i2c_smbus_read_byte_data(fan5403_i2c_client, FAN5403_REG_CONTROL0));
-	printk("%s: CONTROL1\t0x%x\n", __func__,
-		i2c_smbus_read_byte_data(fan5403_i2c_client, FAN5403_REG_CONTROL1));
-	printk("%s: OREG\t0x%x\n", __func__,
-		i2c_smbus_read_byte_data(fan5403_i2c_client, FAN5403_REG_OREG));
-	printk("%s: IC_INFO\t0x%x\n", __func__,
-		i2c_smbus_read_byte_data(fan5403_i2c_client, FAN5403_REG_IC_INFO));
-	printk("%s: IBAT\t0x%x\n", __func__,
-		i2c_smbus_read_byte_data(fan5403_i2c_client, FAN5403_REG_IBAT));
-	printk("%s: SP_CHARGER\t0x%x\n", __func__,
-		i2c_smbus_read_byte_data(fan5403_i2c_client, FAN5403_REG_SP_CHARGER));
-	printk("%s: SAFETY\t0x%x\n", __func__,
-		i2c_smbus_read_byte_data(fan5403_i2c_client, FAN5403_REG_SAFETY));
-	printk("%s: MONITOR\t0x%x\n", __func__,
-		i2c_smbus_read_byte_data(fan5403_i2c_client, FAN5403_REG_MONITOR));
+	u8 regs[8];
+	regs[0] = i2c_smbus_read_byte_data(fan5403_i2c_client, FAN5403_REG_CONTROL0);
+	regs[1] = i2c_smbus_read_byte_data(fan5403_i2c_client, FAN5403_REG_CONTROL1);
+	regs[2] = i2c_smbus_read_byte_data(fan5403_i2c_client, FAN5403_REG_OREG);
+	regs[3] = i2c_smbus_read_byte_data(fan5403_i2c_client, FAN5403_REG_IC_INFO);
+	regs[4] = i2c_smbus_read_byte_data(fan5403_i2c_client, FAN5403_REG_IBAT);
+	regs[5] = i2c_smbus_read_byte_data(fan5403_i2c_client, FAN5403_REG_SP_CHARGER);
+	regs[6] = i2c_smbus_read_byte_data(fan5403_i2c_client, FAN5403_REG_SAFETY);
+	regs[7] = i2c_smbus_read_byte_data(fan5403_i2c_client, FAN5403_REG_MONITOR);
+
+	pr_info("/FAN5403/ 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x\n", 
+		regs[0], regs[1], regs[2], regs[3], regs[4], regs[5], regs[6], regs[7]);
 }
 
 static void _fan5403_customize_register_settings(void)
@@ -189,8 +184,9 @@ static void _fan5403_chg_work(struct work_struct *work)
 
 	i2c_smbus_write_byte_data(fan5403_i2c_client, FAN5403_REG_CONTROL0, value);
 
+	/* print registers every 10 minutes */
 	log_cnt++;
-	if (log_cnt == 3) {
+	if (log_cnt == 60) {
 		_fan5403_print_register();
 		log_cnt = 0;
 	}
@@ -228,6 +224,8 @@ static int fan5403_stop_charging(void)
 	_fan5403_charging_control(0);
 
 	pr_info("%s\n", __func__);
+
+	_fan5403_print_register();
 	return 0;
 }
 
@@ -366,24 +364,15 @@ static int fan5403_get_monitor_bits(void)
 		if (_fan5403_get_charging_status() == FAN5403_STAT_CHARGING) {
 			/* Check CV bit */
 			value = i2c_smbus_read_byte_data(fan5403_i2c_client, FAN5403_REG_MONITOR);
-			if (value & FAN5403_MASK_CV) {
-				pr_debug("%s: 2 (CV charging)\n", __func__);
+			if (value & FAN5403_MASK_CV)
 				return 2;
-			} else {
-				pr_debug("%s: 1 (CC charging)\n", __func__);
+			else
 				return 1;
-			}
 		}
-
-		pr_debug("%s: 3 (Not charging)\n", __func__);
 		return 3;
 	}
-
-	pr_debug("%s: 0 (No charger)\n", __func__);
 	return 0;
 }
-
-extern unsigned int HWREV;
 
 static int __devinit fan5403_probe(struct i2c_client *client,
 			 const struct i2c_device_id *id)
@@ -410,11 +399,9 @@ static int __devinit fan5403_probe(struct i2c_client *client,
 	setup_timer(&chg_work_timer, _fan5403_chg_work_timer_func, (unsigned long)pdata);
 	chg_wqueue = create_freezeable_workqueue("fan5403_wqueue");
 
-	if (HWREV == 0x1) {	/* REV0.5 */
-		ret = request_threaded_irq(client->irq, NULL, _fan5403_handle_stat,
-					   (IRQF_TRIGGER_RISING|IRQF_TRIGGER_FALLING),
-					   "fan5403-stat", pdata);
-	}
+	ret = request_threaded_irq(client->irq, NULL, _fan5403_handle_stat,
+				   (IRQF_TRIGGER_RISING|IRQF_TRIGGER_FALLING),
+				   "fan5403-stat", pdata);
 
 	_fan5403_customize_register_settings();
 	_fan5403_print_register();

@@ -33,6 +33,9 @@
 #include <plat/irq-eint-group.h>
 #include <mach/pm-core.h>
 
+#ifdef CONFIG_MACH_CHIEF'
+#include<mach/gpio-bank.h>
+#endif
 /* for external use */
 
 unsigned long s3c_pm_flags;
@@ -311,7 +314,9 @@ void (*pm_cpu_restore)(void);
 static int s3c_pm_enter(suspend_state_t state)
 {
 	static unsigned long regs_save[16];
-
+#ifdef CONFIG_MACH_CHIEF
+	unsigned int MMC_STR;
+#endif
 	/* ensure the debug is initialised (if enabled) */
 
 	s3c_pm_debug_init();
@@ -347,6 +352,12 @@ static int s3c_pm_enter(suspend_state_t state)
 	s3c_pm_save_uarts();
 	s3c_pm_save_core();
 
+/* control power of moviNAND at PM and add 700ms delay for stabilization of moviNAND. */
+#ifdef CONFIG_MACH_CHIEF
+	MMC_STR=readl(S5PV210_GPG3DAT);
+	writel((MMC_STR&(~0x02)),S5PV210_GPG3DAT);
+	mdelay(400);
+#endif
 	config_sleep_gpio();
 
 	/* set the irq configuration for wake */
@@ -370,6 +381,7 @@ static int s3c_pm_enter(suspend_state_t state)
 
 	/* clear wakeup_stat register for next wakeup reason */
 	__raw_writel(__raw_readl(S5P_WAKEUP_STAT), S5P_WAKEUP_STAT);
+	
 
 	/* send the cpu to sleep... */
 

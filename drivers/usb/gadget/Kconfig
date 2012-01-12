@@ -972,7 +972,13 @@ config USB_ANDROID_ACCESSORY
 	help
 	  Provides Android USB Accessory support for android gadget driver.
 
-config USB_ANDRPID_SHARE_ENDPOINT
+config USB_ANDROID_NMEA
+	boolean "Android NMEA function"
+	depends on USB_ANDROID
+	help
+	  Provides Android NMEA support for android gadget driver.
+
+config USB_ANDROID_SHARE_ENDPOINT
 	boolean "C110 USB share endpoint"
 	depends on USB_ANDROID
 	help

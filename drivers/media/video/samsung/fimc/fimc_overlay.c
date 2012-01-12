@@ -305,6 +305,9 @@ int fimc_s_fbuf(struct file *filp, void *fh, struct v4l2_framebuffer *fb)
 			fimc_err("%s: fb[%d] is already being used. " \
 					"must be not used for overlay\n",
 					__func__, ctrl->id);
+                    // temp : debug code
+                    fimc_err("%d:overlay.mode[%d], fb->base[%d] , ctx->overlay.fb_id[%d]\n",
+                                 ctx->overlay.mode, fb->base, ctx->overlay.fb_id);
 			return -1;
 		}
 

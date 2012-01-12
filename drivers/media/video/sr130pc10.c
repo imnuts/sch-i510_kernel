@@ -104,7 +104,7 @@
 #define PATTERN_ON_NUM_OF_REGS	        (sizeof(front_pattern_on_regs) / sizeof(regs_short_t))
 #define PATTERN_OFF_NUM_OF_REGS	        (sizeof(front_pattern_off_regs) / sizeof(regs_short_t))
 
-#define SR130PC10_DEBUG 
+//#define SR130PC10_DEBUG 
 
 #ifdef SR130PC10_DEBUG
 #define CAM_ERROR_MSG(dev, format, arg...)  dev_err(dev, format, ## arg)
@@ -818,7 +818,7 @@ static int sr130pc10_i2c_set_data_burst(struct i2c_client *client,
         {
             case DELAY_SEQ:
             {
-                CAM_ERROR_MSG(&client->dev,"delay = %d\n",data_value*10);
+                //CAM_ERROR_MSG(&client->dev,"delay = %d\n",data_value*10);
                 msleep(data_value * 10);
                 break;
             }
@@ -868,67 +868,15 @@ static int sr130pc10_i2c_set_config_register(struct i2c_client *client,
  *
  * Returns 0 on success, <0 on error
  ***************************************************************************/
-static int sr130pc10_set_frame_rate(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
+static int sr130pc10_set_frame_rate(struct v4l2_subdev *sd, int fps)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
     struct sensor_state *state = to_state(sd);
 	int err = 0;
 
-    CAM_INFO_MSG(&client->dev, "%s : %d fps ~~~~~~~~~~~~~~\n", __func__, ctrl->value);	
-#if 0
-    if(state->vt_mode == VT_MODE_ON)
+    CAM_INFO_MSG(&client->dev, "%s : %d fps ~~~~~~~~~~~~~~\n", __func__, fps);	    
     {
-    	switch(ctrl->value)
-    	{
-    		case FRAME_RATE_AUTO:
-    		{
-    			err = sr130pc10_i2c_set_config_register(client, 
-    			                                  front_fps_vt_auto_regs, 
-    			                                  FPS_VT_AUTO_NUM_OF_REGS, 
-    			                                  "front_fps_vt_auto_regs");
-    			break;
-            }
-            
-    		case FRAME_RATE_7:
-    		{
-    			err = sr130pc10_i2c_set_config_register(client, 
-    			                                  front_fps_vt_7_regs, 
-    			                                  FPS_VT_7_NUM_OF_REGS, 
-    			                                  "front_fps_vt_7_regs");
-    			break;
-            }
-            
-    		case FRAME_RATE_10:
-    		{
-    			err = sr130pc10_i2c_set_config_register(client, 
-    			                                  front_fps_vt_10_regs, 
-    			                                  FPS_VT_10_NUM_OF_REGS, 
-    			                                  "front_fps_vt_10_regs");
-    			break;
-            }
-            
-    		case FRAME_RATE_15:
-    		{
-    			err = sr130pc10_i2c_set_config_register(client, 
-    			                                  front_fps_vt_15_regs, 
-    			                                  FPS_VT_15_NUM_OF_REGS, 
-    			                                  "front_fps_vt_15_regs");
-    			break;
-            }
-            
-    		default:
-    		{
-    			CAM_WARN_MSG(&client->dev, "[%s : %d] WARNING! unsupported %d fps\n", 
-    			            __FILE__, __LINE__, ctrl->value);
-                err = -EIO;       
-    			break;
-            }			
-    	}
-    }
-    else
-#endif        
-    {
-    	switch(ctrl->value)
+    	switch(fps)
     	{
     		case FRAME_RATE_AUTO:
     		{
@@ -969,7 +917,7 @@ static int sr130pc10_set_frame_rate(struct v4l2_subdev *sd, struct v4l2_control 
     		default:
     		{
     			CAM_WARN_MSG(&client->dev, "[%s : %d] WARNING! unsupported %d fps\n", 
-    			            __FILE__, __LINE__, ctrl->value);
+    			            __FILE__, __LINE__, fps);
                 err = -EIO;       
     			break;
             }			
@@ -983,14 +931,14 @@ static int sr130pc10_set_frame_rate(struct v4l2_subdev *sd, struct v4l2_control 
 		return -EIO;
 	}
 
-	if(ctrl->value == FRAME_RATE_AUTO)
-	{
-	    state->fps = 15;    // default 15
-    }	
-    else
-    {
-	    state->fps = ctrl->value;
-    }
+        if(fps== FRAME_RATE_AUTO)
+        {
+            state->fps = 15;    // default 15
+        }	
+        else
+        {
+            state->fps = fps;
+        }
 	
 	return 0;
 }
@@ -1076,7 +1024,10 @@ static int sr130pc10_set_capture_start(struct v4l2_subdev *sd, struct v4l2_contr
 {
     struct i2c_client *client = v4l2_get_subdevdata(sd);
     int err = 0;
+    unsigned short read_value = 0;
 
+    CAM_INFO_MSG(&client->dev,"%s",__func__);
+    
     // Initialize...
 	front_gISOSpeedRating = 100;
 	front_gExposureTime = 0;	
@@ -1095,7 +1046,17 @@ static int sr130pc10_set_capture_start(struct v4l2_subdev *sd, struct v4l2_contr
     // Get iso speed rating and exposure time for EXIF.
     front_gISOSpeedRating = sr130pc10_get_iso_speed_rate(sd);
     front_gExposureTime = sr130pc10_get_shutterspeed(sd);
-    
+	
+    sr130pc10_i2c_write_byte(client, 0x03, 0x00);   // Page mode : 0x00
+    sr130pc10_i2c_read_byte(client, 0x01, &read_value);
+
+    if(read_value != 0xF8){
+		CAM_ERROR_MSG(&client->dev, "sleep register : 0x%x\n",read_value);
+		sr130pc10_i2c_write_byte(client, 0x03, 0x00);   // Page mode : 0x00
+		sr130pc10_i2c_write_byte(client, 0x01, 0xf8);
+		msleep(50);
+    	}
+	
 	return 0;
 }
 
@@ -1259,13 +1220,13 @@ static int sr130pc10_set_iso(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
 	return 0;
 }
 
-static int sr130pc10_set_ev(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
+static int sr130pc10_set_ev(struct v4l2_subdev *sd, int value)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	struct sensor_state *state = to_state(sd);
 	int err = 0;
 
-    CAM_INFO_MSG(&client->dev, "%s: setting value =%d\n", __func__, ctrl->value);
+    CAM_INFO_MSG(&client->dev, "%s: setting value =%d\n", __func__, value);
 #if 0
     if(state->vt_mode == VT_MODE_ON)
     {
@@ -1362,7 +1323,7 @@ static int sr130pc10_set_ev(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
     else
 #endif        
     {
-    	switch(ctrl->value)
+    	switch(value)
     	{
     		case EV_MINUS_4:
     		{
@@ -1447,7 +1408,7 @@ static int sr130pc10_set_ev(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
 
     		default:
     		{
-    			CAM_WARN_MSG(&client->dev, "[%s : %d] WARNING! unsupported ev(%d)\n", __FILE__, __LINE__, ctrl->value);
+    			CAM_WARN_MSG(&client->dev, "[%s : %d] WARNING! unsupported ev(%d)\n", __FILE__, __LINE__, value);
     			break;
             }			
     	}
@@ -1544,8 +1505,11 @@ static int sr130pc10_get_shutterspeed(struct v4l2_subdev *sd)
     sr130pc10_i2c_read_byte(client, 0x82, &read_value3);
 
     ShutterSpeed = ((read_value1 << 19) + (read_value2 << 11) + (read_value3 << 3)) / 24;   // 24Mhz
+
+    CAM_INFO_MSG(&client->dev,"ShutterSpeed=%d,read_value1=%d,read_value2=%d,read_value3=%d",
+                ShutterSpeed,read_value1,read_value2,read_value3);
     
-    return ShutterSpeed; // us
+    return ShutterSpeed;
 }
 
 static void sr130pc10_init_parameters(struct v4l2_subdev *sd)
@@ -1740,11 +1704,64 @@ static int sr130pc10_g_parm(struct v4l2_subdev *sd, struct v4l2_streamparm *para
 
 static int sr130pc10_s_parm(struct v4l2_subdev *sd, struct v4l2_streamparm *param)
 {
-	struct sensor_state *state = to_state(sd);
+    int err = 0;
+    struct i2c_client *client = v4l2_get_subdevdata(sd);
+    struct sensor_state *state = to_state(sd);
+    struct sec_cam_parm *new_parms =
+        (struct sec_cam_parm *)&param->parm.raw_data;
+    struct sec_cam_parm *parms =
+        (struct sec_cam_parm *)&state->strm.parm.raw_data;
 
-       //state->capture_mode = param->parm.capture.capturemode;
-	return 0;
+    dev_dbg(&client->dev, "%s: start\n", __func__);
+
+    if (param->parm.capture.timeperframe.numerator !=
+        parms->capture.timeperframe.numerator ||
+        param->parm.capture.timeperframe.denominator !=
+        parms->capture.timeperframe.denominator) {
+
+        int fps = 0;
+        int fps_max = 15;
+
+        if (param->parm.capture.timeperframe.numerator &&
+            param->parm.capture.timeperframe.denominator)
+            fps =
+                (int)(param->parm.capture.timeperframe.denominator /
+                  param->parm.capture.timeperframe.numerator);
+        else
+            fps = 0;
+
+        if (fps <= 0 || fps > fps_max) {
+            dev_dbg(&client->dev,
+                "%s: Framerate %d not supported,"
+                " setting it to %d fps.\n",
+                __func__, fps, fps_max);
+            fps = fps_max;
+        }
+
+        /*
+         * Don't set the fps value, just update it in the state
+         * We will set the resolution and
+         * fps in the start operation (preview/capture) call
+         */
+        parms->capture.timeperframe.numerator = 1;
+        parms->capture.timeperframe.denominator = fps;
+        
+        state->fps = fps;
+    }
+
+    sr130pc10_set_ev(sd, new_parms->brightness);
+	
+    dev_dbg(&client->dev, " set frame rate %d\n",parms->capture.timeperframe.denominator);
+
+    if(state->sensor_mode == 1){
+        sr130pc10_set_frame_rate(sd,state->fps);
+    }else{
+        sr130pc10_set_frame_rate(sd,state->fps !=15?state->fps:0);
+    }
+    
+    return 0;
 }
+
 
 
 static int sr130pc10_g_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
@@ -1855,7 +1872,7 @@ static int sr130pc10_s_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
 	struct sensor_state *state = to_state(sd);
 	int err = 0;
 
-	CAM_ERROR_MSG(&client->dev, "%s: V4l2 control ID =%d\n", __func__, ctrl->id - V4L2_CID_PRIVATE_BASE);
+	//CAM_ERROR_MSG(&client->dev, "%s: V4l2 control ID =%d\n", __func__, ctrl->id - V4L2_CID_PRIVATE_BASE);
 
 	if(state->check_dataline)
 	{
@@ -1892,7 +1909,7 @@ static int sr130pc10_s_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
 		
 		case V4L2_CID_CAMERA_BRIGHTNESS:
 		{
-			err = sr130pc10_set_ev(sd, ctrl);
+			err = sr130pc10_set_ev(sd, ctrl->value);
 			break;
 		}
 		
@@ -1981,7 +1998,7 @@ static int sr130pc10_s_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
         
 		case V4L2_CID_CAMERA_FRAME_RATE:
 		{
-			err = sr130pc10_set_frame_rate(sd, ctrl);
+			err = sr130pc10_set_frame_rate(sd, ctrl->value);
 			err = 0;
 			break;
 		}
@@ -2042,13 +2059,19 @@ static int sr130pc10_s_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
         {
             break;
         }
-        
-		default:
-		{
-		    //err = -ENOTSUPP;
-		    err = 0;
-		    break;
-        }
+
+	case V4L2_CID_CAMERA_SET_AUTO_FOCUS:
+	{
+		err = -1;
+		break;
+	}		
+	
+	default:
+	{
+		//err = -ENOTSUPP;
+		err = 0;
+		break;
+	}
 	}
 
 	if(err < 0)

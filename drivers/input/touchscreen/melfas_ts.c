@@ -224,12 +224,20 @@ static void melfas_ts_work_func(struct work_struct *work)
 		input_report_abs(ts->input_dev, ABS_MT_TOUCH_MAJOR, g_Mtouch_info[i].strength);
 		input_report_abs(ts->input_dev, ABS_MT_WIDTH_MAJOR, g_Mtouch_info[i].width);
 		input_mt_sync(ts->input_dev);
-
+#ifdef CONFIG_SEC_KEY_DBG					
 		printk("x=%d,y=%d,z=%d,id=%d\n", g_Mtouch_info[i].posX, g_Mtouch_info[i].posY, g_Mtouch_info[i].strength, i);
+#else
+	     	printk("z=%d\n",g_Mtouch_info[i].strength);
+#endif
+
         }
         if (keyEvent)
         {
+#ifdef CONFIG_SEC_KEY_DBG	   				        
             printk("[T_KEY]ID=%d,state=%d\n",keyID,keyState);
+#else
+            printk("[T_KEY]%d\n",keyState);		
+#endif
             if (keyID == 0x1)
                 input_report_key(ts->input_dev, 139, keyState ? PRESS_KEY : RELEASE_KEY);
             if (keyID == 0x2)
@@ -239,7 +247,7 @@ static void melfas_ts_work_func(struct work_struct *work)
             if (keyID == 0x4)
                 input_report_key(ts->input_dev, 217, keyState ? PRESS_KEY : RELEASE_KEY);
 #if DEBUG_PRINT
-            printk(KERN_ERR "melfas_ts_work_func: keyID : %d, keyState: %d\n", keyID, keySt;;ate);
+            printk(KERN_ERR "melfas_ts_work_func: keyID : %d, keyState: %d\n", keyID, keyState);
 #endif
         }
 
@@ -424,9 +432,15 @@ static int melfas_ts_probe(struct i2c_client *client, const struct i2c_device_id
 	printk("[TOUCH] Melfas	H/W version: 0x%02x.\n", ts->hw_rev);
 	printk("[TOUCH] Current F/W version: 0x%02x.\n", ts->fw_ver);
 
-	if(ts->fw_ver < 0x03)
+	if(ts->fw_ver < 0x08){
 		melfas_mcs7000_upgrade(ts->hw_rev);
-
+		msleep(1);
+		gpio_set_value(GPIO_TSP_LDO_ON, 0);
+		msleep(5);		
+		gpio_set_value(GPIO_TSP_LDO_ON, 1);
+		msleep(70); 
+	};
+	
 	ts->input_dev = input_allocate_device();
 	if (!ts->input_dev)
 	{
@@ -435,7 +449,7 @@ static int melfas_ts_probe(struct i2c_client *client, const struct i2c_device_id
 	    goto err_input_dev_alloc_failed;
 	}
 
-	ts->input_dev->name = "melfas-ts" ;
+	ts->input_dev->name = "sec_touchscreen" ;
 
 	ts->input_dev->evbit[0] = BIT_MASK(EV_ABS) | BIT_MASK(EV_KEY);
 

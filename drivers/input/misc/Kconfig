@@ -63,8 +63,26 @@ config INPUT_K3DH
 	help
 	  Driver for STMicro K3DH accelerometer - digital motion sensor.
 
+config INPUT_KR3DH_POSITION
+        int "KR3DH Mounting Position on Board"
+        depends on INPUT_K3DH
+        default "0"
+        help
+          Chip mounting position (pin 1).
+            0: top, upper-left
+            1: top, upper-right
+            2: top, lower-right
+            3: top, lower-left
+            4: bottom, upper-left
+            5: bottom, upper-right
+            6: bottom, lower-right
+            7: bottom, lower-left
 config INPUT_YAS529
 	tristate "Yamaha YAS529 Geomagnetic Sensor"
+	depends on I2C
+	
+config INPUT_YAS530
+	tristate "Yamaha YAS530 Geomagnetic Sensor"
 	depends on I2C
 
 config INPUT_YAS529_POSITION
@@ -82,7 +100,26 @@ config INPUT_YAS529_POSITION
 	    6: bottom, lower-right
 	    7: bottom, lower-left
 
+config INPUT_YAS_MAGNETOMETER_POSITION
+         int "YAS Geomagnetic Sensor Mounting Position on Board"
+         depends on INPUT_YAS_MAGNETOMETER
+         default "0"
+         help
+           Chip mounting position (pin 1).
+              0: top, upper-left
+              1: top, upper-right
+              2: top, lower-right
+              3: top, lower-left
+              4: bottom, upper-left
+              5: bottom, upper-right
+              6: bottom, lower-right
+              7: bottom, lower-left
+
 config INPUT_ORIENTATION
+	tristate "Yamaha Orientation Sensor"
+	depends on I2C
+
+config INPUT_ORIENTATION_YAS530
 	tristate "Yamaha Orientation Sensor"
 	depends on I2C
 

@@ -26,10 +26,7 @@
 #include <linux/interrupt.h>
 #include <linux/workqueue.h>
 #include <linux/io.h>
-
-#ifdef CONFIG_MACH_STEALTHV
 #include <linux/kernel_sec_common.h>
-#endif
 
 /* enable */
 static unsigned watchdog_enable; /* off by default */
@@ -50,6 +47,7 @@ static DECLARE_DELAYED_WORK(watchdog_work, watchdog_workfunc);
 static void watchdog_workfunc(struct work_struct *work)
 {
 	writel(watchdog_reset, S3C2410_WTCNT);
+	pr_info("%s:WT timer updated  \n", __func__);
 	queue_delayed_work(watchdog_wq, &watchdog_work, watchdog_pet);
 }
 
@@ -88,18 +86,22 @@ static int watchdog_probe(struct platform_device *pdev)
 		return 0;
 
 	watchdog_wq = create_rt_workqueue("pet_watchdog");
+	pr_info("%s:start watchdog \n", __func__);
 	watchdog_start();
+	pr_info("%s:started watchdog \n", __func__);
 	return 0;
 }
 
 static int watchdog_suspend(struct device *dev)
 {
+	pr_info("%s: \n", __func__);
 	watchdog_stop();
 	return 0;
 }
 
 static int watchdog_resume(struct device *dev)
 {
+	pr_info("%s: \n", __func__);
 	watchdog_start();
 	return 0;
 }
@@ -120,12 +122,11 @@ static struct platform_driver watchdog_driver = {
 	
 static int __init watchdog_init(void)
 {
-#ifdef CONFIG_MACH_STEALTHV
 	if (KERNEL_SEC_DEBUG_LEVEL_LOW == kernel_sec_get_debug_level())
 		watchdog_enable = 1;
 	else
 		watchdog_enable = 0;
-#endif
+
 	if (!watchdog_enable) {
 		pr_err("%s: disabled\n", __func__);
 		return 0;

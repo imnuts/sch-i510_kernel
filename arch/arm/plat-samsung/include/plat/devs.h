@@ -127,10 +127,12 @@ extern struct platform_device s3c_device_usb_mass_storage;
 #endif
 #    define SAMSUNG_UMS_PRODUCT_ID	0x681D
 #    define SAMSUNG_MTP_PRODUCT_ID	0x5A0F
-#ifdef CONFIG_USB_ANDROID_DIAG
+#if defined(CONFIG_USB_ANDROID_DIAG) && defined(CONFIG_USB_ANDROID_NMEA)
+        #define SAMSUNG_RNDIS_PRODUCT_ID	0x68C4  /* Shrewbury RNDIS+DM+DM */
+#elif defined(CONFIG_USB_ANDROID_DIAG)
 	#define SAMSUNG_RNDIS_PRODUCT_ID	0x68C8  /* Shrewbury RNDIS+DM */
 #else
-	#define SAMSUNG_RNDIS_PRODUCT_ID	0x6881
+	#define SAMSUNG_RNDIS_PRODUCT_ID	0x6881 /* Shrewbury RNDIS only */
 #endif
 #  endif
 #  define       ANDROID_DEBUG_CONFIG_STRING	 "ACM + UMS + ADB (Debugging mode)"

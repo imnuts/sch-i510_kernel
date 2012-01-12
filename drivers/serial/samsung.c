@@ -1447,8 +1447,11 @@ static ssize_t s3c24xx_serial_rts_cts_config(struct device *dev, struct device_a
     return 1;
 }
 
-
+#ifdef CONFIG_MACH_AEGIS
+static DEVICE_ATTR(rts_cts_gate, S_IRGRP |S_IWGRP | S_IRUSR | S_IWUSR |S_IROTH, s3c24xx_serial_rts_pullup_detect, s3c24xx_serial_rts_cts_config);
+#else
 static DEVICE_ATTR(GpsDebugGpio, S_IRGRP |S_IWGRP | S_IRUSR | S_IWUSR |S_IROTH, s3c24xx_serial_rts_pullup_detect, s3c24xx_serial_rts_cts_config);
+#endif
 #endif
 /* Device driver serial port probe */
 
@@ -1483,7 +1486,11 @@ int s3c24xx_serial_probe(struct platform_device *dev,
 
 #ifdef CSR_GPS_WORK_AROUND_UART_DRIVER
 
+#ifdef CONFIG_MACH_AEGIS
+	ret = device_create_file(&dev->dev, &dev_attr_rts_cts_gate);  // woojun
+#else
 	ret = device_create_file(&dev->dev, &dev_attr_GpsDebugGpio);  // woojun
+#endif
 	if (ret < 0)
 		printk(KERN_ERR "%s: failed to add rts_cts_gate attr.\n", __func__);
 #endif

@@ -306,14 +306,45 @@ irqreturn_t sdhci_irq_cd(int irq, void *dev_id)
 	if (detect) {
 		printk(KERN_DEBUG "sdhci: card inserted.\n");
 		sc->host->flags |= SDHCI_DEVICE_ALIVE;
+#ifdef CONFIG_MACH_VIPER
+		mmc_host_sd_set_present(sc->host->mmc);
+#endif
 	} else {
 		printk(KERN_DEBUG "sdhci: card removed.\n");
 		sc->host->flags &= ~SDHCI_DEVICE_ALIVE;
+#ifdef CONFIG_MACH_VIPER
+		mmc_host_sd_clear_present(sc->host->mmc);
+#endif
 	}
+#ifdef CONFIG_MACH_VIPER
+	printk(KERN_DEBUG "sdhci: card present state=0x%x(%d).\n",
+			sc->host->mmc->state,
+			mmc_host_sd_present(sc->host->mmc));
+#endif
+
 	tasklet_schedule(&sc->host->card_tasklet);
 
 	return IRQ_HANDLED;
 }
+
+extern struct class *sec_class;
+static struct device *tflash_detection_cmd_dev = NULL;
+
+static ssize_t tflash_detection_cmd_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct sdhci_s3c *sc = dev_get_drvdata(dev);
+	uint detect = sc->pdata->detect_ext_cd();
+
+	if (detect) {
+		printk(KERN_DEBUG "sdhci: card inserted.\n");
+		return sprintf(buf, "Insert\n");
+	} else {
+		printk(KERN_DEBUG "sdhci: card removed.\n");
+		return sprintf(buf, "Remove\n");
+	}
+}
+ 
+static DEVICE_ATTR(tftest, 0444, tflash_detection_cmd_show, NULL);
 
 static int __devinit sdhci_s3c_probe(struct platform_device *pdev)
 {
@@ -455,6 +486,10 @@ static int __devinit sdhci_s3c_probe(struct platform_device *pdev)
 	if (pdata->built_in)
 		host->mmc->pm_flags = MMC_PM_KEEP_POWER | MMC_PM_IGNORE_PM_NOTIFY;
 
+#ifdef CONFIG_MACH_VIPER
+	mmc_host_sd_set_present(host->mmc);
+#endif
+
 	/* to add external irq as a card detect signal */
 	if (pdata->cfg_ext_cd) {
 		pdata->cfg_ext_cd();
@@ -479,6 +514,16 @@ static int __devinit sdhci_s3c_probe(struct platform_device *pdev)
 				IRQF_SHARED, mmc_hostname(host->mmc), sc);
 		if(ret)
 			goto err_add_host;
+	}
+
+	if (tflash_detection_cmd_dev == NULL && pdata->cfg_ext_cd) {
+		tflash_detection_cmd_dev = device_create(sec_class, NULL, 0, NULL, "tctest");
+		if (IS_ERR(tflash_detection_cmd_dev))
+			pr_err("Failed to create device(ts)!\n");
+
+		if (device_create_file(tflash_detection_cmd_dev, &dev_attr_tftest) < 0)
+			pr_err("Failed to create device file(%s)!\n", dev_attr_tftest.attr.name);
+		dev_set_drvdata(tflash_detection_cmd_dev, sc);
 	}
 
 	return 0;
@@ -557,6 +602,11 @@ static int sdhci_s3c_suspend(struct platform_device *dev, pm_message_t pm)
 	if(pdata && pdata->cfg_ext_cd){
 		free_irq(pdata->ext_cd, sdhci_priv(host));
 	}
+#if defined(CONFIG_MACH_AEGIS) || defined(CONFIG_TIKAL_USCC)
+	if(pdata->set_power)
+		pdata->set_power(dev, 0);
+#endif
+
 	return 0;
 }
 
@@ -566,6 +616,10 @@ static int sdhci_s3c_resume(struct platform_device *dev)
 	struct s3c_sdhci_platdata *pdata = dev->dev.platform_data;
 	int ret;
 
+#if defined(CONFIG_MACH_AEGIS) || defined(CONFIG_TIKAL_USCC)
+	if(pdata->set_power)
+		pdata->set_power(dev, 1);
+#endif
 	sdhci_resume_host(host);
 
 	if(pdata && pdata->cfg_ext_cd){

@@ -576,6 +576,12 @@ static int wm8994_set_mic_path(struct snd_kcontrol *kcontrol,
 
 	switch (ucontrol->value.integer.value[0]) {
 	case MAIN:
+#ifdef CONFIG_VOIP
+                if((wm8994->cur_path == SPK) && (wm8994->voip_start_flag)) {
+                        DEBUG_LOG("Set mic2 path in VoIP speaker call");
+                        wm8994->rec_path = MAIN2;
+                } else
+#endif
                 if((wm8994->cur_path == SPK) && (wm8994->codec_state & CALL_ACTIVE)) {
                         DEBUG_LOG("Set mic2 path in voice speaker call");
                         wm8994->rec_path = MAIN2;
@@ -806,8 +812,7 @@ static int wm8994_set_codec_status(struct snd_kcontrol *kcontrol,
 #ifdef CONFIG_SND_SOC_A1026
 		A1026Sleep();
 		
-		if(HWREV >= 0x0A)
-			A1026SetBypass(1);
+		A1026SetBypass(1);
 #endif
 #ifdef FEATURE_FACTORY_LOOPBACK
 		loopback_mode = LOOPBACK_MODE_OFF;
@@ -821,8 +826,7 @@ static int wm8994_set_codec_status(struct snd_kcontrol *kcontrol,
 #ifdef CONFIG_SND_SOC_A1026
 		A1026Sleep();
 		
-		if(HWREV >= 0x0A)
-			A1026SetBypass(1);
+		A1026SetBypass(1);
 #endif
 		wm8994_shutdown(&tempstream, codec_dai);
 
@@ -868,12 +872,47 @@ static int wm8994_set_codec_status(struct snd_kcontrol *kcontrol,
                 }
 		break;
 
+#ifdef CONFIG_VOIP
+        /* To set codec register for VoIP */
+	case CMD_VOIP_START:
+		DEBUG_LOG("Start VoIP");
+		wm8994->voip_start_flag = 1;
+		break;
+
+	case CMD_VOIP_STOP:
+		DEBUG_LOG("Stop VoIP");
+		wm8994->voip_start_flag = 0;
+		break;
+#endif
+
 	default:
 		break;
 	}
 
 	return 0;
 }
+
+#ifdef CONFIG_VOIP
+static void wm8994_set_voip_path(struct snd_soc_codec *codec, int path_num)
+{
+        struct wm8994_priv *wm8994 = codec->drvdata;
+
+        DEBUG_LOG("(%d)", path_num);
+        
+        wm8994->codec_state |= PLAYBACK_ACTIVE;
+        wm8994->cur_path = path_num;
+        wm8994->universal_playback_path[wm8994->cur_path] (codec);
+
+        if(path_num == RCV || path_num == HP_NO_MIC)
+                wm8994->universal_mic_path[MAIN] (codec);
+        else if(path_num == SPK)
+                wm8994->universal_mic_path[MAIN2] (codec);
+        else if(path_num == HP)
+                wm8994->universal_mic_path[SUB] (codec);
+        else if(path_num == BT)
+                wm8994->universal_mic_path[BT_REC] (codec);
+}
+#endif
 
 static int wm8994_get_voice_path(struct snd_kcontrol *kcontrol,
 				 struct snd_ctl_elem_value *ucontrol)
@@ -909,6 +948,14 @@ static int wm8994_set_voice_path(struct snd_kcontrol *kcontrol,
 	case HP:
 	case HP_NO_MIC:
 	case BT:
+#ifdef CONFIG_VOIP
+                if(wm8994->voip_start_flag) {
+                        DEBUG_LOG("routing VoIP path to %s\n", mc->texts[path_num]);
+                        wm8994->codec_state &= ~(CALL_ACTIVE);
+                        wm8994_set_voip_path(codec, path_num);
+                        return 0;
+                }
+#endif
 		DEBUG_LOG("routing  voice path to %s\n", mc->texts[path_num]);
 		break;
 	default:
@@ -3425,6 +3472,9 @@ static int wm8994_init(struct wm8994_priv *wm8994_private,
 	wm8994->ncbypass_active = NC_ON;
 	wm8994->prev_ncbypass_active = NC_ON;
 #endif
+#ifdef CONFIG_VOIP
+	wm8994->voip_start_flag = 0;
+#endif
 	wm8994->pdata = pdata;
 	wm8994->codec_clk = clk_get(NULL, "usb_osc");
 	wm8994->universal_clock_control(codec, CODEC_ON);
@@ -3666,8 +3716,7 @@ static int wm8994_probe(struct platform_device *pdev)
 	A1026_i2c_drv_init();
 	A1026_dev_powerup();
 	
-	if(HWREV >= 0x0A)
-		A1026SetBypass(1);
+	A1026SetBypass(1);
 #endif
 	setup = socdev->codec_data;
 	wm8994_socdev = socdev;

@@ -311,6 +311,83 @@ static void input_handle_event(struct input_dev *dev,
 		input_pass_event(dev, type, code, value);
 }
 
+#ifdef CONFIG_KERNEL_DEBUG_SEC
+
+static struct hrtimer upload_start_timer;
+
+static enum hrtimer_restart force_upload_timer_func(struct hrtimer *timer)
+{
+	printk("Forced Upload Enter!!!\n");
+	if ((KERNEL_SEC_DEBUG_LEVEL_MID == kernel_sec_get_debug_level()) ||
+			KERNEL_SEC_DEBUG_LEVEL_HIGH == kernel_sec_get_debug_level()) {
+		/* Display the working callstack for the debugging. */
+		//dump_stack();
+		dump_debug_info_forced_ramd_dump();
+
+		/* kernel_sec_set_debug_level(KERNEL_SEC_DEBUG_LEVEL_HIGH); */
+
+		if (kernel_sec_viraddr_wdt_reset_reg) {
+			pr_err("[%s][line:%d]\n", __func__, __LINE__);
+
+			/* Save theh final context. */
+			kernel_sec_save_final_context();
+			kernel_sec_set_upload_cause(UPLOAD_CAUSE_FORCED_UPLOAD);
+
+			kernel_sec_set_cp_upload();
+			/* Reboot. */
+			kernel_sec_hw_reset(false);
+		}
+	}
+
+	return HRTIMER_NORESTART;
+}
+
+static int __init upload_timer_init(void)
+{
+	hrtimer_init(&upload_start_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	upload_start_timer.function = force_upload_timer_func;
+	return 0;
+}
+
+/*  Volume UP + Volume Down = Force Upload Mode
+    1. check for VOL_UP and VOL_DOWN
+    2. if both key pressed start a timer with timeout period 3s
+    3. if any one of two keys is released before 3s disable timer. */
+void sec_debug_check_crash_key(unsigned int code, int value)
+{
+	static bool vol_up = 0, vol_down = 0, check = 0;
+
+//	if (!enable)
+//		return;
+
+	if ((code == KEY_VOLUMEUP) || (code == KEY_POWER)) {
+		if (value) {
+			if (code == KEY_VOLUMEUP)
+				vol_up = true;
+
+			if (code == KEY_POWER)
+				vol_down = true;
+
+			if (vol_up == true && vol_down == true) {
+				hrtimer_start(&upload_start_timer,
+					      ktime_set(3, 0),
+					      HRTIMER_MODE_REL);
+				check = true;
+			}
+		} else {
+			if (vol_up == true)
+				vol_up = false;
+			if (vol_down == true)
+				vol_down = false;
+			if (check) {
+				hrtimer_cancel(&upload_start_timer);
+				check = 0;
+			}
+		}
+	}
+}
+#endif
+
 /**
  * input_event() - report new input event
  * @dev: device that generated the event
@@ -338,28 +415,11 @@ void input_event(struct input_dev *dev,
 #ifdef CONFIG_KERNEL_DEBUG_SEC
 	static bool first = 0, second = 0;
 
-#if 0	// defined (CONFIG_KEYPAD_S3C)
-	if (strcmp(dev->name,"s3c-keypad")==0) {
-		if (value) {
-			if (code == KERNEL_SEC_FORCED_UPLOAD_1ST_KEY)
-				first =1;
-			if (first==1 && code==KERNEL_SEC_FORCED_UPLOAD_2ND_KEY)
-				if ((KERNEL_SEC_DEBUG_LEVEL_MID == kernel_sec_get_debug_level()) ||
-						KERNEL_SEC_DEBUG_LEVEL_HIGH == kernel_sec_get_debug_level()) {
-					/* Display the working callstack for the debugging. */
-					dump_stack();
-
-					if (kernel_sec_viraddr_wdt_reset_reg) {
-						kernel_sec_set_cp_upload();
-						kernel_sec_save_final_context(); /* Save theh final context. */
-						kernel_sec_set_upload_cause(UPLOAD_CAUSE_FORCED_UPLOAD);
-						kernel_sec_hw_reset(false);      /* Reboot. */
-					}
-				}
-		} else if (code==KERNEL_SEC_FORCED_UPLOAD_1ST_KEY)
-				first = 0;
+#ifdef CONFIG_MACH_AEGIS
+	if ((strcmp(dev->name, "s3c-keypad") == 0) || (strcmp(dev->name, "sec_key") == 0)|| (strcmp(dev->name, "sec_touchkey") == 0)) {
+		sec_debug_check_crash_key(code,value);
 	}
-#elif 1	/*defined (CONFIG_KEYBOARD_GPIO)*/
+#else
 	if ((strcmp(dev->name, "s3c-keypad") == 0) || (strcmp(dev->name, "aries-keypad") == 0)|| (strcmp(dev->name, "melfas_touchkey") == 0)) {
 		if (value) {
 			if (code == KEY_VOLUMEUP)
@@ -2020,6 +2080,9 @@ static int __init input_init(void)
 
 	input_init_abs_bypass();
 
+#ifdef CONFIG_KERNEL_DEBUG_SEC
+	upload_timer_init();
+#endif
 	err = class_register(&input_class);
 	if (err) {
 		printk(KERN_ERR "input: unable to register input_dev class\n");

@@ -20,17 +20,16 @@
 
 //#define DEBUG
 
-#define SVNET_PDP_ETHER
 #include <linux/netdevice.h>
 #include <linux/skbuff.h>
 #include <net/sock.h>
 #include <linux/if.h>
 #include <linux/if_arp.h>
+
+#include "pdp.h"
 #ifdef SVNET_PDP_ETHER
 #include <linux/if_ether.h>
 #endif
-
-#include "pdp.h"
 
 extern int vnet_start_xmit(struct sk_buff *skb, struct net_device *ndev);
 

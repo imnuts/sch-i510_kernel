@@ -61,6 +61,9 @@ struct s3c_sdhci_platdata {
         /* add to deal with non-removable device */
         int     built_in;
 
+#if defined(CONFIG_MACH_AEGIS) || defined(CONFIG_TIKAL_USCC)
+	void	(*set_power)(struct platform_device *dev, int en);
+#endif
 };
 
 /**
@@ -255,12 +258,18 @@ extern void s5pv210_setup_sdhci_cfg_card(struct platform_device *dev,
 extern void s5pv210_adjust_sdhci_cfg_card(struct s3c_sdhci_platdata *pdata, void __iomem *r, int rw);
 
 #ifdef CONFIG_S3C_DEV_HSMMC
+#if defined(CONFIG_MACH_AEGIS) || defined(CONFIG_TIKAL_USCC)
+extern void s5pv210_setup_sdhci_set_power(struct platform_device *dev, int en);
+#endif
 static inline void s5pv210_default_sdhci0(void)
 {
 	s3c_hsmmc0_def_platdata.clocks = s5pv210_hsmmc_clksrcs;
 	s3c_hsmmc0_def_platdata.cfg_gpio = s5pv210_setup_sdhci0_cfg_gpio;
 	s3c_hsmmc0_def_platdata.cfg_card = s5pv210_setup_sdhci_cfg_card;
 	s3c_hsmmc0_def_platdata.adjust_cfg_card = s5pv210_adjust_sdhci_cfg_card;
+#if defined(CONFIG_MACH_AEGIS) || defined(CONFIG_TIKAL_USCC)
+	s3c_hsmmc0_def_platdata.set_power = s5pv210_setup_sdhci_set_power;
+#endif
 }
 #else
 static inline void s5pv210_default_sdhci0(void) { }
@@ -273,6 +282,9 @@ static inline void s5pv210_default_sdhci1(void)
 	s3c_hsmmc1_def_platdata.cfg_gpio = s5pv210_setup_sdhci1_cfg_gpio;
 	s3c_hsmmc1_def_platdata.cfg_card = s5pv210_setup_sdhci_cfg_card;
 	s3c_hsmmc1_def_platdata.adjust_cfg_card = s5pv210_adjust_sdhci_cfg_card;
+#if defined(CONFIG_MACH_AEGIS) || defined(CONFIG_TIKAL_USCC)
+	s3c_hsmmc1_def_platdata.set_power = NULL;
+#endif
 }
 #else
 static inline void s5pv210_default_sdhci1(void) { }
@@ -285,6 +297,9 @@ static inline void s5pv210_default_sdhci2(void)
 	s3c_hsmmc2_def_platdata.cfg_gpio = s5pv210_setup_sdhci2_cfg_gpio;
 	s3c_hsmmc2_def_platdata.cfg_card = s5pv210_setup_sdhci_cfg_card;
 	s3c_hsmmc2_def_platdata.adjust_cfg_card = s5pv210_adjust_sdhci_cfg_card;
+#if defined(CONFIG_MACH_AEGIS) || defined(CONFIG_TIKAL_USCC)
+	s3c_hsmmc2_def_platdata.set_power = NULL;
+#endif
 }
 #else
 static inline void s5pv210_default_sdhci2(void) { }
@@ -297,6 +312,9 @@ static inline void s5pv210_default_sdhci3(void)
 	s3c_hsmmc3_def_platdata.cfg_gpio = s5pv210_setup_sdhci3_cfg_gpio;
 	s3c_hsmmc3_def_platdata.cfg_card = s5pv210_setup_sdhci_cfg_card;
 	s3c_hsmmc3_def_platdata.adjust_cfg_card = s5pv210_adjust_sdhci_cfg_card;
+#if defined(CONFIG_MACH_AEGIS) || defined(CONFIG_TIKAL_USCC)
+	s3c_hsmmc3_def_platdata.set_power = NULL;
+#endif
 }
 #else
 static inline void s5pv210_default_sdhci3(void) { }

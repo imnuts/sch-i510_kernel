@@ -99,10 +99,11 @@ static int s6e63m0_spi_write_driver(struct s5p_lcd *lcd, u16 reg)
 	return ret ;
 }
 
-static void s6e63m0_panel_send_sequence(struct s5p_lcd *lcd,
+static int s6e63m0_panel_send_sequence(struct s5p_lcd *lcd,
 	const u16 *wbuf)
 {
 	int i = 0;
+	int ret = 0;
 
 	while ((wbuf[i] & DEFMASK) != ENDDEF) {
 		if ((wbuf[i] & DEFMASK) != SLEEPMSEC) {
@@ -113,6 +114,8 @@ static void s6e63m0_panel_send_sequence(struct s5p_lcd *lcd,
 			i += 2;
 		}
 	}
+
+	return ret;
 }
 
 static int get_gamma_value_from_bl(int bl)
@@ -202,6 +205,36 @@ static void update_acl(struct s5p_lcd *lcd)
 
 }
 #endif
+static int update_elvss(struct s5p_lcd *lcd, int level)
+{	
+	int ret = 0;
+	struct s5p_panel_data *pdata = lcd->data;
+//	printk("[AMOLED] s6e63m0_set_elvss..%d ~.\n",level);
+	
+	switch (level) 
+	{	
+		case 0 ... 4: /* 30cd ~ 100cd */		 
+			ret = s6e63m0_panel_send_sequence(lcd ,pdata->elvss_table[0]);		
+			break;	
+		case 5 ... 10: /* 110cd ~ 160cd */		
+			ret = s6e63m0_panel_send_sequence(lcd, pdata->elvss_table[1]);		
+			break;
+		case 11 ... 14: /* 170cd ~ 200cd */		
+			ret = s6e63m0_panel_send_sequence(lcd, pdata->elvss_table[2]);		
+			break;
+		case 15 ... 24: /* 210cd ~ 300cd */		
+			ret = s6e63m0_panel_send_sequence(lcd, pdata->elvss_table[3]);		
+			break;	
+		default:		
+			break;
+	}	
+	
+	if (ret) {
+		return -EIO;
+	}
+	return ret;
+
+}
 
 static void update_brightness(struct s5p_lcd *lcd)
 {
@@ -209,6 +242,7 @@ static void update_brightness(struct s5p_lcd *lcd)
 	int gamma_value;
 
 	gamma_value = get_gamma_value_from_bl(lcd->bl);
+	update_elvss(lcd ,gamma_value);
 
 	printk("bl:%d, gamma:%d,on_19:%d\n", lcd->bl, gamma_value, lcd->on_19gamma);
 
@@ -301,7 +335,7 @@ static ssize_t gammaset_file_cmd_store(struct device *dev,
 	sscanf(buf, "%d", &value);
 
 	if ((lcd->ldi_enable) && ((value == 0) || (value == 1))) {
-		printk("[gamma set] in gammaset_file_cmd_store, input value = %d\n", value);
+		//printk("[gamma set] in gammaset_file_cmd_store, input value = %d\n", value);
 		if (value != lcd->on_19gamma)	{
 			lcd->on_19gamma = value;
 			update_brightness(lcd);

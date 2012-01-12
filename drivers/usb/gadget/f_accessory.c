@@ -248,7 +248,7 @@ static void acc_complete_out(struct usb_ep *ep, struct usb_request *req)
 
 static void acc_complete_set_string(struct usb_ep *ep, struct usb_request *req)
 {
-#ifdef CONFIG_USB_ANDRPID_SHARE_ENDPOINT
+#ifdef CONFIG_USB_ANDROID_SHARE_ENDPOINT
 	struct acc_dev	*dev = _acc_dev;
 #else
 	struct acc_dev	*dev = ep->driver_data;
@@ -309,7 +309,7 @@ static int __init create_bulk_endpoints(struct acc_dev *dev,
 	int i;
 
 	DBG(cdev, "create_bulk_endpoints dev: %p\n", dev);
-#ifdef  CONFIG_USB_ANDRPID_SHARE_ENDPOINT
+#ifdef  CONFIG_USB_ANDROID_SHARE_ENDPOINT
 	ep = usb_ep_fixedconfig_alloc(cdev->gadget, in_desc);        
 #else
 	ep = usb_ep_autoconfig(cdev->gadget, in_desc);
@@ -322,7 +322,7 @@ static int __init create_bulk_endpoints(struct acc_dev *dev,
 	ep->driver_data = dev;		/* claim the endpoint */
 	dev->ep_in = ep;
 
-#ifdef  CONFIG_USB_ANDRPID_SHARE_ENDPOINT
+#ifdef  CONFIG_USB_ANDROID_SHARE_ENDPOINT
 	ep = usb_ep_fixedconfig_alloc(cdev->gadget, out_desc);
 #else
         ep = usb_ep_autoconfig(cdev->gadget, out_desc);

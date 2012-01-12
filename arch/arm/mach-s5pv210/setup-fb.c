@@ -81,8 +81,13 @@ int s3cfb_clk_on(struct platform_device *pdev, struct clk **s3cfb_clk)
 
 	clk_set_parent(sclk, mout_mpll);
 
+#ifdef CONFIG_MACH_AEGIS
+	if (!rate)
+		rate = 51310000;
+#else
 	if (!rate)
 		rate = 166750000;
+#endif
 
 	clk_set_rate(sclk, rate);
 	dev_dbg(&pdev->dev, "set fimd sclk rate to %d\n", rate);

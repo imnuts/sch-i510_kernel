@@ -22,6 +22,8 @@
 /* strobe control */
 #define V4L2_CAP_STROBE			0x20000000
 
+#define SOC_MODULE
+
 /* sensor state */
 enum
 {
@@ -378,6 +380,18 @@ enum v4l2_vintage_mode
 #define V4L2_CID_CAMERA_ZOOM				    (V4L2_CID_PRIVATE_BASE+90)
 enum v4l2_zoom_level 
 {
+#ifdef SOC_MODULE		// SOC Type
+	ZOOM_LEVEL_0 = 0,
+	ZOOM_LEVEL_1,
+	ZOOM_LEVEL_2,
+	ZOOM_LEVEL_3,
+	ZOOM_LEVEL_4,
+	ZOOM_LEVEL_5,
+	ZOOM_LEVEL_6,
+	ZOOM_LEVEL_7,
+	ZOOM_LEVEL_8,
+	ZOOM_LEVEL_MAX,
+#else					// ISP Type
 	ZOOM_LEVEL_0 = 0,
 	ZOOM_LEVEL_1,
 	ZOOM_LEVEL_2,
@@ -410,6 +424,7 @@ enum v4l2_zoom_level
 	ZOOM_LEVEL_29,
 	ZOOM_LEVEL_30,
 	ZOOM_LEVEL_MAX,
+#endif	
 };
 
 #define V4L2_CID_CAMERA_FACE_DETECTION		    (V4L2_CID_PRIVATE_BASE+91)
@@ -520,6 +535,15 @@ enum v4l2_caf_start_stop
 };
 
 #define V4L2_CID_CAMERA_AUTO_FOCUS_RESULT	    (V4L2_CID_PRIVATE_BASE+104)
+enum v4l2_af_status
+{
+  CAMERA_AF_STATUS_IN_PROGRESS = 0,
+  CAMERA_AF_STATUS_SUCCESS,
+  CAMERA_AF_STATUS_FAIL,
+  CAMERA_AF_STATUS_1ST_SUCCESS,
+  CAMERA_AF_STATUS_MAX
+};
+
 #define V4L2_CID_CAMERA_FRAME_RATE			    (V4L2_CID_PRIVATE_BASE+105)
 enum v4l2_frame_rate 
 {
@@ -655,6 +679,8 @@ enum v4l2_ae_stable_mode
 #define V4L2_CID_CAM_S_FW_VER                   (V4L2_CID_PRIVATE_BASE+152)
 
 #define V4L2_CID_CAMERA_POWER_CONTROL           (V4L2_CID_PRIVATE_BASE+153)
+
+#define V4L2_CID_CAMERA_SNAPSHOT_WIDTH		 (V4L2_CID_PRIVATE_BASE+154)
 
 /* Pixel format FOURCC depth Description */
 /* 12  Y/CbCr 4:2:0 64x32 macroblocks */

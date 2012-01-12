@@ -1,0 +1,11 @@
+#
+# CMDA DPRAM DRIVER configuration
+#
+config SAMSUNG_PHONE_DPRAM_INTERNAL
+	tristate "Samsung CDMA Phone Interface - S.LSI internal DPRAM"
+	depends on !SAMSUNG_DPRAM
+	default n
+	---help---
+	  This is worked for steath-v VIA CDMA modem.
+	  The ppp daemon is using the tty interface.
+	  When in doubt, say N.

@@ -58,6 +58,8 @@
 #include <linux/if_arp.h>
 
 #include "dpram.h"
+#include <linux/pm.h>
+
 
 #define SVNET_PDP_ETHER
 #ifdef SVNET_PDP_ETHER
@@ -121,6 +123,14 @@
 
 struct sk_buff_head txq;
 
+struct dpram_dupm {
+	unsigned magic;
+	unsigned err_cnt;
+	char buf[DPRAM_SIZE];
+} g_dpram_dump = {
+	.magic = 'rpd@',
+	.err_cnt = 0,
+};
 typedef enum _interface_type
 {
 	IPADDR_TYPE_IPV4 = 1,
@@ -309,7 +319,7 @@ u16 mulitpdp_debug_mask = MULTIPDP_PRINT_ERROR | MULTIPDP_PRINT_WARNING;
 #endif /*_ENABLE_DEBUG_PRINTS */
 
 #ifdef _ENABLE_ERROR_DEVICE
-#define DPRAM_ERR_MSG_LEN			128	
+#define DPRAM_ERR_MSG_LEN			128
 #define DPRAM_ERR_DEVICE			"dpramerr"
 #endif	/* _ENABLE_ERROR_DEVICE */
 
@@ -436,7 +446,7 @@ void dpram_initiate_self_error_correction(void)
 	int ret;
 	DPRAM_LOG_ERR ("[DPRAM] dpram_initiate_self_error_correction\n");
 	ret = mod_timer(&phone_active_timer, jiffies + msecs_to_jiffies(1000));
-	if(ret) 
+	if(ret)
 		printk(KERN_ERR "error timer!!\n");
 #endif
 }
@@ -652,7 +662,7 @@ static int dpram_write(dpram_device_t *device, const unsigned char *buf, int len
 		return -EINVAL;
 	}
 
-	//Do sanity tests here on the buf. 
+	//Do sanity tests here on the buf.
 	// Note: Formatted data don't have channel ID. As we are taking length from packet, this should be okie
 	if (buf[0] != 0x7F) {
 		DPRAM_LOG_ERR("%s: missing start of pkt 0x7F \n", __func__);
@@ -1119,8 +1129,13 @@ static int dpram_phone_power_on(void)
 {
 	int RetVal = 0;
 	int dpram_init_RetVal = 0;
+	int magic_code = 0;
+	int ac_code = 0;
 
 	DPRAM_LOG_INFO("[DPRAM] dpram_phone_power_on using GPIO_PHONE_ON()\n");
+
+	WRITE_TO_DPRAM(DPRAM_MAGIC_CODE_ADDRESS, &magic_code, sizeof(magic_code));
+	WRITE_TO_DPRAM(DPRAM_ACCESS_ENABLE_ADDRESS, &ac_code, sizeof(ac_code));
 
 	gpio_set_value(GPIO_PHONE_ON, GPIO_LEVEL_HIGH);
 	mdelay(10);
@@ -1501,7 +1516,7 @@ static int dpram_tty_ioctl(struct tty_struct *tty, struct file *file,
 			/* do nothing here. Just a dummy call in Via6410 */
 			return 0;
 
-		case DPRAM_MEM_RW: 
+		case DPRAM_MEM_RW:
 			{
 				struct _mem_param param;
 				copy_from_user((void *)&param, (void *)arg, sizeof(param));
@@ -1711,6 +1726,7 @@ static void cmd_error_display_handler(void)
 	unsigned long flags;
 
 	memset((void *)buf, 0, sizeof(buf));
+       memcpy(g_dpram_dump.buf, dpram_base, DPRAM_SIZE);
 
 	if (dpram_phone_getstatus()) {
 		READ_FROM_DPRAM(cpdump_debug_file_name, DPRAM_PHONE2PDA_FORMATTED_BUFFER_ADDRESS
@@ -1744,7 +1760,6 @@ static void cmd_error_display_handler(void)
 
 	memcpy(dpram_err_buf, buf, DPRAM_ERR_MSG_LEN);
 	is_dpram_err = TRUE;
-
 	wake_up_interruptible(&dpram_err_wait_q);
 	kill_fasync(&dpram_err_async_q, SIGIO, POLL_IN);
 #endif	/* _ENABLE_ERROR_DEVICE */
@@ -1923,13 +1938,22 @@ static void non_command_handler(u16 non_cmd)
 	}
 }
 
+static unsigned long long old_clock;
+static u32 old_mailbox;
+
 /* @LDK@ interrupt handlers. */
 static irqreturn_t dpram_irq_handler(int irq, void *dev_id)
 {
 	u16 irq_mask = 0;
+	int check_cnt = 0;
+	check_cnt = readl(S5P_INFORM4);
 
 	READ_FROM_DPRAM_VERIFY(&irq_mask, DPRAM_PHONE2PDA_INTERRUPT_ADDRESS, sizeof(irq_mask));
 	DPRAM_LOG_RECV_IRQ("received mailboxAB = 0x%x\n", irq_mask);
+
+	if (old_mailbox == irq_mask &&
+			old_clock + 500000 > cpu_clock(smp_processor_id()))
+		return IRQ_HANDLED;
 
 #if 1	// TODO:debug: print head tail
 	u16 fih, fit, foh, fot;
@@ -1948,6 +1972,23 @@ static irqreturn_t dpram_irq_handler(int irq, void *dev_id)
 	// valid bit verification. @LDK@
 	if (!(irq_mask & INT_MASK_VALID)) {
 		DPRAM_LOG_ERR("Invalid interrupt mask: 0x%04x\n", irq_mask);
+		if ( g_dpram_dump.err_cnt >10 ){
+			writel(++check_cnt, S5P_INFORM4); 
+			if (readl(S5P_INFORM4)<3){
+				//ADDR LINES //0xE0200340  and 0xE0200360
+				DPRAM_LOG_ERR( "  ADDR LINES 0xE0200340 reg dump =  0x%x  ", *(volatile u32 *)(S5PV210_GPA0_BASE + 0x0340)); //0x22222222
+				DPRAM_LOG_ERR( "  ADDR LINES 0xE0200360 reg dump =  0x%x  ", *(volatile u32 *)(S5PV210_GPA0_BASE + 0x0360)); //0x00022222
+				//DATA LINES MP06 and MP07 //0xE0200380 and 0xE02003A0
+				DPRAM_LOG_ERR( "  DATA LINES 0xE0200380 reg dump =  0x%x  ", *(volatile u32 *)(S5PV210_GPA0_BASE + 0x0380)); //0x22222222
+				DPRAM_LOG_ERR( "  DATA LINES 0xE02003A0 reg dump =  0x%x  ", *(volatile u32 *)(S5PV210_GPA0_BASE + 0x03A0)); //0x22222222
+				kernel_sec_hw_reset(TRUE);
+			}
+			else{
+				DPRAM_LOG_ERR("[DPRAM] Power off\n");
+				pm_power_off();
+			}
+		}
+		g_dpram_dump.err_cnt ++;
 		DPRAM_LOG_ERR("[DPRAM] Leaving dpram_irq_handler()\n");
 		return IRQ_HANDLED;
 	}
@@ -1961,11 +2002,13 @@ static irqreturn_t dpram_irq_handler(int irq, void *dev_id)
 	if (irq_mask & INT_MASK_COMMAND) {
 		irq_mask &= ~(INT_MASK_VALID | INT_MASK_COMMAND);
 		command_handler(irq_mask);
-	} else {
+	} else {	
 		irq_mask &= ~INT_MASK_VALID;
 		non_command_handler(irq_mask);
 	}
-
+	old_clock = cpu_clock(smp_processor_id());
+	old_mailbox = irq_mask;
+	g_dpram_dump.err_cnt  = 0;
 	DPRAM_LOG_INFO("[DPRAM] Leaving dpram_irq_handler()\n");
 	return IRQ_HANDLED;
 }
@@ -1982,7 +2025,7 @@ static irqreturn_t phone_active_irq_handler(int irq, void *dev_id)
 	if((phone_sync) && (!gpio_state)) {
 		/* after 2 sec, check PHONE_ACTIVE pin again */
 		ret = mod_timer(&phone_active_timer, jiffies + msecs_to_jiffies(1000));
-		if(ret) 
+		if(ret)
 			printk(KERN_ERR "error timer!!\n");
 	}
 #endif
@@ -2304,7 +2347,8 @@ static int vs_open(struct tty_struct *tty, struct file *filp)
 		pdp_arg_t atchnl_arg = { .id = 17, .ifname = "ttyCSD", };
 		pdp_arg_t ets_arg = { .id = 26, .ifname = "ttyETS", };
 		pdp_arg_t ptp_arg = { .id = 18, .ifname = "ttyPTP", };
-                pdp_arg_t cplog_arg = { .id = 29, .ifname = "ttyCPLOG", };
+		pdp_arg_t cplog_arg = { .id = 29, .ifname = "ttyCPLOG", };
+
 
 		MULTIPDP_LOG_ERR("tty_driver retry routine!!\n");
 
@@ -2463,7 +2507,6 @@ static int vs_add_dev(struct pdp_info *dev)
 		case 18:
 			tty_driver->minor_start = 11;
 			break;
-
 		case 29:
 			tty_driver->minor_start = 12;
 			break;
@@ -2637,6 +2680,8 @@ static int pdp_activate(pdp_arg_t *pdp_arg, unsigned type, unsigned flags )
 		else if (dev->id == 29) {
 			MULTIPDP_LOG_INFO("%s(id: %u) serial device is created.\n", dev->vs_dev.tty_driver.name, dev->id);
 		}
+
+
 	}
 	return 0;
 }
@@ -2924,7 +2969,7 @@ static int pdp_mux_tty(struct pdp_info *dev, const void *data, size_t len)
 	u8 *tx_buf;
 	struct pdp_hdr *hdr;
 	const u8 *buf;
-	unsigned long start_time = jiffies; 
+	unsigned long start_time = jiffies;
 	struct timeval elapsedtime_tv = {0};
 	int count;
 
@@ -3033,8 +3078,8 @@ static int pdp_mux_net(struct work_struct *data)
 		free_space = (head < tail) ? tail - head - 1 : device->out_buff_size + tail - head - 1;
 		if (free_space < skb->len + 4) {
 			ret = -ENOSPC;
-			break; 
-		} 
+			break;
+		}
 
 		net = (struct net_device *)skb->dev;
 		if (!net) {
@@ -3043,8 +3088,8 @@ static int pdp_mux_net(struct work_struct *data)
 		}
 		dev = (struct pdp_info *)net->ml_priv;
 
-		if (skb_headroom(skb) > (sizeof(struct pdp_hdr) + sizeof(hdlc_start)) 
-				&& skb_tailroom(skb) > sizeof(hdlc_end)) { 
+		if (skb_headroom(skb) > (sizeof(struct pdp_hdr) + sizeof(hdlc_start))
+				&& skb_tailroom(skb) > sizeof(hdlc_end)) {
 			ret = _write_raw_skb(device, dev, skb);
 		} else {
 			ret = _write_raw_buf(device, dev, skb);
@@ -3110,6 +3155,7 @@ static int multipdp_init(void)
 	pdp_arg_t ptp_arg = { .id = 18, .ifname = "ttyPTP", };
 	pdp_arg_t cplog_arg = { .id = 29, .ifname = "ttyCPLOG", };
 
+
 	DPRAM_LOG_INFO("multipdp_init \n");
 
 	ret = pdp_activate(&pdp_arg, DEV_TYPE_SERIAL,DEV_FLAG_STICKY);
@@ -3159,7 +3205,6 @@ static int multipdp_init(void)
 	}
 
 	return 0;
-
 cplog_arg:
 	pdp_deactivate(&cplog_arg, 1);
 ptp_arg:

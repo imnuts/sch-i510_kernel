@@ -57,6 +57,9 @@ enum {
 	BATT_USE_CAMERA,
 	BATT_USE_DATA_CALL,
 	BATT_USE_LTE,
+#ifdef CONFIG_MACH_AEGIS
+	BATT_USE_GPS,
+#endif
 	BATT_USE,	/* flags */
 	CONTROL_TEMP,
 };

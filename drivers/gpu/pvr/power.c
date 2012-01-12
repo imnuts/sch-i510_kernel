@@ -99,7 +99,16 @@ PVRSRV_ERROR PVRSRVPowerLock(IMG_UINT32	ui32CallerID,
 	PVRSRV_ERROR	eError;
 	SYS_DATA		*psSysData;
 
+#ifdef __linux__	
+	IMG_UINT32		ui32Timeout = 1000;
+#else
 	IMG_UINT32		ui32Timeout = 1000000;
+#endif
+
+#if defined(SUPPORT_LMA)
+	ui32Timeout *= 60;
+#endif 
+
 	IMG_BOOL	bTryLock = (ui32CallerID == ISR_ID);
 
 	SysAcquireData(&psSysData);
@@ -119,11 +128,16 @@ PVRSRV_ERROR PVRSRVPowerLock(IMG_UINT32	ui32CallerID,
 		{
 			break;
 		}
-		else if (bTryLock)
+		else if (bTryLock || ui32CallerID == ISR_ID)
 		{
 			eError = PVRSRV_ERROR_RETRY;
 			break;
 		}
+#ifdef __linux__
+		msleep(1);
+#else
+		OSWaitus(1);
+#endif
 		ui32Timeout--;
 	} while (ui32Timeout > 0);
 

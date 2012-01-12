@@ -31,9 +31,9 @@
 
 #define SVNET_CIRC
 #if defined(SVNET_CIRC)
-#  include "circ.h"
+#include "circ.h"
 #else
-#  include <linux/circ_buf.h>
+#include <linux/circ_buf.h>
 #endif
 
 #include <linux/workqueue.h>
@@ -62,16 +62,37 @@ static struct device *_dev;
 #endif
 
 #if defined(NOISY_DEBUG)
-#  define _dbg(format, arg...) dev_dbg(_dev, format, ## arg)
+#define _dbg(format, arg...) dev_dbg(_dev, format, ## arg)
 #else
-#  define _dbg(format, arg...) do { } while (0)
+#define _dbg(format, arg...) do { } while (0)
 #endif
 
 #if defined(PERF_DEBUG)
-#  define _pdbg(format, arg...) dev_dbg(_dev, format, ## arg)
+#define _pdbg(format, arg...) dev_dbg(_dev, format, ## arg)
 #else
-#  define _pdbg(format, arg...) do { } while (0)
+#define _pdbg(format, arg...) do { } while (0)
 #endif
+
+#define dbg_loga(s, args...) printk(KERN_ERR "[SIPC4] <%s:%d> " s, __func__, __LINE__, ##args)
+#define dbg_loge(s, args...) printk(KERN_ERR "[SIPC4/Err] <%s:%d> " s, __func__, __LINE__, ##args)
+#define dbg_logi(s, args...) printk(KERN_ERR s, ##args)
+#define dbg_log(s, args...)  printk(s, ##args)
+
+//#define PRINT_FMT_TX_HEAD_TAIL
+//#define PRINT_FMT_TX_DATA
+//#define PRINT_FMT_RX_HEAD_TAIL
+//#define PRINT_FMT_RX_DATA
+//#define PRINT_RAW_TX_HEAD_TAIL
+//#define PRINT_RAW_TX_DATA
+//#define PRINT_IP_TX_DATA
+//#define PRINT_RAW_RX_HEAD_TAIL
+//#define PRINT_RAW_RX_DATA
+//#define PRINT_IP_RX_DATA
+//#define PRINT_RFS_TX_HEAD_TAIL
+//#define PRINT_RFS_TX_DATA
+//#define PRINT_RFS_RX
+//#define PRINT_RFS_RX_DATA
+//#define PRINT_AT_COMMAND
 
 const char *sipc_version = "4.1";
 
@@ -132,6 +153,9 @@ struct ringbuf {
 #define rb_in_head in->head
 #define rb_in_tail in->tail
 
+#if defined(PRINT_IP_TX_DATA) || defined(PRINT_IP_RX_DATA)
+extern void parse_ip_packet(u8 *ip_pkt);
+#endif
 
 static int _read_fmt(struct sipc *si, int inbuf, struct ringbuf *rb);
 static int _read_raw(struct sipc *si, int inbuf, struct ringbuf *rb);
@@ -303,7 +327,1055 @@ void _dbg_dump(u8 *buf, int size)
 	}
 }
 #else
-#  define _dbg_dump(buf, size) do { } while(0)
+#define _dbg_dump(buf, size) do { } while(0)
+#endif
+
+#if defined(PRINT_FMT_TX_DATA) || defined(PRINT_FMT_RX_DATA)
+#include "ipc_v40.h"
+
+#ifndef byte
+#define byte unsigned char
+#endif
+
+typedef __packed struct {
+   byte start_flag;
+   byte len_packet[2];
+   byte control;
+   byte len[2];
+   byte msg_seq;
+   byte ack_seq;
+   byte main_cmd;
+   byte sub_cmd;
+   byte cmd_type;
+} format_hdr_type;
+
+typedef __packed struct {
+   byte len[2];
+   byte msg_seq;
+   byte ack_seq;
+   byte main_cmd;
+   byte sub_cmd;
+   byte cmd_type;
+} format_sipc_hdr_type;
+
+static const char* getResponseTypeName( int cmd_type);
+static const char* getCMDTypeName( int cmd_type);
+static const char* getMainCommandName( int main_cmd);
+static const char* getSubCommandName( int main_cmd, int sub_cmd);
+
+
+#ifdef PRINT_FMT_RX_DATA
+void print_rx_fmt_frame(struct fmt_hdr *h, const u8 *psrc, u32 size)
+{
+    int              i = 0;
+    int              loopcount = 0;
+    int              fmt_len = h->len;
+    format_hdr_type  fmt_hdr;
+    int              fmt_hdr_size = sizeof(format_hdr_type);
+    u8              *fmt_data = (psrc + 7);
+    int              param_len = 0;
+
+    memcpy(&fmt_hdr.len, psrc, 7);
+
+    if ( (fmt_hdr.main_cmd == IPC_MISC_CMD) &&
+         (fmt_hdr.sub_cmd == IPC_MISC_ME_VERSION) )
+    {
+        return;
+    }
+
+    dbg_logi("\n");
+    dbg_loga("(RX) Formatted HDLC packet (size %d) =\n", (fmt_len + 2));
+    dbg_logi("[SIPC4] -------------------------------IPC FMT RX HEADER-------------------------------\n");
+    dbg_logi("[SIPC4] (M)%s, (S)%s, (T)%s, len:%d, mseq:%d, aseq:%d\n",
+              getMainCommandName((int)fmt_hdr.main_cmd),
+              getSubCommandName((int)fmt_hdr.main_cmd, (int)fmt_hdr.sub_cmd),
+              getResponseTypeName((int)fmt_hdr.cmd_type),
+              fmt_len,
+              fmt_hdr.msg_seq,
+              fmt_hdr.ack_seq);
+    dbg_logi("[SIPC4] --------------------------------IPC FMT RX DATA--------------------------------\n");
+    if (size > 7)
+        dbg_logi("[SIPC4] ");
+    param_len = (size - 7);
+    for (i = param_len; i > 0; i--)
+    {
+        loopcount++;
+        dbg_log("%02x ", *fmt_data++);
+        // Insert new line at every 16 hex numbers
+        if (loopcount % 16 == 0)
+        {
+            dbg_log("\n");
+            if (loopcount < param_len)
+                dbg_logi("[SIPC4] ");
+        }
+    }
+    if (loopcount % 16 != 0)
+        dbg_log("\n");
+    dbg_logi("[SIPC4] -------------------------------------------------------------------------------\n");
+    dbg_logi("\n");
+}
+#endif //PRINT_FMT_RX_DATA
+
+#ifdef PRINT_FMT_TX_DATA
+void print_tx_fmt_frame(const u8 *psrc, u32 size)
+{
+    u32              copied_size = 0;
+    int              i = 0;
+    int              loopcount = 0;
+    u8              *fmt_pkt;
+    int              fmt_len = 0;
+    format_hdr_type  fmt_hdr;
+    int              fmt_hdr_size = sizeof(format_hdr_type);
+
+    fmt_pkt = psrc;
+    copied_size = 0;
+    while ((size - copied_size) > fmt_hdr_size)
+    {
+        memcpy(&fmt_hdr, fmt_pkt, fmt_hdr_size);
+
+        if ( (fmt_hdr.main_cmd == IPC_MISC_CMD) &&
+             (fmt_hdr.sub_cmd == IPC_MISC_ME_VERSION) )
+        {
+            break;
+        }
+
+        fmt_len = (fmt_hdr.len_packet[1] << 8) | fmt_hdr.len_packet[0];
+
+        dbg_logi("\n");
+        dbg_loga("(TX) Formatted HDLC packet (size %d) =\n", (fmt_len + 2));
+        dbg_logi("[SIPC4] -------------------------------IPC FMT TX HEADER-------------------------------\n");
+        dbg_logi("[SIPC4] (M)%s, (S)%s, (T)%s, len:%d, mseq:%d, aseq:%d\n",
+                  getMainCommandName((int)fmt_hdr.main_cmd),
+                  getSubCommandName((int)fmt_hdr.main_cmd, (int)fmt_hdr.sub_cmd),
+                  getCMDTypeName((int)fmt_hdr.cmd_type),
+                  ((fmt_hdr.len[1] << 8) | fmt_hdr.len[0]),
+                  fmt_hdr.msg_seq,
+                  fmt_hdr.ack_seq);
+        dbg_logi("[SIPC4] --------------------------------IPC FMT TX DATA--------------------------------\n");
+        loopcount = 0;
+        if ((fmt_len+1) > sizeof(format_hdr_type))
+            dbg_logi("[SIPC4] ");
+        for (i = sizeof(format_hdr_type); i < (fmt_len+1); i++)
+        {
+            loopcount++;
+            dbg_log("%02x ", *(fmt_pkt + i));
+            // Insert new line at every 16 hex numbers
+            if (loopcount % 16 == 0)
+            {
+                dbg_log("\n");
+                if (i < (fmt_len+1))
+                    dbg_logi("[SIPC4] ");
+            }
+        }
+        if (loopcount % 16 != 0)
+            dbg_log("\n");
+        dbg_logi("[SIPC4] -------------------------------------------------------------------------------\n");
+        dbg_logi("\n");
+
+        copied_size += (fmt_len + 2);  // 2 = start flag + end flag
+        fmt_pkt = psrc + copied_size;
+    }
+}
+#endif //PRINT_FMT_TX_DATA
+
+#if defined(PRINT_RAW_TX_DATA) || defined(PRINT_RFS_TX_DATA)
+void print_tx_hdlc_frame(int q_type, const u8 *psrc, u32 size)
+{
+    u32              copied_size = 0;
+    int              i = 0;
+    int              loopcount = 0;
+    u8              *fmt_pkt;
+    int              fmt_len = 0;
+    format_hdr_type  fmt_hdr;
+    int              fmt_hdr_size = sizeof(format_hdr_type);
+
+    dbg_logi("\n");
+
+    if (q_type == IPCIDX_RFS)
+    {
+        dbg_loga("RFS HDLC packet (size %d) =\n", size);
+    }
+    else //if (q_type == IPCIDX_RAW)
+    {
+        dbg_loga("RAW HDLC packet (size %d) =\n", size);
+    }
+
+    dbg_logi("[SIPC4] ");
+    for (i = 0; i < size; i++)
+    {
+        loopcount++;
+        dbg_log("%02x ", *(psrc + i));
+        // Insert new line at every 16 hex numbers
+        if (loopcount % 16 == 0)
+        {
+            dbg_log("\n");
+            if (loopcount < size)
+                dbg_logi("[SIPC4] ");
+        }
+    }
+    if (loopcount % 16 != 0)
+        dbg_log("\n");
+
+    dbg_logi("\n");
+}
+#endif //PRINT_RAW_TX_DATA || PRINT_RFS_TX_DATA
+
+const char* getResponseTypeName( int cmd_type)
+{
+    switch(cmd_type)
+    {
+        case IPC_CMD_INDI :
+            return "IPC_CMD_INDI";
+        case IPC_CMD_RESP :
+            return "IPC_CMD_RESP";
+        case IPC_CMD_NOTI :
+            return "IPC_CMD_NOTI";
+         default :
+            return "CMD_TYPE_UNDEFINED";
+    }
+}
+
+const char* getCMDTypeName( int cmd_type)
+{
+    switch(cmd_type)
+    {
+        case IPC_CMD_EXEC :
+            return "IPC_CMD_EXEC";
+        case IPC_CMD_GET :
+            return "IPC_CMD_GET";
+        case IPC_CMD_SET :
+            return "IPC_CMD_SET";
+        case IPC_CMD_CFRM :
+            return "IPC_CMD_CFRM";
+        case IPC_CMD_EVENT :
+            return "IPC_CMD_EVENT";
+         default :
+            return "CMD_TYPE_UNDEFINED";
+    }
+}
+
+const char* getMainCommandName( int main_cmd)
+{
+    switch(main_cmd)
+    {
+        case IPC_PWR_CMD :
+            return "IPC_PWR_CMD";
+        case IPC_CALL_CMD :
+            return "IPC_CALL_CMD";
+        case IPC_CDMA_DATA_CMD :
+            return "IPC_CDMA_DATA_CMD";
+        case IPC_SMS_CMD :
+            return "IPC_SMS_CMD";
+        case IPC_SEC_CMD :
+            return "IPC_SEC_CMD";
+        case IPC_PB_CMD :
+            return "IPC_PB_CMD";
+        case IPC_DISP_CMD :
+            return "IPC_DISP_CMD";
+        case IPC_NET_CMD :
+            return "IPC_NET_CMD";
+        case IPC_SND_CMD :
+            return "IPC_SND_CMD";
+        case IPC_MISC_CMD :
+            return "IPC_MISC_CMD";
+        case IPC_SVC_CMD :
+            return "IPC_SVC_CMD";
+        case IPC_SS_CMD :
+            return "IPC_SS_CMD";
+        case IPC_GPRS_CMD :
+            return "IPC_GPRS_CMD";
+        case IPC_SAT_CMD :
+            return "IPC_SAT_CMD";
+        case IPC_CFG_CMD :
+            return "IPC_CFG_CMD";
+        case IPC_IMEI_CMD :
+            return "IPC_IMEI_CMD";
+        case IPC_GPS_CMD:
+            return "IPC_GPS_CMD";
+        case IPC_SAP_CMD :
+            return "IPC_SAP_CMD";
+        case IPC_FACTORY_CMD :
+            return "IPC_FACTORY_CMD";
+        case IPC_OMADM_CMD :
+            return "IPC_OMADM_CMD";
+        case IPC_GEN_CMD :
+            return "IPC_GEN_CMD";
+        default :
+            return "MAIN_CMD_UNDEFINED";
+    }
+}
+
+const char* getSubCommandName(int main_cmd, int sub_cmd)
+{
+    switch(main_cmd)
+    {
+        case IPC_PWR_CMD :
+            switch(sub_cmd)
+            {
+                case IPC_PWR_PHONE_PWR_UP :
+                    return "IPC_PWR_PHONE_PWR_UP";
+                case IPC_PWR_PHONE_PWR_OFF :
+                    return "IPC_PWR_PHONE_PWR_OFF";
+                case IPC_PWR_PHONE_RESET :
+                    return "IPC_PWR_PHONE_RESET";
+                case IPC_PWR_BATT_STATUS :
+                    return "IPC_PWR_BATT_STATUS";
+                case IPC_PWR_BATT_TYPE :
+                    return "IPC_PWR_BATT_TYPE";
+                case IPC_PWR_BATT_COMP:
+                    return "IPC_PWR_BATT_COMP";
+                case IPC_PWR_PHONE_STATE:
+                    return "IPC_PWR_PHONE_STATE";
+                default :
+                    return "PWR_SUB_CMD_UNDEFINED";
+            }
+            break;
+
+        case IPC_CALL_CMD :
+            switch(sub_cmd)
+            {
+                case IPC_CALL_OUTGOING :
+                    return "IPC_CALL_OUTGOING";
+                case IPC_CALL_INCOMING :
+                    return "IPC_CALL_INCOMING";
+                case IPC_CALL_RELEASE :
+                    return "IPC_CALL_RELEASE";
+                case IPC_CALL_ANSWER :
+                    return "IPC_CALL_ANSWER";
+                case IPC_CALL_STATUS :
+                    return "IPC_CALL_STATUS";
+                case IPC_CALL_LIST :
+                    return "IPC_CALL_LIST";
+                case IPC_CALL_BURST_DTMF :
+                    return "IPC_CALL_BURST_DTMF";
+                case IPC_CALL_CONT_DTMF :
+                    return "IPC_CALL_CONT_DTMF";
+                case IPC_CALL_WAITING :
+                    return "IPC_CALL_WAITING";
+                case IPC_CALL_LINE_ID :
+                    return "IPC_CALL_LINE_ID";
+                case IPC_CALL_SIGNAL :
+                    return "IPC_CALL_SIGNAL";
+                case IPC_CALL_VOICE_PRIVACY :
+                    return "IPC_CALL_VOICE_PRIVACY";
+                case IPC_CALL_CALL_TIME_COUNT :
+                    return "IPC_CALL_CALL_TIME";
+                case IPC_CALL_OTA_PROGRESS :
+                    return "IPC_CALL_OTA_PROGRESS_IND";
+                case IPC_CALL_DIAG_OUTGOING :
+                    return "IPC_CALL_DIAG_OUTGOING";
+                case IPC_CALL_E911_CB_MODE :
+                    return "IPC_CALL_E911_CB_MODE";
+                case IPC_CALL_FLASH_INFO :
+                    return "IPC_CALL_FLASH_INFO";
+                default :
+                    return "CALL_SUB_CMD_UNDEFINED";
+            }
+            break;
+
+        case IPC_CDMA_DATA_CMD :
+            switch(sub_cmd)
+            {
+                case IPC_CDMA_DATA_TE2_STATUS :
+                    return "IPC_CDMA_DATA_TE2_STATUS";
+                case IPC_CDMA_DATA_BYTE_COUNTER :
+                    return "IPC_CDMA_DATA_BYTE_COUNTER";
+                case IPC_CDMA_DATA_INCOMING_CALL_TYPE :
+                    return "IPC_CDMA_DATA_INCOMING_CALL_TYPE";
+                case IPC_CDMA_DATA_TE2_DIALING_INFO :
+                    return "IPC_CDMA_DATA_TE2_DIALING_INFO";
+                case IPC_CDMA_DATA_TE2_DATA_RATE_INFO :
+                    return "IPC_CDMA_DATA_TE2_DATA_RATE_INFO";
+                case IPC_CDMA_DATA_PACKET_DATA_CALL_CFG :
+                    return "IPC_CDMA_DATA_PACKET_DATA_CALL_CFG";
+                case IPC_CDMA_DATA_DS_BAUD_RATE :
+                    return "IPC_CDMA_DATA_DS_BAUD_RATE";
+                case IPC_CDMA_DATA_MOBILE_IP_NAI :
+                    return "IPC_CDMA_DATA_MOBILE_IP_NAI";
+                case IPC_CDMA_DATA_CURRENT_NAI_INDEX :
+                    return "IPC_CDMA_DATA_CURRENT_NAI_INDEX";
+                case IPC_CDMA_DATA_DORMANT_CONFIG :
+                    return "IPC_CDMA_DATA_DORMANT_CONFIG";
+                case IPC_CDMA_DATA_MIP_NAI_CHANGED :
+                    return "IPC_CDMA_DATA_MIP_NAI_CHANGED";
+                case IPC_CDMA_DATA_SIGNEDIN_STATE :
+                    return "IPC_CDMA_DATA_SIGNEDIN_STATE";
+                case IPC_CDMA_DATA_RESTORE_NAI :
+                    return "IPC_CDMA_DATA_RESTORE_NAI";
+                case IPC_CDMA_DATA_MIP_CONNECT_STATUS :
+                    return "IPC_CDMA_DATA_MIP_CONNECT_STATUS";
+                case IPC_CDMA_DATA_DORMANT_MODE_STATUS :
+                    return "IPC_CDMA_DATA_DORMANT_MODE_STATUS";
+                case IPC_CDMA_DATA_R_SCH_CONFIG :
+                    return "IPC_CDMA_DATA_R_SCH_CONFIG";
+                case IPC_CDMA_DATA_HDR_SESSION_CLEAR :
+                    return "IPC_CDMA_DATA_HDR_SESSION_CLEAR";
+                case IPC_CDMA_DATA_SESSION_CLOSE_TIMER_EXPIRED :
+                    return "IPC_CDMA_DATA_SESSION_CLOSE_TIMER_EXPIRED";
+                case IPC_CDMA_DATA_KEEPALIVETIMER_VALUE :
+                    return "IPC_CDMA_DATA_KEEPALIVETIMER_VALUE";
+                case IPC_CDMA_DATA_DDTMMODE_CONFIG :
+                    return "IPC_CDMA_DATA_DDTMMODE_CONFIG";
+                case IPC_CDMA_DATA_ROAM_GUARD :
+                    return "IPC_CDMA_DATA_ROAM_GUARD";
+                case IPC_CDMA_DATA_MODEM_NAI :
+                    return "IPC_CDMA_DATA_MODEM_NAI";
+                case IPC_CDMA_DATA_KOREA_MODE :
+                    return "IPC_CDMA_DATA_KOREA_MODE";
+                case IPC_CDMA_DATA_DATA_SERVICE_TYPE :
+                    return "IPC_CDMA_DATA_DATA_SERVICE_TYPE";
+                case IPC_CDMA_DATA_FORCE_REV_A_MODE :
+                    return "IPC_CDMA_DATA_FORCE_REV_A_MODE";
+                case IPC_CDMA_DATA_CUSTOM_CONFIG_MODE :
+                    return "IPC_CDMA_DATA_CUSTOM_CONFIG_MODE";
+                case IPC_CDMA_DATA_NAI_SETTING_MODE :
+                    return "IPC_CDMA_DATA_NAI_SETTING_MODE";
+                case IPC_CDMA_DATA_PIN_CTRL :
+                    return "IPC_CDMA_DATA_PIN_CTRL";
+                default :
+                    return "DATA_SUB_CMD_UNDEFINED";
+            }
+            break;
+
+        case IPC_SMS_CMD :
+            switch(sub_cmd)
+            {
+                case IPC_SMS_SEND_MSG :
+                    return "IPC_SMS_SEND_MSG";
+                case IPC_SMS_INCOMING_MSG :
+                    return "IPC_SMS_INCOMING_MSG";
+                case IPC_SMS_READ_MSG :
+                    return "IPC_SMS_READ_MSG";
+                case IPC_SMS_SAVE_MSG :
+                    return "IPC_SMS_SAVE_MSG";
+                case IPC_SMS_DEL_MSG :
+                    return "IPC_SMS_DEL_MSG";
+                case IPC_SMS_DELIVER_REPORT :
+                    return "IPC_SMS_DELIVER_REPORT";
+                case IPC_SMS_DEVICE_READY :
+                    return "IPC_SMS_DEVICE_READY";
+                case IPC_SMS_SEL_MEM :
+                    return "IPC_SMS_SEL_MEM";
+                case IPC_SMS_STORED_MSG_COUNT :
+                    return "IPC_SMS_STORED_MSG_COUNT";
+                case IPC_SMS_SVC_CENTER_ADDR :
+                    return "IPC_SMS_SVC_CENTER_ADDR";
+                case IPC_SMS_SVC_OPTION :
+                    return "IPC_SMS_SVC_OPTION";
+                case IPC_SMS_MEM_STATUS :
+                    return "IPC_SMS_MEM_STATUS";
+                case IPC_SMS_CBS_MSG:
+                    return "IPC_SMS_CBS_MSG";
+                case IPC_SMS_CBS_CFG :
+                    return "IPC_SMS_CBS_CFG";
+                case IPC_SMS_STORED_MSG_STATUS :
+                    return "IPC_SMS_STORED_MSG_STATUS";
+                case IPC_SMS_PARAM_COUNT :
+                    return "IPC_SMS_PARAM_COUNT";
+                case IPC_SMS_PARAM :
+                    return "IPC_SMS_PARAM";
+                case IPC_SMS_STATUS :
+                    return "IPC_SMS_STATUS";
+                default :
+                    return "SMS_SUB_CMD_UNDEFINED";
+            }
+            break;
+
+        case IPC_SEC_CMD :
+            switch(sub_cmd)
+            {
+                case IPC_SEC_PIN_STATUS :
+                    return "IPC_SEC_PIN_STATUS";
+                case IPC_SEC_PHONE_LOCK :
+                    return "IPC_SEC_PHONE_LOCK";
+                case IPC_SEC_CHANGE_LOCKING_PW :
+                    return "IPC_SEC_CHANGE_LOCKING_PW";
+                case IPC_SEC_SIM_LANG :
+                    return "IPC_SEC_SIM_LANG";
+                case IPC_SEC_RSIM_ACCESS :
+                    return "IPC_SEC_RSIM_ACCESS";
+                case IPC_SEC_GSIM_ACCESS :
+                    return "IPC_SEC_GSIM_ACCESS";
+                case IPC_SEC_SIM_ICC_TYPE :
+                    return "IPC_SEC_SIM_ICC_TYPE";
+                case IPC_SEC_LOCK_INFOMATION :
+                    return "IPC_SEC_LOCK_INFOMATION";
+                case IPC_SEC_IMS_AUTH :
+                    return "IPC_SEC_IMS_AUTH";
+                default :
+                    return "SEC_SUB_CMD_UNDEFINED";
+            }
+            break;
+
+        case IPC_PB_CMD :
+            switch(sub_cmd)
+            {
+                case IPC_PB_ACCESS :
+                    return "IPC_PB_ACCESS";
+                case IPC_PB_STORAGE :
+                    return "IPC_PB_STORAGE";
+                case IPC_PB_STORAGE_LIST :
+                    return "IPC_PB_STORAGE_LIST";
+                case IPC_PB_ENTRY_INFO :
+                    return "IPC_PB_ENTRY_INFO";
+                case IPC_PB_3GPB_CAPA:
+                    return "IPC_PB_3GPB_CAPA";
+                default :
+                    return "PB_SUB_CMD_UNDEFINED";
+            }
+            break;
+
+        case IPC_DISP_CMD :
+            switch(sub_cmd)
+            {
+                case IPC_DISP_ICON_INFO :
+                    return "IPC_DISP_ICON_INFO";
+                case IPC_DISP_HOMEZONE_INFO:
+                    return "IPC_DISP_HOMEZONE_INFO";
+                case IPC_DISP_PHONE_FATAL_INFO:
+                    return "IPC_DISP_PHONE_FATAL_INFO";
+                case IPC_DISP_EXT_ROAM_INFO:
+                    return "IPC_DISP_EXT_ROAM_INFO";
+                case IPC_DISP_USER_INDICATION:
+                    return "IPC_DISP_USER_INDICATION";
+                default :
+                    return "DISP_SUB_CMD_UNDEFINED";
+            }
+            break;
+
+        case IPC_NET_CMD :
+            switch(sub_cmd)
+            {
+                case IPC_NET_PREF_PLMN :
+                    return "IPC_NET_PREF_PLMN";
+                case IPC_NET_PLMN_SEL :
+                    return "IPC_NET_PLMN_SEL";
+                case IPC_NET_SERVING_NETWORK :
+                    return "IPC_NET_SERVING_NETWORK";
+                case IPC_NET_PLMN_LIST :
+                    return "IPC_NET_PLMN_LIST";
+                case IPC_NET_REGIST :
+                    return "IPC_NET_REGIST";
+                case IPC_NET_SUBSCRIBER_NUM :
+                    return "IPC_NET_SUBSCRIBER_NUM";
+                case IPC_NET_BAND_SEL :
+                    return "IPC_NET_BAND_SEL";
+                case IPC_NET_SERVICE_DOMAIN_CONFIG :
+                    return "IPC_NET_SERVICE_DOMAIN_CONFIG";
+                case IPC_NET_POWERON_ATTACH :
+                    return "IPC_NET_POWERON_ATTACH";
+                case IPC_NET_MODE_SEL :
+                    return "IPC_NET_MODE_SEL";
+                case IPC_NET_ACQ_ORDER:
+                    return "IPC_NET_ACQ_ORDER";
+                case IPC_NET_IDENTITY:
+                    return "IPC_NET_IDENTITY";
+                case IPC_NET_PREFERRED_NETWORK_INFO:
+                    return "IPC_NET_PREFERRED_NETWORK_INFO";
+                case IPC_NET_HYBRID_MODE:
+                    return "IPC_NET_HYBRID_MODE";
+                default :
+                    return "NET_SUB_CMD_UNDEFINED";
+            }
+            break;
+
+        case IPC_SND_CMD :
+            switch(sub_cmd)
+            {
+                case IPC_SND_KEY_TONE :
+                    return "IPC_SND_KEY_TONE";
+                case IPC_SND_NOTI_TONE :
+                    return "IPC_SND_NOTI_TONE";
+                case IPC_SND_LED_CTRL :
+                    return "IPC_SND_LED_CTRL";
+                case IPC_SND_VIB_CTRL :
+                    return "IPC_SND_VIB_CTRL";
+                case IPC_SND_SPKR_VOLUME_CTRL :
+                    return "IPC_SND_SPKR_VOLUME_CTRL";
+                case IPC_SND_MIC_GAIN_CTRL :
+                    return "IPC_SND_MIC_GAIN_CTRL";
+                case IPC_SND_MIC_MUTE_CTRL :
+                    return "IPC_SND_MIC_MUTE_CTRL";
+                case IPC_SND_SPKR_PHONE_CTRL :
+                    return "IPC_SND_SPKR_PHONE_CTRL";
+                case IPC_SND_HFK_AUDIO_STARTSTOP :
+                    return "IPC_SND_HFK_AUDIO_STARTSTOP";
+                case IPC_SND_VOICECALL_RECORD_REPORT :
+                    return "IPC_SND_VOICECALL_RECORD_REPORT";
+                case IPC_SND_AUDIO_PATH_CTRL :
+                    return "IPC_SND_AUDIO_PATH_CTRL";
+                case IPC_SND_AUDIO_SOURCE_CTRL :
+                    return "IPC_SND_AUDIO_SOURCE_CTRL";
+                case IPC_SND_USER_SND_CONFIG :
+                    return "IPC_SND_USER_SND_CONFIG";
+                case IPC_SND_GAIN_CTRL :
+                    return "IPC_SND_GAIN_CTRL";
+                case IPC_SND_QUIET_MODE_CTRL :
+                    return "IPC_SND_QUIET_MODE_CTRL";
+                case IPC_SND_DYVE_MODE_CTRL :
+                    return "IPC_SND_DYVE_MODE_CTRL";
+                default :
+                    return "SND_SUB_CMD_UNDEFINED";
+            }
+            break;
+
+        case IPC_MISC_CMD :
+            switch(sub_cmd)
+            {
+                case IPC_MISC_ME_VERSION :
+                    return "IPC_MISC_ME_VERSION";
+                case IPC_MISC_ME_IMSI :
+                    return "IPC_MISC_ME_IMSI";
+                case IPC_MISC_ME_SN :
+                    return "IPC_MISC_ME_SN";
+                case IPC_MISC_KEY_EVENT_PROCESS :
+                    return "IPC_MISC_KEY_EVENT_PROCESS";
+                case IPC_MISC_TIME_INFO :
+                    return "IPC_MISC_TIME_INFO";
+                case IPC_MISC_NAM_INFO :
+                    return "IPC_MISC_NAM_INFO";
+                case IPC_MISC_VCALL_CHANNEL_ID :
+                    return "IPC_MISC_VCALL_CHANNEL_ID";
+                case IPC_MISC_PHONE_DEBUG :
+                    return "IPC_MISC_PHONE_DEBUG";
+                case IPC_MISC_FUS :
+                    return "IPC_MISC_FUS";
+                case IPC_MISC_MODEM_INT_MODE :
+                    return "IPC_MISC_MODEM_INT_MODE";
+                case IPC_MISC_MODEM_RMPC_ATI :
+                    return "IPC_MISC_MODEM_RMPC_ATI";
+                default :
+                    return "MISC_SUB_CMD_UNDEFINED";
+            }
+            break;
+
+        case IPC_SVC_CMD :
+            switch(sub_cmd)
+            {
+                case IPC_SVC_ENTER :
+                    return "IPC_SVC_ENTER";
+                case IPC_SVC_END :
+                    return "IPC_SVC_END";
+                case IPC_SVC_PRO_KEYCODE :
+                    return "IPC_SVC_PRO_KEYCODE";
+                case IPC_SVC_SCREEN_CFG :
+                    return "IPC_SVC_SCREEN_CFG";
+                case IPC_SVC_DISPLAY_SCREEN :
+                    return "IPC_SVC_DISPLAY_SCREEN";
+                case IPC_SVC_CHANGE_SVC_MODE:
+                    return "IPC_SVC_CHANGE_SVC_MODE";
+                case IPC_SVC_DEVICE_TEST:
+                    return "IPC_SVC_DEVICE_TEST";
+                default :
+                    return "SVC_SUB_CMD_UNDEFINED";
+            }
+            break;
+
+        case IPC_SS_CMD :
+            switch(sub_cmd)
+            {
+                case IPC_SS_WAITING :
+                    return "IPC_SS_WAITING";
+                case IPC_SS_CLI :
+                    return "IPC_SS_CLI";
+                case IPC_SS_BARRING :
+                    return "IPC_SS_BARRING";
+                case IPC_SS_BARRING_PW :
+                    return "IPC_SS_BARRING_PW";
+                case IPC_SS_FORWARDING :
+                    return "IPC_SS_FORWARDING";
+                case IPC_SS_INFO :
+                    return "IPC_SS_INFO";
+                case IPC_SS_MANAGE_CALL :
+                    return "IPC_SS_MANAGE_CALL";
+                case IPC_SS_USSD :
+                    return "IPC_SS_USSD";
+                case IPC_SS_AOC :
+                    return "IPC_SS_AOC";
+                case IPC_SS_RELEASE_COMPLETE :
+                    return "IPC_SS_RELEASE_COMPLETE";
+                default :
+                    return "SS_SUB_CMD_UNDEFINED";
+            }
+            break;
+
+        case IPC_GPRS_CMD:
+            switch(sub_cmd)
+            {
+                case IPC_GPRS_DEFINE_PDP_CONTEXT:
+                    return "IPC_GPRS_DEFINE_PDP_CONTEXT";
+                case IPC_GPRS_QOS:
+                    return "IPC_GPRS_QOS";
+                case IPC_GPRS_PS:
+                    return "IPC_GPRS_PS";
+                case IPC_GPRS_PDP_CONTEXT:
+                    return "IPC_GPRS_PDP_CONTEXT";
+                case IPC_GPRS_ENTER_DATA:
+                    return "IPC_GPRS_ENTER_DATA";
+                case IPC_GPRS_SHOW_PDP_ADDR:
+                    return "IPC_GPRS_SHOW_PDP_ADDR";
+                case IPC_GPRS_MS_CLASS:
+                    return "IPC_GPRS_MS_CLASS";
+                case IPC_GPRS_3G_QUAL_SRVC_PROFILE:
+                    return "IPC_GPRS_3G_QUAL_SRVC_PROFILE";
+                case IPC_GPRS_IP_CONFIGURATION:
+                    return "IPC_GPRS_IP_CONFIGURATION";
+                case IPC_GPRS_DEFINE_SEC_PDP_CONTEXT:
+                    return "IPC_GPRS_DEFINE_SEC_PDP_CONTEXT";
+                case IPC_GPRS_TFT:
+                    return "IPC_GPRS_TFT";
+                case IPC_GPRS_HSDPA_STATUS:
+                    return "IPC_GPRS_HSDPA_STATUS";
+                case IPC_GPRS_CURRENT_SESSION_DATA_COUNTER:
+                    return "IPC_GPRS_CURRENT_SESSION_DATA_COUNTER";
+                case IPC_GPRS_DATA_DORMANT:
+                    return "IPC_GPRS_DATA_DORMANT";
+                case IPC_GPRS_PIN_CTRL:
+                    return "IPC_GPRS_PIN_CTRL";
+                case IPC_GPRS_CALL_STATUS:
+                    return "IPC_GPRS_CALL_STATUS";
+                default:
+                    return "GPRS_SUB_CMD_UNDEFINED";
+            }
+            break;
+
+        case IPC_SAT_CMD :
+            switch(sub_cmd)
+            {
+                case IPC_SAT_PROFILE_DOWNLOAD :
+                    return "IPC_SAT_PROFILE_DOWNLOAD";
+                case IPC_SAT_ENVELOPE_CMD:
+                    return "IPC_SAT_ENVELOPE_CMD";
+                case IPC_SAT_PROACTIVE_CMD:
+                    return "IPC_SAT_PROACTIVE_CMD";
+                case IPC_SAT_TERMINATE_USAT_SESSION :
+                    return "IPC_SAT_TERMINATE_USAT_SESSION";
+                case IPC_SAT_EVENT_DOWNLOAD :
+                    return "IPC_SAT_EVENT_DOWNLOAD";
+                case IPC_SAT_PROVIDE_LOCAL_INFO:
+                    return "IPC_SAT_PROVIDE_LOCAL_INFO";
+                case IPC_SAT_POLLING :
+                    return "IPC_SAT_POLLING";
+                case IPC_SAT_REFRESH :
+                    return "IPC_SAT_REFRESH";
+                case IPC_SAT_SETUP_EVENT_LIST :
+                    return "IPC_SAT_SETUP_EVENT_LIST";
+                case IPC_SAT_CALL_CONTROL_RESULT:
+                    return "IPC_SAT_CALL_CONTROL_RESULT";
+                case IPC_SAT_IMAGE_CLUT:
+                    return "IPC_SAT_IMAGE_CLUT";
+                case IPC_SAT_SETUP_CALL_PROCESSING:
+                    return "IPC_SAT_SETUP_CALL_PROCESSING";
+                case IPC_SAT_SIM_INITIATE_MESSAGE:
+                    return "IPC_SAT_SIM_INITIATE_MESSAGE";
+                default :
+                    return "SAT_SUB_CMD_UNDEFINED";
+            }
+            break;
+
+        case IPC_CFG_CMD :
+            switch(sub_cmd)
+            {
+                case IPC_CFG_DEFAULT_CONFIG :
+                    return "IPC_CFG_DEFAULT_CONFIG";
+                case IPC_CFG_EXTERNAL_DEVICE :
+                    return "IPC_CFG_EXTERNAL_DEVICE";
+                case IPC_CFG_MAC_ADDRESS :
+                    return "IPC_CFG_MAC_ADDRESS";
+                case IPC_CFG_CONFIGURATION_ITEM :
+                    return "IPC_CFG_CONFIGURATION_ITEM";
+                case IPC_CFG_TTY :
+                    return "IPC_CFG_TTY";
+                case IPC_CFG_HSDPA_TMP_SETTING :
+                    return "IPC_CFG_HSDPA_TMP_SETTING";
+                case IPC_CFG_HSDPA_PERM_SETTING :
+                    return "IPC_CFG_HSDPA_PERM_SETTING";
+                case IPC_CFG_SIO_MODE :
+                    return "IPC_CFG_SIO_MODE";
+                case IPC_CFG_AKEY_VERIFY :
+                    return "IPC_CFG_AKEY_VERIFY";
+                case IPC_CFG_MSL_INFO :
+                    return "IPC_CFG_MSL_INFO";
+                case IPC_CFG_USER_LOCK_CODE :
+                    return "IPC_CFG_USER_LOCK_CODE";
+                case IPC_CFG_USB_PATH :
+                    return "IPC_CFG_USB_PATH";
+                case IPC_CFG_CURRENT_SVC_CARRIER :
+                    return "IPC_CFG_CURRENT_SVC_CARRIER";
+                case IPC_CFG_RADIO_CONFIG :
+                    return "IPC_CFG_RADIO_CONFIG";
+                case IPC_CFG_VOCODER_OPTION :
+                    return "IPC_CFG_VOCODER_OPTION";
+                case IPC_CFG_TEST_SYS :
+                    return "IPC_CFG_TEST_SYS";
+                case IPC_CFG_RECONDITIONED_DATE :
+                    return "IPC_CFG_RECONDITIONED_DATE";
+                case IPC_CFG_PROTOCOL_REVISION :
+                    return "IPC_CFG_PROTOCOL_REVISION";
+                case IPC_CFG_SLOT_MODE :
+                    return "IPC_CFG_SLOT_MODE";
+                case IPC_CFG_ACTIVATION_DATE :
+                    return "IPC_CFG_ACTIVATION_DATE";
+                case IPC_CFG_CURRENT_UATI :
+                    return "IPC_CFG_CURRENT_UATI";
+                case IPC_CFG_QUICK_PAGING :
+                    return "IPC_CFG_QUICK_PAGING";
+                case IPC_CFG_LMSC_INFO :
+                    return "IPC_CFG_LMSC_INFO";
+                case IPC_CFG_TAS_INFO :
+                    return "IPC_CFG_TAS_INFO";
+                case IPC_CFG_AUTH_INFO :
+                    return "IPC_CFG_AUTH_INFO";
+                case IPC_CFG_HIDDEN_MENU_ACCESS :
+                    return "IPC_CFG_HIDDEN_MENU_ACCESS";
+                case IPC_CFG_UTS_SMS_SEND :
+                    return "IPC_CFG_UTS_SMS_SEND";
+                case IPC_CFG_UTS_SMS_COUNT :
+                    return "IPC_CFG_UTS_SMS_COUNT";
+                case IPC_CFG_UTS_SMS_MSG :
+                    return "IPC_CFG_UTS_SMS_MSG";
+                case IPC_CFG_SCM_INFO :
+                    return "IPC_CFG_SCM_INFO";
+                case IPC_CFG_SCI_INFO :
+                    return "IPC_CFG_SCI_INFO";
+                case IPC_CFG_ACCOLC_INFO :
+                    return "IPC_CFG_ACCOLC_INFO";
+                case IPC_CFG_MOBTERM_INFO :
+                    return "IPC_CFG_MOBTERM_INFO";
+                case IPC_CFG_1X_EVDO_DIVERSITY_CONFIG :
+                    return "IPC_CFG_1X_EVDO_DIVERSITY_CONFIG";
+                case IPC_CFG_DEVICE_CONFIGURATION :
+                    return "IPC_CFG_DEVICE_CONFIGURATION";
+                case IPC_CFG_USER_LOCK_CODE_STATUS :
+                    return "IPC_CFG_USER_LOCK_CODE_STATUS";
+                default :
+                    return "CFG_SUB_CMD_UNDEFINED";
+            }
+            break;
+
+        case IPC_IMEI_CMD :
+            switch(sub_cmd)
+            {
+                case IPC_IMEI_START :
+                    return "IPC_IMEI_START";
+                case IPC_IMEI_CHECK_DEVICE_INFO :
+                    return "IPC_IMEI_CHECK_DEVICE_INFO";
+                case IPC_IMEI_PRE_CONFIG :
+                    return "IPC_IMEI_PRE_CONFIG";
+                case IPC_IMEI_WRITE_ITEM :
+                    return "IPC_IMEI_WRITE_ITEM";
+                case IPC_IMEI_REBOOT :
+                    return "IPC_IMEI_REBOOT";
+                case IPC_IMEI_VERIFY_FACTORY_RESET :
+                    return "IPC_IMEI_VERIFY_FACTORY_RESET";
+                case IPC_IMEI_COMPARE_ITEM :
+                    return "IPC_IMEI_COMPARE_ITEM";
+                case IPC_IMEI_MASS_STORAGE_INFO :
+                    return "IPC_IMEI_MASS_STORAGE_INFO";
+                default :
+                    return "IMEI_SUB_CMD_UNDEFINED";
+            }
+            break;
+
+        case IPC_GPS_CMD:
+            switch(sub_cmd)
+            {
+                case IPC_GPS_OPEN:
+                    return "IPC_GPS_OPEN";
+                case IPC_GPS_CLOSE:
+                    return "IPC_GPS_CLOSE";
+                case IPC_GPS_START:
+                    return "IPC_GPS_START";
+                case IPC_GPS_DEVICE_STATE:
+                    return "IPC_GPS_DEVICE_STATE";
+                case IPC_GPS_VERIFICATION:
+                    return "IPC_GPS_VERIFICATION";
+                case IPC_GPS_OPTION:
+                    return "IPC_GPS_OPTION";
+                case IPC_GPS_TTFF:
+                    return "IPC_GPS_TTFF";
+				case IPC_GPS_LOCK_MODE:
+					return "IPC_GPS_LOCK_MODE";
+				case IPC_GPS_SECURITY_UPDATE:
+					return "IPC_GPS_SECURITY_UPDATE";
+				case IPC_GPS_SSD:
+					return "IPC_GPS_SSD";
+				case IPC_GPS_SECURITY_UPDATE_RATE:
+					return "IPC_GPS_SECURITY_UPDATE_RATE";
+				case IPC_GPS_FIX_REQ:
+					return "IPC_GPS_FIX_REQ";
+				case IPC_GPS_POSITION_RESULT:
+					return "IPC_GPS_POSITION_RESULT";
+				case IPC_GPS_EXT_POSITION_RESULT:
+					return "IPC_GPS_EXT_POSITION_RESULT";
+				case IPC_GPS_EXT_STATUS_INFO:
+					return "IPC_GPS_EXT_STATUS_INFO";
+				case IPC_GPS_PD_CMD_CB:
+					return "IPC_GPS_PD_CMD_CB";
+				case IPC_GPS_DLOAD_STATUS:
+					return "IPC_GPS_DLOAD_STATUS";
+				case IPC_GPS_END_SESSION:
+					return "IPC_GPS_END_SESSION";
+				case IPC_GPS_FAILURE_INFO:
+					return "IPC_GPS_FAILURE_INFO";
+                case IPC_GPS_DISPLAY_SUPLFLOW:
+                    return "IPC_GPS_DISPLAY_SUPLFLOW";
+                case IPC_GPS_XTRA_SET_TIME_INFO:
+                    return "IPC_GPS_XTRA_SET_TIME_INFO";
+                case IPC_GPS_XTRA_SET_DATA:
+                    return "IPC_GPS_XTRA_SET_DATA";
+                case IPC_GPS_XTRA_CLIENT_INIT_DOWNLOAD:
+                    return "IPC_GPS_XTRA_CLIENT_INIT_DOWNLOAD";
+                case IPC_GPS_XTRA_QUERY_DATA_VALIDITY:
+                    return "IPC_GPS_XTRA_QUERY_DATA_VALIDITY";
+                case IPC_GPS_XTRA_SET_AUTO_DOWNLOAD:
+                    return "IPC_GPS_XTRA_SET_AUTO_DOWNLOAD";
+                case IPC_GPS_XTRA_SET_XTRA_ENABLE:
+                    return "IPC_GPS_XTRA_SET_XTRA_ENABLE";
+                case IPC_GPS_XTRA_DOWNLOAD:
+                    return "IPC_GPS_XTRA_DOWNLOAD";
+                case IPC_GPS_XTRA_VALIDITY_STATUS:
+                    return "IPC_GPS_XTRA_VALIDITY_STATUS";
+                case IPC_GPS_XTRA_TIME_EVENT:
+                    return "IPC_GPS_XTRA_TIME_EVENT";
+                case IPC_GPS_XTRA_DATA_INJECTION_STATUS:
+                    return "IPC_GPS_XTRA_DATA_INJECTION_STATUS";
+                case IPC_GPS_XTRA_USE_SNTP:
+                    return "IPC_GPS_XTRA_USE_SNTP";
+                case IPC_GPS_AGPS_PDP_CONNECTION:
+                    return "IPC_GPS_AGPS_PDP_CONNECTION";
+                case IPC_GPS_AGPS_DNS_QUERY:
+                    return "IPC_GPS_AGPS_DNS_QUERY";
+                case IPC_GPS_AGPS_SSL:
+                    return "IPC_GPS_AGPS_SSL";
+                case IPC_GPS_AGPS_MODE:
+                    return "IPC_GSP_AGPS_MODE";
+                default :
+                    return "GPS_SUB_CMD_UNDEFINED";
+            }
+            break;
+
+        case IPC_SAP_CMD:
+            switch(sub_cmd)
+            {
+                case IPC_SAP_CONNECT:
+                    return "IPC_SAP_CONNECT";
+                case IPC_SAP_STATUS:
+                    return "IPC_SAP_STATUS";
+                case IPC_SAP_TRANSFER_ATR:
+                    return "IPC_SAP_TRANSFER_ATR";
+                case IPC_SAP_TRANSFER_APDU:
+                    return "IPC_SAP_TRANSFER_APDU";
+                case IPC_SAP_TRANSPORT_PROTOCOL:
+                    return "IPC_SAP_TRANSPORT_PROTOCOL";
+                case IPC_SAP_SIM_POWER:
+                    return "IPC_SAP_SIM_POWER";
+                case IPC_SAP_TRANSFER_CARD_READER_STATUS:
+                    return "IPC_SAP_TRANSFER_CARD_READER_STATUS";
+                default :
+                    return "GPS_SUB_CMD_UNDEFINED";
+            }
+            break;
+
+
+        case IPC_FACTORY_CMD:
+            switch(sub_cmd)
+            {
+                case IPC_FACTORY_DEVICE_TEST:
+                    return "IPC_FACTORY_DEVICE_TEST";
+                case IPC_FACTORY_OMISSION_AVOIDANCE_TEST:
+                    return "IPC_FACTORY_OMISSION_AVOIDANCE_TEST";
+                case IPC_FACTORY_DFT_TEST:
+                    return "IPC_FACTORY_DFT_TEST";
+                case IPC_FACTORY_MISCELLANEOUS_TEST:
+                    return "IPC_FACTORY_MISCELLANEOUS_TEST";
+                case IPC_FACTORY_RETURN_AT_PORT_NOTIFICATION:
+                    return "IPC_FACTORY_RETURN_AT_PORT_NOTIFICATION";
+                case IPC_FACTORY_SLEEP_MODE_CMD:
+                    return "IPC_FACTORY_SLEEP_MODE_CMD";
+                case IPC_FACTORY_SET_TEST_NV_CMD:
+                    return "IPC_FACTORY_SET_TEST_NV_CMD";
+                case IPC_FACTORY_CAL_INFO_NOTIFICATION:
+                    return "IPC_FACTORY_CAL_INFO_NOTIFICATION";
+                default :
+                    return "FACTORY_SUB_CMD_UNDEFINED";
+            }
+            break;
+
+       case IPC_OMADM_CMD:
+            switch(sub_cmd)
+            {
+                case IPC_OMADM_PRL_SIZE:
+                    return "IPC_OMADM_PRL_SIZE";
+                case IPC_OMADM_MODEL_NAME:
+                    return "IPC_OMADM_MODEL_NAME";
+                case IPC_OMADM_OEM_NAME:
+                    return "IPC_OMADM_OEM_NAME";
+                case IPC_OMADM_SW_VER:
+                    return "IPC_OMADM_SW_VER";
+                case IPC_OMADM_IS683_DATA:
+                    return "IPC_OMADM_IS683_DATA";
+                case IPC_OMADM_PRL_READ:
+                    return "IPC_OMADM_PRL_READ";
+                case IPC_OMADM_PRL_WRITE:
+                    return "IPC_OMADM_PRL_WRITE";
+                case IPC_OMADM_PUZL_DATA:
+                    return "IPC_OMADM_PUZL_DATA";
+                case IPC_OMADM_ROOTCERT_READ:
+                    return "IPC_OMADM_ROOTCERT_READ";
+                case IPC_OMADM_ROOTCERT_WRITE:
+                    return "IPC_OMADM_ROOTCERT_WRITE";
+                case IPC_OMADM_MMC_OBJECT:
+                    return "IPC_OMADM_MMC_OBJECT";
+                case IPC_OMADM_MIP_NAI_OBJECT:
+                    return "IPC_OMADM_MIP_NAI_OBJECT";
+                case IPC_OMADM_CURRENT_NAI_INDEX:
+                    return "IPC_OMADM_CURRENT_NAI_INDEX";
+                case IPC_OMADM_MIP_AUTH_ALGO:
+                    return "IPC_OMADM_MIP_AUTH_ALGO";
+                case IPC_OMADM_NAM_INFO:
+                    return "IPC_OMADM_NAM_INFO";
+                case IPC_OMADM_START_CIDC:
+                    return "IPC_OMADM_START_CIDC";
+                case IPC_OMADM_START_CIFUMO:
+                    return "IPC_OMADM_START_CIFUMO";
+                case IPC_OMADM_START_CIPRL:
+                    return "IPC_OMADM_START_CIPRL";
+                case IPC_OMADM_START_HFA:
+                    return "IPC_OMADM_START_HFA";
+                case IPC_OMADM_START_REG_HFA:
+                    return "IPC_OMADM_START_REG_HFA";
+                case IPC_OMADM_SETUP_SESSION:
+                    return "IPC_OMADM_SETUP_SESSION";
+                case IPC_OMADM_SERVER_START_SESSION:
+                    return "IPC_OMADM_SERVER_START_SESSION";
+                case IPC_OMADM_CLIENT_START_SESSION:
+                    return "IPC_OMADM_CLIENT_START_SESSION";
+                case IPC_OMADM_SEND_DATA:
+                    return "IPC_OMADM_SEND_DATA";
+                case IPC_OMADM_ENABLE_HFA:
+                    return "IPC_OMADM_ENABLE_HFA";
+               default :
+                    return "OMADM_SUB_CMD_UNDEFINED";
+            }
+            break;
+
+
+        case IPC_GEN_CMD :
+            switch(sub_cmd)
+            {
+                case IPC_GEN_PHONE_RES :
+                    return "IPC_GEN_PHONE_RES";
+                default :
+                    return "GEN_SUB_CMD_UNDEFINED";
+            }
+            break;
+
+        default :
+            return "MAIN_AND_SUB_CMD_UNDEFINED";
+    }
+    return "MAIN_AND_SUB_CMD_UNDEFINED";
+}
 #endif
 
 static u8 _get_msg_id(struct sipc *si)
@@ -712,6 +1784,35 @@ static int _write_raw(struct ringbuf *rb, struct sk_buff *skb, int res)
 			+ sizeof(hdlc_start) + sizeof(hdlc_end))
 		return -ENOSPC;
 
+#ifdef PRINT_RAW_TX_HEAD_TAIL
+    dbg_loga("size %d, head %d, tail %d\n", skb->len, rb->rb_out_head, rb->rb_out_tail);
+#endif
+
+#ifdef PRINT_RAW_TX_DATA
+    print_tx_hdlc_frame(IPCIDX_RAW, skb->data, skb->len);
+#endif
+
+#ifdef PRINT_IP_TX_DATA
+	if (CHID(res) >= CHID_PSD_DATA1 && CHID(res) <= CHID_PSD_DATA4) {
+		dbg_loga("\n");
+		dbg_loga(">>>>>>>>>> Outgoing IP packet >>>>>>>>>>\n");
+		parse_ip_packet(skb->data);
+	}
+#endif
+
+#ifdef PRINT_AT_COMMAND
+    if (CHID(res) == CHID_30) // Channel ID 30 is for AT interface.
+    {
+        int i;
+        dbg_loga("AT command = ");
+        for (i = 0; i < skb->len; i++)
+        {
+            printk("%c ", skb->data[i]);
+        }
+        printk("\n");
+    }
+#endif
+
 	if(skb_headroom(skb) > (sizeof(struct raw_hdr) + sizeof(hdlc_start))
 			&& skb_tailroom(skb) > sizeof(hdlc_end)) {
 		len = _write_raw_skb(rb, res, skb);
@@ -723,6 +1824,7 @@ static int _write_raw(struct ringbuf *rb, struct sk_buff *skb, int res)
 		_wake_queue(PDP_ID(res));
 	else
 		netif_wake_queue(skb->dev);
+
 	return len;
 }
 
@@ -761,6 +1863,14 @@ static int _write_rfs(struct ringbuf *rb, struct sk_buff *skb)
 	if(space < skb->len + sizeof(hdlc_start) + sizeof(hdlc_end))
 		return -ENOSPC;
 
+#ifdef PRINT_RFS_TX_HEAD_TAIL
+    dbg_loga("size %d, head %d, tail %d\n", skb->len, rb->rb_out_head, rb->rb_out_tail);
+#endif
+
+#ifdef PRINT_RFS_TX_DATA
+    print_tx_hdlc_frame(IPCIDX_RFS, skb->data, skb->len);
+#endif
+
 	if(skb_headroom(skb) > sizeof(hdlc_start)
 			&& skb_tailroom(skb) > sizeof(hdlc_end)) {
 		len = _write_rfs_skb(rb, skb);
@@ -793,6 +1903,10 @@ static int _write_fmt_buf(char *frag_buf, struct ringbuf *rb,
 	memcpy(buf, hdlc_end, sizeof(hdlc_end));
 	buf += sizeof(hdlc_end);
 
+#ifdef PRINT_FMT_TX_DATA
+    print_tx_fmt_frame(frag_buf, (wlen + 5));
+#endif
+
 	return __write(rb, frag_buf, buf - frag_buf);
 }
 
@@ -812,6 +1926,10 @@ static int _write_fmt(struct sipc *si, struct ringbuf *rb, struct sk_buff *skb)
 	if (skb->len < FMT_TX_MIN) {
 		return -EINVAL;
 	}
+
+#ifdef PRINT_FMT_TX_HEAD_TAIL
+    dbg_loga("size %d, head %d, tail %d\n", skb->len, rb->rb_out_head, rb->rb_out_tail);
+#endif
 
 	len = 0;
 	remain = skb->len - fi->offset;
@@ -975,6 +2093,10 @@ int sipc_write(struct sipc *si, struct sk_buff_head *sbh)
 		if (r == -ENOSPC) {
 			dev_err(&si->svndev->dev,
 					"write nospc queue %p\n", skb);
+			dbg_loge("====================\n");
+			dbg_loge("     -ENOSPC!!!\n");
+			dbg_loge("====================\n");
+			dev_err(&si->svndev->dev, "write nospc queue %p\n", skb);
 			skb_queue_head(sbh, skb);
 			netif_stop_queue(skb->dev);
 		} else {
@@ -998,7 +2120,7 @@ extern int __read(struct ringbuf *rb, unsigned char *buf, unsigned int size)
 
 	if(rb->rb_in_head < 0 || rb->rb_in_head >= rb->rb_in_size) {
 		printk(KERN_ERR "head is wrong!! %d\n", rb->rb_in_head);
-		return;
+		return len;
 	}
 
 	while(1) {
@@ -1011,6 +2133,7 @@ extern int __read(struct ringbuf *rb, unsigned char *buf, unsigned int size)
 			memcpy(p, rb->in_base + rb->rb_in_tail, c);
 			p += c;
 		}
+
 #if defined(SVNET_CIRC)
 		rb->rb_in_tail = rb->rb_in_tail + c;
 		if (rb->rb_in_tail >= rb->rb_in_size)
@@ -1018,6 +2141,7 @@ extern int __read(struct ringbuf *rb, unsigned char *buf, unsigned int size)
 #else
 		rb->rb_in_tail = (rb->rb_in_tail + c) & (rb->rb_in_size - 1);
 #endif
+
 		size -= c;
 		len += c;
 	}
@@ -1071,10 +2195,10 @@ static inline void _phonet_rx(struct net_device *ndev,
 static int _read_pn(struct net_device *ndev, struct ringbuf *rb, int len,
 		int res)
 {
-	int r;
+	int             r;
 	struct sk_buff *skb;
-	char *p;
-	int read_len = len + sizeof(hdlc_end);
+	char           *p;
+	int             read_len = len + sizeof(hdlc_end);
 
 	_dbg("%s: res 0x%02x data %d\n", __func__, res, len);
 
@@ -1090,6 +2214,16 @@ static int _read_pn(struct net_device *ndev, struct ringbuf *rb, int len,
 		kfree_skb(skb);
 		return -EBADMSG;
 	}
+
+#ifdef PRINT_AT_COMMAND
+    if (CHID(res) == CHID_30) { // Channel ID 30 is for AT interface.
+        int i;
+        dbg_loga("AT command = ");
+        for (i = 0; i < skb->len; i++)
+            printk("%c", skb->data[i]);
+        printk("\n");
+    }
+#endif
 
 	_phonet_rx(ndev, skb, res);
 
@@ -1219,14 +2353,16 @@ free_skb:
 static int _read_pdp(struct ringbuf *rb, int len,
 		int res)
 {
-	int r;
-	struct sk_buff *skb;
-	int read_len = len + sizeof(hdlc_end);
+	int                r;
+	struct sk_buff    *skb;
+	int                read_len = len + sizeof(hdlc_end);
 	struct net_device *ndev;
-
-	struct ethhdr *eHdr;
-	char source[ETH_ALEN] = {18, 52, 86, 120, 154, 188};
-	char dest[ETH_ALEN]= {18, 0,  0,  0,   0,   0};
+	int                ip_v;
+#ifdef SVNET_PDP_ETHER
+	struct ethhdr     *eHdr;
+	char               source[ETH_ALEN] = {18, 52, 86, 120, 154, 188};
+	char               dest[ETH_ALEN]= {18, 0, 0, 0, 0, 0};
+#endif
 
 	_dbg("%s: res 0x%02x data %d\n", __func__, res, len);
 
@@ -1240,13 +2376,19 @@ static int _read_pdp(struct ringbuf *rb, int len,
 		return r;
 	}
 
+#ifdef SVNET_PDP_ETHER
 	skb = netdev_alloc_skb(ndev, read_len + sizeof(struct ethhdr));
+#else
+    skb = netdev_alloc_skb(ndev, read_len);
+#endif
 	if (unlikely(!skb)) {
 		mutex_unlock(&pdp_mutex);
 		return -ENOMEM;
 	}
 
+#ifdef SVNET_PDP_ETHER
 	skb_reserve(skb, sizeof(struct ethhdr));
+#endif
 	skb_put(skb, len); // let hdlc_end character drop
 
 	r = __read(rb, skb->data, read_len);
@@ -1256,8 +2398,9 @@ static int _read_pdp(struct ringbuf *rb, int len,
 		return -EBADMSG;
 	}
 
-	int ip_v = (skb->data[0] >> 4)& 0xF;
+	ip_v = (skb->data[0] >> 4)& 0xF;
 
+#ifdef SVNET_PDP_ETHER
 	skb_push(skb, sizeof(struct ethhdr));
 	eHdr = (struct ethhdr *)skb->data;
 	memcpy(eHdr->h_dest, dest, ETH_ALEN);
@@ -1265,6 +2408,7 @@ static int _read_pdp(struct ringbuf *rb, int len,
 	eHdr->h_proto = (ip_v == 0x06)? __constant_htons(ETH_P_IPV6) : __constant_htons(ETH_P_IP);
 	skb_reset_mac_header(skb);
 	skb_pull(skb, sizeof(struct ethhdr));
+#endif
 
 	ndev->stats.rx_packets++;
 	ndev->stats.rx_bytes += skb->len;
@@ -1286,6 +2430,14 @@ static int _read_pdp(struct ringbuf *rb, int len,
 	if (r != NET_RX_SUCCESS)
 		dev_err(&ndev->dev, "pdp rx error: %d\n", r);
 
+#ifdef PRINT_IP_RX_DATA
+	if (CHID(res) >= CHID_PSD_DATA1 && CHID(res) <= CHID_PSD_DATA4) {
+		dbg_loga("\n");
+		dbg_loga("<<<<<<<<<< Incoming IP packet <<<<<<<<<<\n");
+		parse_ip_packet(skb->data);
+	}
+#endif
+
 	return read_len;
 }
 
@@ -1295,6 +2447,10 @@ static int _read_raw(struct sipc *si, int inbuf, struct ringbuf *rb)
 	char buf[sizeof(struct raw_hdr) + sizeof(hdlc_start)];
 	int res, data_len;
 	u32 tail;
+
+#ifdef PRINT_RAW_RX_HEAD_TAIL
+    dbg_loga("head %d, tail %d\n", rb->rb_in_head, rb->rb_in_tail);
+#endif
 
 	while (inbuf > 0) {
 		tail = rb->rb_in_tail;
@@ -1542,6 +2698,10 @@ static int _read_fmt_last(struct frag_head *fh, struct fmt_hdr *h,
 	struct frag_list *fl;
 	char *p;
 
+#ifdef PRINT_FMT_RX_HEAD_TAIL
+    dbg_loga("head %d, tail %d\n", rb->rb_in_head, rb->rb_in_tail);
+#endif
+
 	total_len = data_len = h->len - sizeof(struct fmt_hdr);
 	read_len = data_len + sizeof(hdlc_end);
 
@@ -1569,6 +2729,10 @@ static int _read_fmt_last(struct frag_head *fh, struct fmt_hdr *h,
 		kfree_skb(skb);
 		return -EBADMSG;
 	}
+
+#ifdef PRINT_FMT_RX_DATA
+    print_rx_fmt_frame(h, p, (read_len - 1));
+#endif
 
 	_phonet_rx(ndev, skb, PN_FMT);
 
@@ -1814,7 +2978,7 @@ int sipc_do_cmd(struct sipc *si, struct sk_buff *skb)
 
 	skb_pull(skb, sizeof(struct phonethdr) + 1);
 
-	// TODO: 
+	// TODO:
 	if (!strncmp("PHONE_ON", skb->data, sizeof("PHONE_ON"))) {
 
 		return 0;
@@ -2088,9 +3252,9 @@ ssize_t store_bridge_resume(struct device *d,
 	char * device = (char *)kmalloc(sizeof(char) * 7, GFP_ATOMIC);
 	if (!device)
 		return -ENOMEM;
-	
+
 	memset(device, 0, 7);
-	
+
 	r = strict_strtoul(buf, 10, &chan);
 	if (r)
 	{
@@ -2115,12 +3279,12 @@ ssize_t store_bridge_resume(struct device *d,
 	struct net * this_net = dev_net(ndev);
 	struct net_device * dev = __dev_get_by_name(this_net, device);
 	if (!dev)
-	{	
+	{
 		kfree(device);
 		return r;
 	}
-		
-	netif_wake_queue(dev);		
+
+	netif_wake_queue(dev);
 	mutex_unlock(&pdp_mutex);
 	kfree(device);
 	return r;
@@ -2134,7 +3298,7 @@ ssize_t store_bridge_suspend(struct device *d,
 	int r;
 	unsigned long chan;
 	int id;
-	
+
 	char * device = kmalloc(sizeof(char) * 7, GFP_ATOMIC);
 	if (!device)
 		return -1;
@@ -2154,12 +3318,12 @@ ssize_t store_bridge_suspend(struct device *d,
 	}
 
 	id = chan -1;
-	
+
 	struct net_device * ndev = to_net_dev(d);
-		
+
 	snprintf(device, 7, "pdpbr%d", id);
 	printk("%s(): device = %s, net_device = %s\n", __FUNCTION__, device, ndev->name);
-		
+
 	struct net * this_net   = dev_net(ndev);
 	struct net_device * dev = __dev_get_by_name(this_net, device);
 

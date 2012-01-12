@@ -39,11 +39,9 @@
 #define INT2_DURATION		0x37
 
 #ifdef CONFIG_MACH_AEGIS
-
-#define X_POSITION 1
-#define Y_POSITION -1
+#define X_POSITION -1
+#define Y_POSITION +1
 #define Z_POSITION -1
-
 #endif
 
 

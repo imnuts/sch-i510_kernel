@@ -75,3 +75,4 @@ obj-$(CONFIG_USB_ANDROID_SAMSUNG_MTP)	+= f_mtp_samsung.o
 obj-$(CONFIG_USB_ANDROID_RNDIS)	+= f_rndis.o u_ether.o
 obj-$(CONFIG_USB_ANDROID_DIAG)	+= f_diag.o
 obj-$(CONFIG_USB_ANDROID_ACCESSORY)	+= f_accessory.o
+obj-$(CONFIG_USB_ANDROID_NMEA)	+= f_nmea.o

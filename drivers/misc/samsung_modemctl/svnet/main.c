@@ -21,7 +21,7 @@
 //#define DEBUG
 
 #if defined(DEBUG)
-#  define PERF_DEBUG
+#define PERF_DEBUG
 #endif
 
 #include <linux/init.h>
@@ -49,16 +49,23 @@
 #endif
 
 #if defined(PERF_DEBUG)
-#  define _pdbg(dev, format, arg...) dev_dbg(dev, format, ## arg)
+#define _pdbg(dev, format, arg...) dev_dbg(dev, format, ## arg)
 #else
-#  define _pdbg(dev, format, arg...) do { } while (0)
+#define _pdbg(dev, format, arg...) do { } while (0)
 #endif
 
-#include "sipc.h"
 #include "pdp.h"
+#include "sipc.h"
+#include "sipc4.h"
+
+#define dbg_loga(s, args...) printk(KERN_ERR "[SVNet] <%s:%d> " s, __func__, __LINE__,  ##args)
+#define dbg_loge(s, args...) printk(KERN_ERR "[SVNet/Err] <%s:%d> " s, __func__, __LINE__,  ##args)
+#define dbg_log(s, args...)  printk(s, ##args)
+
 
 #define SVNET_DEV_ADDR 0xa0
-#define SUSPEND_RESUME_BRIDGE
+
+//#define PARSE_IP_PACKET
 
 
 enum {
@@ -112,6 +119,10 @@ struct svnet {
 #endif
 };
 
+
+static char tcp_flag_str[32];
+
+
 #ifdef CONFIG_HAS_WAKELOCK
 static inline void _wake_lock_init(struct svnet *sn)
 {
@@ -140,11 +151,11 @@ static inline long _wake_lock_gettime(struct svnet *sn)
 	return sn?sn->wake_time:DEFAULT_WAKE_TIME;
 }
 #else
-#  define _wake_lock_init(sn) do { } while(0)
-#  define _wake_lock_destroy(sn) do { } while(0)
-#  define _wake_lock_timeout(sn) do { } while(0)
-#  define _wake_lock_settime(sn, time) do { } while(0)
-#  define _wake_lock_gettime(sn) (0)
+#define _wake_lock_init(sn) do { } while(0)
+#define _wake_lock_destroy(sn) do { } while(0)
+#define _wake_lock_timeout(sn) do { } while(0)
+#define _wake_lock_settime(sn, time) do { } while(0)
+#define _wake_lock_gettime(sn) (0)
 #endif
 
 static struct svnet *svnet_dev;
@@ -303,13 +314,13 @@ static struct attribute *svnet_attributes[] = {
 	&dev_attr_waketime.attr,
 	&dev_attr_debug.attr,
 	&dev_attr_latency.attr,
-	#ifdef SUSPEND_RESUME_BRIDGE
+#ifdef SUSPEND_RESUME_BRIDGE
 	&dev_attr_resume.attr,
 	&dev_attr_suspend.attr,
-	#endif
-	#ifdef SET_INTERFACE_ID
+#endif
+#ifdef SET_INTERFACE_ID
 	&dev_attr_interfaceid.attr,
-	#endif
+#endif
 	NULL
 };
 
@@ -317,13 +328,158 @@ static const struct attribute_group svnet_group = {
 	.attrs = svnet_attributes,
 };
 
+void parse_ip_packet(u8 *ip_pkt)
+{
+    u8   ip_ver, ip_hdr_len;
+    u16  ip_pkt_len;
+    u8   protocol;
+    u32  src_ip_addr;
+    u32  dst_ip_addr;
+    u8  *tcp_pkt;
+    u8  *udp_pkt;
+    u16  src_port, dst_port;
+    u32  seq_num;
+    u32  ack_num;
+    u8   tcp_hdr_len;
+    u8   tcp_flag;
+
+/*---------------------------------------------------------------------------
+   
+                               IP header format
+
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |Version|  IHL  |Type of Service|          Total Length         |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |         Identification        |Flags|      Fragment Offset    |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |  Time to Live |    Protocol   |         Header Checksum       |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |                       Source Address                          |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |                    Destination Address                        |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |                    Options                    |    Padding    |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+       IHL - Header Length 
+       Flags - Consist of 3 bits
+               First bit is kept 0
+	       Second bit is Dont Fragment bit.
+	       Third bit is More Fragments bit.
+
+---------------------------------------------------------------------------*/
+    ip_ver     = (ip_pkt[0] & 0xF0) >> 4;
+    ip_hdr_len = (ip_pkt[0] & 0x0F) << 2;
+    ip_pkt_len = (((u16)ip_pkt[2]) << 8) + ((u16)ip_pkt[3]);
+    protocol   = ip_pkt[9];
+    src_ip_addr = (((u16)ip_pkt[12]) << 24) + (((u16)ip_pkt[13]) << 16) +
+                  (((u16)ip_pkt[14]) << 8) + ((u16)ip_pkt[15]);
+    dst_ip_addr = (((u16)ip_pkt[16]) << 24) + (((u16)ip_pkt[17]) << 16) +
+                  (((u16)ip_pkt[18]) << 8) + ((u16)ip_pkt[19]);
+
+    dbg_loga("IP:: version = %d, IP packet len = %d, IP header len = %d\n",
+                ip_ver, ip_pkt_len, ip_hdr_len);
+
+    if (protocol != 6 && protocol != 17)
+        dbg_loga("IP:: UL protocol == %d\n", protocol);
+
+    dbg_loga("IP:: src addr = %d.%d.%d.%d, dst addr = %d.%d.%d.%d\n",
+		ip_pkt[12], ip_pkt[13], ip_pkt[14], ip_pkt[15],
+		ip_pkt[16], ip_pkt[17], ip_pkt[18], ip_pkt[19]);
+
+    if (protocol == 6)  // TCP
+    {
+/*-------------------------------------------------------------------------
+
+                           TCP Header Format
+
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |          Source Port          |       Destination Port        |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |                        Sequence Number                        |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |                    Acknowledgment Number                      |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |  Data |           |U|A|P|R|S|F|                               |
+       | Offset| Reserved  |R|C|S|S|Y|I|            Window             |
+       |       |           |G|K|H|T|N|N|                               |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |           Checksum            |         Urgent Pointer        |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |                    Options                    |    Padding    |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |                             data                              |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+
+-------------------------------------------------------------------------*/
+        tcp_pkt = ip_pkt + ip_hdr_len;
+
+        src_port = (((u16)tcp_pkt[0]) << 8) + ((u16)tcp_pkt[1]);
+        dst_port = (((u16)tcp_pkt[2]) << 8) + ((u16)tcp_pkt[3]);
+        seq_num  = (((u16)tcp_pkt[4]) << 24) + (((u16)tcp_pkt[5]) << 16) +
+                   (((u16)tcp_pkt[6]) << 8) + ((u16)tcp_pkt[7]);
+        ack_num  = (((u16)tcp_pkt[8]) << 24) + (((u16)tcp_pkt[9]) << 16) +
+                   (((u16)tcp_pkt[10]) << 8) + ((u16)tcp_pkt[11]);
+        tcp_hdr_len = (tcp_pkt[12] & 0xF0) >> 2;
+        tcp_flag = tcp_pkt[13];
+
+		memset(tcp_flag_str, 0, sizeof(tcp_flag_str));
+        if (tcp_flag & 0x01)
+			strcat(tcp_flag_str, "FIN ");
+        if (tcp_flag & 0x02)
+			strcat(tcp_flag_str, "SYN ");
+        if (tcp_flag & 0x04)
+			strcat(tcp_flag_str, "RST ");
+        if (tcp_flag & 0x08)
+			strcat(tcp_flag_str, "PSH ");
+        if (tcp_flag & 0x10)
+			strcat(tcp_flag_str, "ACK ");
+        if (tcp_flag & 0x20)
+			strcat(tcp_flag_str, "URG ");
+
+        dbg_loga("TCP:: src port = %d, dst port = %d\n", src_port, dst_port);
+        dbg_loga("TCP:: seq# = 0x%08x(%u), ack# = 0x%08x(%u)\n", seq_num, seq_num, ack_num, ack_num);
+		dbg_loga("TCP:: flag = %s\n", tcp_flag_str);
+    }
+    else if (protocol == 17)    // UDP
+    {
+/*-------------------------------------------------------------------------
+
+                           UDP Header Format
+
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |          Source Port          |       Destination Port        |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |            Length             |           Checksum            |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |                             data                              |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+
+-------------------------------------------------------------------------*/
+        udp_pkt = ip_pkt + ip_hdr_len;
+
+        src_port = (((u16)udp_pkt[0]) << 8) + ((u16)udp_pkt[1]);
+        dst_port = (((u16)udp_pkt[2]) << 8) + ((u16)udp_pkt[3]);
+
+        dbg_loga("UDP:: src port = %d, dst port = %d\n", src_port, dst_port);
+
+        if (dst_port == 53) // DNS
+            dbg_loga("UDP:: DNS query!!!\n");
+        else if (src_port == 53)
+            dbg_loga("UDP:: DNS response!!!\n");
+    }
+}
 
 int vnet_start_xmit(struct sk_buff *skb, struct net_device *ndev)
 {
 	struct svnet *sn;
 	struct pdp_priv *priv;
 
+#ifdef SVNET_PDP_ETHER
 	skb_pull(skb,14);
+#endif
 	dev_dbg(&ndev->dev, "recv inet packet %p: %d bytes\n", skb, skb->len);
 	stat.st_recv_pkt_pdp++;
 
@@ -337,6 +493,26 @@ int vnet_start_xmit(struct sk_buff *skb, struct net_device *ndev)
 
 	if (!tmp_xtow)
 		tmp_xtow = cpu_clock(smp_processor_id());
+
+#ifdef PARSE_IP_PACKET
+	{
+		struct net_device *ndev = skb->dev;
+		struct pdp_priv *priv;
+		int len = skb->len;
+		int res;
+
+		if (skb->protocol != __constant_htons(ETH_P_PHONET)) {
+			priv = netdev_priv(ndev);
+			res = PN_PDP(priv->channel);
+			if (CHID(res) >= CHID_PSD_DATA1 && CHID(res) <= CHID_PSD_DATA4) {
+				dbg_loga("\n");
+				dbg_loga(">>>>>>>>>> Outgoing IP packet >>>>>>>>>>\n");
+				parse_ip_packet(skb->data);
+			}
+		}
+
+	}
+#endif
 
 	skb_queue_tail(&sn->txq, skb);
 
@@ -372,6 +548,26 @@ static int svnet_xmit(struct sk_buff *skb, struct net_device *ndev)
 
 	if (!tmp_xtow)
 		tmp_xtow = cpu_clock(smp_processor_id());
+
+#ifdef PARSE_IP_PACKET
+	{
+		struct net_device *ndev = skb->dev;
+		struct pdp_priv *priv;
+		int len = skb->len;
+		int res;
+
+		if (skb->protocol != __constant_htons(ETH_P_PHONET)) {
+			priv = netdev_priv(ndev);
+			res = PN_PDP(priv->channel);
+			if (CHID(res) >= CHID_PSD_DATA1 && CHID(res) <= CHID_PSD_DATA4) {
+				dbg_loga("\n");
+				dbg_loga(">>>>>>>>>> Outgoing IP packet >>>>>>>>>>\n");
+				parse_ip_packet(skb->data);
+			}
+		}
+
+	}
+#endif
 
 	skb_queue_tail(&sn->txq, skb);
 
@@ -517,6 +713,7 @@ static int svnet_open(struct net_device *ndev)
 	}
 
 	netif_wake_queue(ndev);
+
 	return 0;
 }
 
@@ -824,6 +1021,7 @@ static int __init svnet_init(void)
 	sn->wq = create_rt_workqueue("svnetd");
 	if (!sn->wq) {
 		dev_err(&ndev->dev, "failed to create a workqueue\n");
+		r = -ENOMEM;
 		goto err;
 	}
 

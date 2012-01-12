@@ -350,7 +350,7 @@ static struct s3cfb_lcd s6e63m0 = {
 
 	.timing = {
 		.h_fp = 16,
-		.h_bp = 16,
+		.h_bp = 14,
 		.h_sw = 2,
 		.v_fp = 28,
 		.v_fpe = 1,
@@ -380,16 +380,16 @@ static struct s3cfb_lcd s6e63m0 = {
 #define  S5PV210_VIDEO_SAMSUNG_MEMSIZE_TEXTSTREAM (3000 * SZ_1K)
 #else	// optimized settings, 19th Jan.2011
 
-#define  S5PV210_VIDEO_SAMSUNG_MEMSIZE_MFC0 (32768 * SZ_1K)
-#define  S5PV210_VIDEO_SAMSUNG_MEMSIZE_MFC1 (32768 * SZ_1K)
-#define  S5PV210_VIDEO_SAMSUNG_MEMSIZE_FIMC0 (14336 * SZ_1K)
+#define  S5PV210_VIDEO_SAMSUNG_MEMSIZE_MFC0 (13312 * SZ_1K) // 13MB
+#define  S5PV210_VIDEO_SAMSUNG_MEMSIZE_MFC1 (21504 * SZ_1K) // 21MB
+#define  S5PV210_VIDEO_SAMSUNG_MEMSIZE_FIMC0 (5829 * SZ_1K)	// buffer 6
 #define  S5PV210_VIDEO_SAMSUNG_MEMSIZE_FIMC1 (9900 * SZ_1K)
-#define  S5PV210_VIDEO_SAMSUNG_MEMSIZE_FIMC2 (12288 * SZ_1K)
-#define  S5PV210_VIDEO_SAMSUNG_MEMSIZE_PMEM (6144 * SZ_1K)
+#define  S5PV210_VIDEO_SAMSUNG_MEMSIZE_FIMC2 (5829 * SZ_1K)	// buffer 6
+#define  S5PV210_VIDEO_SAMSUNG_MEMSIZE_PMEM (0 * SZ_1K)  //6144->0
 #define  S5PV210_VIDEO_SAMSUNG_MEMSIZE_GPU1 (4096 * SZ_1K)
-#define  S5PV210_VIDEO_SAMSUNG_MEMSIZE_ADSP (1500 * SZ_1K)
-#define  S5PV210_VIDEO_SAMSUNG_MEMSIZE_JPEG (10024 * SZ_1K)
-#define  S5PV210_VIDEO_SAMSUNG_MEMSIZE_TEXTSTREAM (10240 * SZ_1K)
+#define  S5PV210_VIDEO_SAMSUNG_MEMSIZE_ADSP (0 * SZ_1K) // 1500 -> 0
+#define  S5PV210_VIDEO_SAMSUNG_MEMSIZE_JPEG (0 * SZ_1K) // 5120=>0
+#define  S5PV210_VIDEO_SAMSUNG_MEMSIZE_TEXTSTREAM (3000 * SZ_1K)
 #define  S5PV210_VIDEO_SAMSUNG_MEMSIZE_FIMD (3072 * SZ_1K)
 #define  S5PV210_VIDEO_SAMSUNG_MEMSIZE_WIFI (256 * SZ_1K)
 
@@ -1381,7 +1381,7 @@ static struct platform_device s3c_device_i2c18 = {
 #endif
 
 #ifdef CONFIG_KEYPAD_CYPRESS_TOUCH
-static void touch_keypad_gpio_init(void)
+void touch_keypad_gpio_init(void)
 {
 	int ret = 0;
 
@@ -1396,7 +1396,7 @@ static void touch_keypad_onoff(int onoff)
 {
 #ifndef CONFIG_MACH_AEGIS
 	gpio_direction_output(TOUCHKEY_VDD_EN, onoff);
-	printk("[sehun] touch_keypad_onoff=%d\n",onoff);
+	printk("touch_keypad_onoff=%d\n",onoff);
 
 	if (onoff == TOUCHKEY_OFF)
 		msleep(30);
@@ -1460,7 +1460,7 @@ static struct gpio_event_info *aries_input_info[] = {
 
 static struct gpio_event_platform_data aries_input_data = {
 	.names = {
-		"aries-keypad",
+		"sec_key",
 		NULL,
 	},
 	.info = aries_input_info,
@@ -1496,36 +1496,24 @@ static void set_shared_mic_bias(void)
 	gpio_set_value(GPIO_MICBIAS_EN1, jack_mic_bias);
 }
 
-//sub mic ߰ value 1-> main, value 0 -> sub
-static void wm8994_set_mic_bias(bool on, bool value)
+// value 0 : main_mic, value 1 : sub_mic
+static void wm8994_set_mic_bias(int value, bool on)
 {
 	unsigned long flags;
 
-	printk("main_micbias(%d)\n", on);
-	printk("==============wm8994_mic_bias(%d)\n", wm8994_mic_bias);
-	printk("==============wm8994_sub_mic_bias(%d)\n", wm8994_sub_mic_bias);
-	
+        if (value)
+                printk("sub_micbias(%d)\n", on);                
+        else
+                printk("main_micbias(%d)\n", on);
+
+
 	spin_lock_irqsave(&mic_bias_lock, flags);
-	if(on)
-	{
-		if(value==1)
-		{
-			wm8994_mic_bias = on;	
-		}else
-		{
-			wm8994_sub_mic_bias = on;
-		}
-	}
-	else
-	{
-		if(value==1)
-		{
-			wm8994_mic_bias = on;	
-		}else
-		{
-			wm8994_sub_mic_bias = on;
-		}
-	}
+
+        if (value)
+                wm8994_sub_mic_bias = on;
+        else
+                wm8994_mic_bias = on;
+
 	set_shared_mic_bias();
 	spin_unlock_irqrestore(&mic_bias_lock, flags);
 }
@@ -1699,7 +1687,7 @@ static int s5k4ecgx_power_on(void)
 	err = s5k4ecgx_ldo_en(true);
 	if (err)
 		return err;
-	mdelay(66);
+	mdelay(1);
 
 	/* MCLK on - default is input, to save power when camera not on */
 	s3c_gpio_cfgpin(GPIO_CAM_MCLK, S3C_GPIO_SFN(GPIO_CAM_MCLK_AF));
@@ -1832,7 +1820,7 @@ static int aat1274_flash(int enable)
 static int aat1274_af_assist(int enable)
 {
 	if (enable) {
-		aat1274_write(FLASH_MOVIE_MODE_CURRENT_36_PERCENT);
+		aat1274_write(FLASH_MOVIE_MODE_CURRENT_45_PERCENT);
 	} else {
 		gpio_set_value(GPIO_CAM_FLASH_SET, 0);
 		gpio_set_value(GPIO_CAM_FLASH_EN, 0);
@@ -1845,7 +1833,7 @@ static int aat1274_torch(int enable)
 	/* Turn torch mode on or off by writing to the EN_SET line. A level
 	 * of 1/7.3 and 50% is used (half AF assist brightness). */
 	if (enable) {
-		aat1274_write(FLASH_MOVIE_MODE_CURRENT_36_PERCENT);
+		aat1274_write(FLASH_MOVIE_MODE_CURRENT_79_PERCENT);
 	} else {
 		gpio_set_value(GPIO_CAM_FLASH_SET, 0);
 		gpio_set_value(GPIO_CAM_FLASH_EN, 0);
@@ -2163,6 +2151,14 @@ static int sr130pc10_request_gpio(void)
 
 static int sr130pc10_power_init(void)
 {
+	if (IS_ERR_OR_NULL(cam_isp_host_regulator))
+		cam_isp_host_regulator = regulator_get(NULL, "cam_isp_host");
+
+	if (IS_ERR_OR_NULL(cam_isp_host_regulator)) {
+		pr_err("Failed to get regulator cam_isp_host_regulator\n");
+		return -EINVAL;
+	}
+
 	if (IS_ERR_OR_NULL(vt_cam_isp_core_regulator))
 		vt_cam_isp_core_regulator = regulator_get(NULL, "vt_cam_isp_core");
 
@@ -2184,9 +2180,15 @@ static int sr130pc10_power_init(void)
 static int sr130pc10_power_on(void)
 {
 	int err = 0;
-	int result;
+	int result = 1; // err is 0, no_err is !err
        printk(KERN_ERR "sr130pc10_power_on\n");
 
+       err = gpio_request(GPIO_CAM_VGA_nRST, "GPE1");
+	if (err){
+		pr_err("failed gpio_request(GPE1) for camera control =%d\n",err);
+              return -EINVAL;
+       }
+           
 	if (sr130pc10_power_init()) {
 		pr_err("Failed to get all regulator\n");
 		return -EINVAL;
@@ -2198,7 +2200,7 @@ static int sr130pc10_power_on(void)
 		pr_err("Failed to enable regulator cam_isp_host_regulator\n");
 		goto off_cam_isp_host;
 	}
-	msleep(3);
+	udelay(500);
 
 	/* Turn VGA_AVDD_2.8V on */
 	err = regulator_enable(vt_cam_sensor);
@@ -2224,13 +2226,14 @@ static int sr130pc10_power_on(void)
 
 	/* Mclk enable */
 	s3c_gpio_cfgpin(GPIO_CAM_MCLK, S3C_GPIO_SFN(0x02));
-	mdelay(1);
+	mdelay(13);
 
 	/* CAM_VGA_nRST HIGH */
 	gpio_direction_output(GPIO_CAM_VGA_nRST, 0);
 	gpio_set_value(GPIO_CAM_VGA_nRST, 1);
 	mdelay(5);
 
+       gpio_free(GPIO_CAM_VGA_nRST);
 	return 0;
 off_cam_isp_host:
 	s3c_gpio_cfgpin(GPIO_CAM_MCLK, 0);
@@ -2255,6 +2258,8 @@ off_vt_cam_isp_core:
 		pr_err("Failed to disable regulator vt_cam_isp_core_regulator\n");
 		result = err;
 	}
+       gpio_free(GPIO_CAM_VGA_nRST);
+       
 	return result;
 }
 
@@ -2262,6 +2267,10 @@ static int sr130pc10_power_off(void)
 {
 	int err;
        printk(KERN_ERR "sr130pc10_power_off\n");
+       
+       /* GPIO_CAM_VGA_nRST - GPE1(4) */
+       if (gpio_request(GPIO_CAM_VGA_nRST, "GPE1") < 0)
+           pr_err("failed gpio_request(GPE1) for camera control\n");
 
 	if (!cam_isp_host_regulator || !vt_cam_sensor ||
 		!vt_cam_isp_core_regulator) {
@@ -2286,6 +2295,8 @@ static int sr130pc10_power_off(void)
 
 	udelay(1);
 
+        gpio_free(GPIO_CAM_VGA_nRST);
+        
 	/* Turn VGA_VDDIO_2.8V off */
 	err = regulator_disable(vt_cam_sensor);
 	if (err) {
@@ -2978,34 +2989,34 @@ static struct sec_jack_zone sec_jack_zones[] = {
 		.jack_type = SEC_HEADSET_3POLE,
 	},
 	{
-		/* 0 < adc <= 700, unstable zone, default to 3pole if it stays
+		/* 0 < adc <= 1000, unstable zone, default to 3pole if it stays
 		 * in this range for 300ms (30ms delays, 10 samples)
 		 */
-		.adc_high = 700,
+		.adc_high = 1200,
 		.delay_ms = 30,
 		.check_count = 10,
 		.jack_type = SEC_HEADSET_3POLE,
 	},
 	{
-		/* 700 < adc <= 2000, 4 pole zone, default to 4pole if it
+		/* 1000 < adc <= 1200, 4 pole zone, default to 4pole if it
 		 * stays in this range for 200ms (20ms delays, 10 samples)
 		 */
-		.adc_high = 2000,
+		.adc_high = 1201,
 		.delay_ms = 20,
 		.check_count = 10,
 		.jack_type = SEC_HEADSET_4POLE,
 	},
 	{
-		/* 2000 < adc <= 3000, 4 pole zone, default to 4pole if it
+		/* 2000 < adc <= 3700, 4 pole zone, default to 4pole if it
 		 * stays in this range for 300ms (30ms delays, 10 samples)
 		 */
-		.adc_high = 3000,
+		.adc_high = 3700,
 		.delay_ms = 30,
 		.check_count = 10,
 		.jack_type = SEC_HEADSET_4POLE,
 	},
 	{
-		/* adc > 3400, unstable zone, default to 3pole if it stays
+		/* adc > 3700, unstable zone, default to 3pole if it stays
 		 * in this range for two seconds (10ms delays, 200 samples)
 		 */
 		.adc_high = 0x7fffffff,
@@ -3021,10 +3032,22 @@ static struct sec_jack_zone sec_jack_zones[] = {
  */
 static struct sec_jack_buttons_zone sec_jack_buttons_zones[] = {
 	{
-		/* 0 <= adc <=1000, stable zone */
+		/* 0 <= adc <=150, stable zone */
 		.code		= KEY_MEDIA,
 		.adc_low	= 0,
-		.adc_high	= 1000,
+		.adc_high	= 130,
+	},
+	{
+		/* 190 <= adc <= 320, stable zone */
+		.code		= KEY_VOLUMEUP,
+		.adc_low	= 140,
+		.adc_high	= 330,
+	},
+	{
+		/* 420 <= adc <= 800, stable zone */
+		.code		= KEY_VOLUMEDOWN,
+		.adc_low	= 340,
+		.adc_high	= 820,
 	},
 };
 
@@ -3606,18 +3629,6 @@ static struct platform_device *aries_devices[] __initdata = {
 #endif
 #endif
 
-#ifdef CONFIG_S3C_DEV_HSMMC
-	&s3c_device_hsmmc0,
-#endif
-#ifdef CONFIG_S3C_DEV_HSMMC1
-	&s3c_device_hsmmc1,
-#endif
-#ifdef CONFIG_S3C_DEV_HSMMC2
-	&s3c_device_hsmmc2,
-#endif
-#ifdef CONFIG_S3C_DEV_HSMMC3
-	&s3c_device_hsmmc3,
-#endif
 #ifdef CONFIG_VIDEO_TV20
         &s5p_device_tvout,
 #endif
@@ -3647,6 +3658,18 @@ static struct platform_device *aries_devices[] __initdata = {
 	&s3c_device_timer[1],
 	&s3c_device_timer[2],
 	&s3c_device_timer[3],
+#endif
+#ifdef CONFIG_S3C_DEV_HSMMC
+	&s3c_device_hsmmc0,
+#endif
+#ifdef CONFIG_S3C_DEV_HSMMC1
+	&s3c_device_hsmmc1,
+#endif
+#ifdef CONFIG_S3C_DEV_HSMMC2
+	&s3c_device_hsmmc2,
+#endif
+#ifdef CONFIG_S3C_DEV_HSMMC3
+	&s3c_device_hsmmc3,
 #endif
 	&sec_device_rfkill,
 	&sec_device_btsleep,
@@ -3913,7 +3936,6 @@ static void __init aries_machine_init(void)
 	i2c_register_board_info(6, i2c_devs6, ARRAY_SIZE(i2c_devs6));
 #ifdef CONFIG_KEYPAD_CYPRESS_TOUCH
 	/* Touch Key */
-	touch_keypad_gpio_init();
 	i2c_register_board_info(10, i2c_devs10, ARRAY_SIZE(i2c_devs10));
 #endif
 	/* FSA9480 */
@@ -3949,8 +3971,7 @@ static void __init aries_machine_init(void)
 #endif
 
 #ifdef CONFIG_CHARGER_FAN5403
-	if (HWREV == 0x1)	/* REV05 */
-		fan5403_gpio_init();
+	fan5403_gpio_init();
 	i2c_register_board_info(16, i2c_devs16, ARRAY_SIZE(i2c_devs16));
 #endif
 

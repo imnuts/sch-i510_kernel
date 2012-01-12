@@ -59,7 +59,10 @@ static char *usb_functions_ums[] = {
 static char *usb_functions_rndis[] = {
 	"rndis",
 #ifdef CONFIG_USB_ANDROID_DIAG
-	"diag"
+	"diag",
+#endif
+#ifdef CONFIG_USB_ANDROID_NMEA
+        "nmea",
 #endif
 };
 
@@ -115,6 +118,9 @@ static char *usb_functions_all[] = {
 #ifdef CONFIG_USB_ANDROID_SAMSUNG_MTP
 	"mtp",
 #endif 
+#ifdef CONFIG_USB_ANDROID_NMEA
+        "nmea",
+#endif
 #ifdef CONFIG_USB_ANDROID_ACCESSORY
 	"accessory",
 #endif

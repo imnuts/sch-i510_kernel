@@ -4207,7 +4207,6 @@ wl_iw_handle_scanresults_ies(char **event_p, char *end,
 			wpa_snprintf_hex(buf + 10, 2+1, &(ie->len), 1);
 			wpa_snprintf_hex(buf + 12, 2*ie->len+1, ie->data, ie->len);
 			event = IWE_STREAM_ADD_POINT(info, event, end, &iwe, buf);
-			kfree(buf);
 #endif 
 			break;
 		}
@@ -6547,15 +6546,13 @@ static int iwpriv_set_cscan(struct net_device *dev, struct iw_request_info *info
 						WL_SCAN_PARAMS_SSID_MAX);
 		if (nssid == -1) {
 			WL_ERROR(("%s wrong ssid list", __FUNCTION__));
-			res = -EINVAL;
-			goto exit_proc;
+			return -1;
 		}
 
 		if (iscan->iscan_ex_param_size > WLC_IOCTL_MAXLEN) {
 			WL_ERROR(("%s wrong ex_param_size %d", \
 				__FUNCTION__, iscan->iscan_ex_param_size));
-			res = -EFAULT;
-			goto exit_proc;
+			return -1;
 		}
 		memset(iscan->iscan_ex_params_p, 0, iscan->iscan_ex_param_size);
 
@@ -6570,8 +6567,7 @@ static int iwpriv_set_cscan(struct net_device *dev, struct iw_request_info *info
 					&iscan->iscan_ex_params_p->params.channel_list[0], \
 					WL_NUMCHANNELS)) == -1) {
 			WL_ERROR(("%s missing channel list\n", __FUNCTION__));
-			res = -EINVAL;
-			goto exit_proc;
+			return -1;
 		}
 
 		

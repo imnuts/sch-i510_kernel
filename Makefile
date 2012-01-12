@@ -336,7 +336,11 @@ MODFLAGS	= -DMODULE
 CFLAGS_MODULE   = $(MODFLAGS)
 AFLAGS_MODULE   = $(MODFLAGS)
 LDFLAGS_MODULE  = -T $(srctree)/scripts/module-common.lds
+ifeq ($(TARGET_BUILD_VARIANT),eng)
+CFLAGS_KERNEL	= -DSECCONFIG_CACHE_WRITE_THROUGH
+else
 CFLAGS_KERNEL	=
+endif
 AFLAGS_KERNEL	=
 CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage
 

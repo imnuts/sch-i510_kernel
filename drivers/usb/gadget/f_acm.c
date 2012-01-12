@@ -731,7 +731,7 @@ fail:
 		acm->port.in->driver_data = NULL;
 
 	ERROR(cdev, "%s/%p: can't bind, err %d\n", f->name, f, status);
-
+       
 	return status;
 }
 
@@ -918,7 +918,7 @@ int acm_bind_config(struct usb_configuration *c, u8 port_num)
 	status = usb_add_function(c, &acm->port.func);
 	if (status)
 		kfree(acm);
-	return status;
+	return status;    
 }
 
 #ifdef CONFIG_USB_ANDROID_ACM
@@ -927,7 +927,11 @@ int acm_function_bind_config(struct usb_configuration *c)
 {
 	int ret = acm_bind_config(c, 0);
 	if (ret == 0)
+ #ifdef CONFIG_USB_ANDROID_NMEA
+                gserial_setup(c->cdev->gadget, 3);
+ #else
 		gserial_setup(c->cdev->gadget, 2);
+ #endif
 	return ret;
 }
 

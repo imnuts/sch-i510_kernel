@@ -27,6 +27,7 @@
 #include <mach/regs-gpio.h>
 #include <mach/gpio.h>
 #include <asm/mach-types.h>
+#include <linux/delay.h>
 
 /* clock sources for the mmc bus clock, order as for the ctrl2[5..4] */
 
@@ -225,6 +226,8 @@ void s5pv210_adjust_sdhci_cfg_card(struct s3c_sdhci_platdata *pdata,
 		} else if (pdata->rx_cfg == 3) {
 			ctrl2 &= ~(S3C_SDHCI_CTRL2_ENFBCLKTX |
 				   S3C_SDHCI_CTRL2_ENFBCLKRX);
+		} else if (pdata->rx_cfg == 4) {
+			ctrl3 |= S3C_SDHCI_CTRL3_FCSELRX_BASIC;
 			pdata->rx_cfg = 0;
 		}
 	} else if (rw == 1) {
@@ -317,6 +320,24 @@ static struct s3c_sdhci_platdata hsmmc2_platdata = {
 	.host_caps	= MMC_CAP_8_BIT_DATA,
 #endif
 };
+#endif
+
+#if defined(CONFIG_MACH_AEGIS) || defined(CONFIG_TIKAL_USCC)
+void s5pv210_setup_sdhci_set_power(struct platform_device *dev, int en)
+{
+	if (GPIO_MASSMEMORY_EN) {
+		if (en) {
+			gpio_set_value(GPIO_MASSMEMORY_EN, 1);
+			pr_info("sdhci: internal MMC Card ON samsung-sdhc.(%d-%d)\n",
+					GPIO_MASSMEMORY_EN, gpio_get_value(GPIO_MASSMEMORY_EN));
+		} else {
+			gpio_set_value(GPIO_MASSMEMORY_EN, 0);
+			pr_info("sdhci: internal MMC Card OFF samsung-sdhc.(%d-%d)\n",
+					GPIO_MASSMEMORY_EN, gpio_get_value(GPIO_MASSMEMORY_EN));
+			mdelay(120);
+		}
+	}
+}
 #endif
 
 #if defined(CONFIG_S3C_DEV_HSMMC3) && !defined(CONFIG_MACH_VIPER)

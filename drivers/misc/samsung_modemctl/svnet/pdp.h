@@ -22,7 +22,14 @@
 #define __PACKET_DATA_PROTOCOL_H__
 
 #include <linux/netdevice.h>
+
+#ifdef CONFIG_MACH_CHIEF
+#undef SUSPEND_RESUME_BRIDGE
+#undef SVNET_PDP_ETHER
+#else
 #define SUSPEND_RESUME_BRIDGE
+#define SVNET_PDP_ETHER
+#endif
 
 struct pdp_priv {
 	int channel;

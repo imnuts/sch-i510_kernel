@@ -40,6 +40,7 @@
 #else
 #include <mach/forte/gpio-aries.h>
 #endif
+
 #include <linux/slab.h>
 
 #define CONFIG_TOUCHSCREEN_MELFAS_FIRMWARE_UPDATE
@@ -56,6 +57,12 @@
 #include <mach/cpu-freq-v210.h>
 
 #endif
+
+int get_version_failed = 0;
+
+int melfas_ts_probe(void);
+void init_hw_setting(void);
+int __init melfas_ts_init(void);
 
 static int debug_level = 5; 
 #define debugprintk(level,x...)  if(debug_level>=level) printk(x)
@@ -94,13 +101,15 @@ struct melfas_ts_driver *melfas_ts = NULL;
 struct i2c_driver melfas_ts_i2c;
 struct workqueue_struct *melfas_ts_wq;
 
-static struct vreg *vreg_touch;
-static struct vreg *vreg_touchio;
+//static struct vreg *vreg_touch;
+//static struct vreg *vreg_touchio;
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
 void melfas_ts_early_suspend(struct early_suspend *h);
 void melfas_ts_late_resume(struct early_suspend *h);
 #endif	/* CONFIG_HAS_EARLYSUSPEND */
+int melfas_ts_resume(void);
+int melfas_ts_suspend(pm_message_t mesg);
 
 #define TOUCH_HOME	0//KEY_HOME
 #define TOUCH_MENU	0//KEY_MENU
@@ -169,6 +178,7 @@ static void melfas_read_version(void)
 	
 	if (0 == melfas_i2c_read(melfas_ts->client, MCSTS_MODULE_VER_REG, buf, 2))
 	{
+		get_version_failed  = 0;
 
 		melfas_ts->hw_rev = buf[0];
 		melfas_ts->fw_ver = buf[1];
@@ -180,6 +190,8 @@ static void melfas_read_version(void)
 		melfas_ts->hw_rev = 0;
 		melfas_ts->fw_ver = 0;
 		
+		get_version_failed = 1;	
+				
 		printk("%s : Can't find HW Ver, FW ver!\n", __func__);
 	}
 }
@@ -219,6 +231,65 @@ static void melfas_read_resolution(void)
 		
 		printk("%s : Can't find Resolution!\n", __func__);
 	}
+}
+
+static void melfas_firmware_download(void)
+{
+
+	int ret;
+
+   // disable_irq(melfas_ts->client->irq);
+
+//      printk("[F/W D/L] Entry gpio_tlmm_config\n");
+//      melfas_ts_suspend(PMSG_SUSPEND);
+//    s3c_gpio_cfgpin(GPIO_TOUCH_I2C_SCL, S3C_GPIO_OUTPUT); s3c_gpio_setpull(GPIO_TOUCH_I2C_SCL,S3C_GPIO_PULL_DOWN);
+//    s3c_gpio_cfgpin(GPIO_TOUCH_I2C_SDA, S3C_GPIO_OUTPUT); s3c_gpio_setpull(GPIO_TOUCH_I2C_SDA,S3C_GPIO_PULL_DOWN);
+//    s3c_gpio_cfgpin(GPIO_TOUCH_INT, S3C_GPIO_OUTPUT);     s3c_gpio_setpull(GPIO_TOUCH_INT,S3C_GPIO_PULL_DOWN);
+
+//      gpio_tlmm_config(GPIO_CFG(GPIO_I2C0_SCL,  0, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA), GPIO_CFG_ENABLE);
+//      gpio_tlmm_config(GPIO_CFG(GPIO_I2C0_SDA,  0, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA), GPIO_CFG_ENABLE);  
+//      gpio_tlmm_config(GPIO_CFG(GPIO_TOUCH_INT, 0, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA), GPIO_CFG_ENABLE);
+    
+    printk("[F/W D/L] Entry mcsdl_download_binary_data\n");
+    ret = mcsdl_download_binary_data(); //eunsuk test [melfas_ts->hw_rev -> ()]
+    
+//    init_hw_setting();
+//   melfas_ts_probe();
+//    int __init melfas_ts_init();
+//    i2c_add_driver(&melfas_ts_i2c);
+
+//    enable_irq(melfas_ts->client->irq);
+    
+//      melfas_read_version(); 
+        
+    if(ret > 0)
+    {
+        if (melfas_ts->hw_rev < 0) 
+        {
+            printk(KERN_ERR "i2c_transfer failed\n");
+        }
+
+        if (melfas_ts->fw_ver < 0) 
+        {
+            printk(KERN_ERR "i2c_transfer failed\n");
+        }
+
+        //         s3c_gpio_cfgpin(GPIO_TOUCH_INT, S3C_GPIO_SFN(0xf)/*S3C_GPIO_INPUT*/); s3c_gpio_setpull(GPIO_TOUCH_INT,S3C_GPIO_PULL_UP);    
+        //         set_irq_type(IRQ_TOUCH_INT, IRQ_TYPE_LEVEL_LOW); //chief.boot.temp changed from edge low to level low VERIFY!!
+        //         mdelay(10);
+        //          melfas_ts_resume();
+        //              printk("[TOUCH] Firmware update success! [Melfas H/W version: 0x%02x., Current F/W version: 0x%02x.]\n", melfas_ts->hw_rev, melfas_ts->fw_ver);
+
+    }
+    else 
+    {
+         printk("[TOUCH] Firmware update failed.. RESET!\n");
+         mcsdl_vdd_off();
+         mdelay(500);
+         mcsdl_vdd_on();
+         mdelay(200);
+    }
+
 }
 
 static ssize_t registers_show(struct device *dev, struct device_attribute *attr, char *buf)
@@ -271,6 +342,9 @@ static ssize_t gpio_show(struct device *dev, struct device_attribute *attr, char
 {
 	sprintf(buf, "[TOUCH] Melfas Tsp Gpio Info.\n");
 	sprintf(buf, "%sGPIO TOUCH_INT : %s\n", buf, gpio_get_value(GPIO_TOUCH_INT)? "HIGH":"LOW"); 
+    sprintf(buf, "%sGPIO TOUCH_EN : %s\n", buf, gpio_get_value(GPIO_TOUCH_EN)? "HIGH":"LOW"); 
+    sprintf(buf, "%sGPIO TOUCH_SCL : %s\n", buf, gpio_get_value(GPIO_TOUCH_I2C_SCL)? "HIGH":"LOW");     
+    sprintf(buf, "%sGPIO TOUCH_SDA : %s\n", buf, gpio_get_value(GPIO_TOUCH_I2C_SDA)? "HIGH":"LOW"); 
 	return sprintf(buf, "%s", buf);
 }
 
@@ -297,13 +371,28 @@ static ssize_t gpio_store(
 		printk("[TOUCH] reset.\n");
 		mdelay(200);
 	}
+#if 0
+//    gpio = GPIO_TOUCH_EN; // forte_temp  S5PV210_GPG3(6);                     /* XMMC3DATA_3 */
+    gpio_request(GPIO_TOUCH_INT, "TOUCH_INT");
+    s3c_gpio_cfgpin(GPIO_TOUCH_INT, S3C_GPIO_OUTPUT);
+    gpio_direction_output(GPIO_TOUCH_INT, 1);
+    gpio_free(GPIO_TOUCH_INT);
+    mdelay(100);
+//    gpio_direction_input(GPIO_TOUCH_INT);
+//    gpio_set_value(GPIO_TOUCH_INT, 1);    
+	init_hw_setting();
+    printk("[TOUCH] IRQ ENABLE.\n");
+#endif     
+//    s3c_gpio_cfgpin(GPIO_TOUCH_INT, S3C_GPIO_SFN(0xf)/*S3C_GPIO_INPUT*/); s3c_gpio_setpull(GPIO_TOUCH_INT,S3C_GPIO_PULL_UP);
+    
+//    mdelay(10);
 	return size;
 }
 
 
 static ssize_t firmware_show(struct device *dev, struct device_attribute *attr, char *buf)
 {	
-	int hw_rev, fw_ver;
+/*	int hw_rev, fw_ver;
 	
 	hw_rev = i2c_smbus_read_byte_data(melfas_ts->client, MCSTS_MODULE_VER_REG);
 	if (hw_rev < 0) {
@@ -313,8 +402,11 @@ static ssize_t firmware_show(struct device *dev, struct device_attribute *attr, 
 	if (fw_ver < 0) {
 		printk(KERN_ERR "i2c_smbus_read_byte_data failed\n");
 	}
+*/
+	melfas_read_version();
 
-	sprintf(buf, "H/W rev. 0x%x F/W ver. 0x%x\n", hw_rev, fw_ver);
+	sprintf(buf, "H/W rev. 0x%x F/W ver. 0x%x\n", melfas_ts->hw_rev, melfas_ts->fw_ver);
+   
 	return sprintf(buf, "%s", buf);
 }
 
@@ -323,50 +415,19 @@ static ssize_t firmware_store(
 		struct device *dev, struct device_attribute *attr,
 		const char *buf, size_t size)
 {
-	#ifdef CONFIG_TOUCHSCREEN_MELFAS_FIRMWARE_UPDATE	
-	int ret;
-	if(strncmp(buf, "UPDATE", 6) == 0 || strncmp(buf, "update", 6) == 0) {
+#ifdef CONFIG_TOUCHSCREEN_MELFAS_FIRMWARE_UPDATE	
+	if(strncmp(buf, "UPDATE", 6) == 0 || strncmp(buf, "update", 6) == 0) 
+    {
 		printk("[TOUCH] Melfas  H/W version: 0x%02x.\n", melfas_ts->hw_rev);
 		printk("[TOUCH] Current F/W version: 0x%02x.\n", melfas_ts->fw_ver);
-
-		disable_irq(melfas_ts->client->irq);
-
-		printk("[F/W D/L] Entry gpio_tlmm_config\n");
-
-		s3c_gpio_cfgpin(GPIO_TOUCH_I2C_SCL, S3C_GPIO_OUTPUT); s3c_gpio_setpull(GPIO_TOUCH_I2C_SCL,S3C_GPIO_PULL_DOWN);
-		s3c_gpio_cfgpin(GPIO_TOUCH_I2C_SDA, S3C_GPIO_OUTPUT); s3c_gpio_setpull(GPIO_TOUCH_I2C_SDA,S3C_GPIO_PULL_DOWN);
-		s3c_gpio_cfgpin(GPIO_TOUCH_INT, S3C_GPIO_OUTPUT);     s3c_gpio_setpull(GPIO_TOUCH_INT,S3C_GPIO_PULL_DOWN);
-
-//		gpio_tlmm_config(GPIO_CFG(GPIO_I2C0_SCL,  0, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA), GPIO_CFG_ENABLE);
-//		gpio_tlmm_config(GPIO_CFG(GPIO_I2C0_SDA,  0, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA), GPIO_CFG_ENABLE);	
-//		gpio_tlmm_config(GPIO_CFG(GPIO_TOUCH_INT, 0, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA), GPIO_CFG_ENABLE);
-		
-		printk("[F/W D/L] Entry mcsdl_download_binary_data\n");
-		ret = mcsdl_download_binary_data(); //eunsuk test [melfas_ts->hw_rev -> ()]
-		
-		enable_irq(melfas_ts->client->irq);
-		
-		melfas_read_version(); 
-			
-		if(ret > 0){
-				if (melfas_ts->hw_rev < 0) {
-					printk(KERN_ERR "i2c_transfer failed\n");
-				}
-				
-				if (melfas_ts->fw_ver < 0) {
-					printk(KERN_ERR "i2c_transfer failed\n");
-				}
-				
-				printk("[TOUCH] Firmware update success! [Melfas H/W version: 0x%02x., Current F/W version: 0x%02x.]\n", melfas_ts->hw_rev, melfas_ts->fw_ver);
-
-		}
-		else {
-			printk("[TOUCH] Firmware update failed.. RESET!\n");
-      mcsdl_vdd_off();
-			mdelay(500);
-      mcsdl_vdd_on();
-			mdelay(200);
-		}
+//        if((melfas_ts->fw_ver <= 0x00) && (melfas_ts->hw_rev <= 0x00))
+        {
+            melfas_firmware_download();
+        }
+//        else
+        {
+//			printk("\nFirmware update error :: Check the your devices version.\n");
+        }
 	}
 #endif
 
@@ -394,7 +455,7 @@ static ssize_t debug_store(
 static DEVICE_ATTR(gpio, S_IRUGO | S_IWUSR, gpio_show, gpio_store);
 static DEVICE_ATTR(registers, S_IRUGO | S_IWUSR, registers_show, registers_store);
 static DEVICE_ATTR(firmware, S_IRUGO | S_IWUSR, firmware_show, firmware_store);
-static DEVICE_ATTR(debug, S_IRUGO | S_IWUSR, debug_show, debug_store);
+static DEVICE_ATTR(debug, S_IRUGO | S_IWUGO, debug_show, debug_store);
 
 
 void melfas_ts_work_func(struct work_struct *work)
@@ -403,14 +464,13 @@ void melfas_ts_work_func(struct work_struct *work)
   int ret1;
   int i = 0;
   u8 id = 0;
-  static int PreState = 1;
 
   struct i2c_msg msg[2];
   
   uint8_t start_reg;
   uint8_t buf1[6]; // 8-> 6 melfas recommand
 
-//  printk(KERN_ERR "==!!== melfas_ts_work_func \n");		// heatup - test
+  printk(KERN_ERR "==!!== melfas_ts_work_func \n");		// heatup - test
   
   msg[0].addr = melfas_ts->client->addr;
   msg[0].flags = 0; 
@@ -437,31 +497,30 @@ void melfas_ts_work_func(struct work_struct *work)
     int y = buf1[3] | (((uint16_t)(buf1[1] & 0xf0) >> 4) << 8); 
     int z = buf1[4];
     int finger = buf1[0] & 0x0f;  //Touch Point ID
-    int touchaction = (int)((buf1[0] >> 4) & 0x3); //Touch action
-    int touchtype = (int)((buf1[0] >> 6) & 0x3);
+	 int touchaction = (int)((buf1[0] >> 4) & 0x3); //Touch action
+//	 int touchtype = (int)((buf1[0] >> 6) & 0x3);
 #ifdef CONFIG_CPU_FREQ
 //    set_dvfs_perf_level();
 #endif
 //		printk("==!!== touchaction:[%d]..touchtype:[%d]\n",touchaction,touchtype);
-    finger = finger -1; // melfas touch  started  touch finger id from the  index 1
-    id = finger; // android input id : 0~ 
+     finger = finger -1; // melfas touch  started  touch finger id from the  index 1
+	  id = finger; // android input id : 0~ 
 //	  printk("===touchaction : [%d]=== \n",touchaction);
 
       switch(touchaction) {
         case 0x0: // Non-touched state (Rlease Event)
-
-         if(melfas_ts->info[id].z == -1)
-         {
-              enable_irq(melfas_ts->irq);
-              return ;
-         }
         
 			//melfas_ts->info[id].x = -1;
 			//melfas_ts->info[id].y = -1;
 			//melfas_ts->info[id].z = -1;
 			//melfas_ts->info[id].finger_id = finger; 
 			//z = 0;
-//			debugprintk(5," TOUCH RELEASE\n");			
+//			debugprintk(5," TOUCH RELEASE\n");
+            if(melfas_ts->info[id].z == -1)
+            {
+                enable_irq(melfas_ts->irq);
+                return;
+            }
 			melfas_ts->info[id].x = x;
 			melfas_ts->info[id].y = y;
 			melfas_ts->info[id].z = 0;
@@ -472,16 +531,15 @@ void melfas_ts_work_func(struct work_struct *work)
           break;
 
         case 0x1: //touched state (Press Event)
-
             if(melfas_ts->info[id].x == x
             && melfas_ts->info[id].y == y
             && melfas_ts->info[id].z == z
             && melfas_ts->info[id].finger_id == finger)
             {
                 enable_irq(melfas_ts->irq);
-                return ;
+                return;
             }
-        
+            
 			melfas_ts->info[id].x = x;
 			melfas_ts->info[id].y = y;
 			melfas_ts->info[id].z = z;
@@ -515,10 +573,10 @@ void melfas_ts_work_func(struct work_struct *work)
 //		if(nPreID >= id || bChangeUpDn)
 		if(((touchaction == 1)&&(z!=0))||((touchaction == 0)&&(z==0)))
 		{
-			if(((touchaction == 1)&&(z!=0)))
-				s5pv210_lock_dvfs_high_level(DVFS_LOCK_TOKEN_4,0);    // heatup - chief
-			else
-				s5pv210_unlock_dvfs_high_level(DVFS_LOCK_TOKEN_4);    // heatup - chief
+	//		if(((touchaction == 1)&&(z!=0)))
+		//		s5pc110_lock_dvfs_high_level(DVFS_LOCK_TOKEN_4,0);
+	//		else
+		//		s5pc110_unlock_dvfs_high_level(DVFS_LOCK_TOKEN_4);
 			
 		  	for ( i= 0; i<FINGER_NUM; ++i ) 
 			{
@@ -527,11 +585,9 @@ void melfas_ts_work_func(struct work_struct *work)
 				input_report_abs(melfas_ts->input_dev, ABS_MT_POSITION_Y, melfas_ts->info[i].y);
 				input_report_abs(melfas_ts->input_dev, ABS_MT_TOUCH_MAJOR, melfas_ts->info[i].z ? 40 : 0);		
 //				input_report_abs(melfas_ts->input_dev, ABS_MT_TRACKING_ID, melfas_ts->info[i].finger_id);
-//				input_report_abs(melfas_ts->input_dev, ABS_MT_WIDTH_MAJOR, 3/*melfas_ts->info[i].finger_id*/);		
-                input_report_abs(melfas_ts->input_dev, ABS_MT_WIDTH_MAJOR, (melfas_ts->info[i].finger_id * 0xff) + 5);
-
+				input_report_abs(melfas_ts->input_dev, ABS_MT_WIDTH_MAJOR,melfas_ts->info[i].finger_id * 0xff +  5);		
 				input_mt_sync(melfas_ts->input_dev);
-	//			debugprintk(5,"[TOUCH_MT] x1: %4d, y1: %4d, z1: %4d, finger: %4d, i=[%d] \n", x, y,(melfas_ts->info[id].z), finger,i);			
+//				debugprintk(5,"[TOUCH_MT] x1: %4d, y1: %4d, z1: %4d, finger: %4d, i=[%d] \n", x, y,(melfas_ts->info[id].z), finger,i);			
 	//			input_sync(melfas_ts->input_dev);
 				if(melfas_ts->info[i].z == 0)
 					melfas_ts->info[i].z = -1;
@@ -553,13 +609,18 @@ void melfas_ts_work_func(struct work_struct *work)
 irqreturn_t melfas_ts_irq_handler(int irq, void *dev_id)
 {
 //	s3c_gpio_cfgpin(GPIO_TOUCH_INT, S3C_GPIO_INPUT);
-//	printk("*************************TOUCH INTERRUPT****************\n");	
+	
 //	disable_irq_nosync(IRQ_TOUCH_INT);
 	disable_irq_nosync(melfas_ts->irq);
 	//disable_irq(melfas_ts->irq);
 	queue_work(melfas_ts_wq, &melfas_ts->work);
+    printk("MELFAS TS IRQ[%d] HANDLER! /n",melfas_ts->irq);
 	return IRQ_HANDLED;
 }
+
+#define HW_VERSION  0x10
+#define FW_VERSION  0x04
+
 
 int melfas_ts_probe(void)
 {
@@ -580,14 +641,44 @@ int melfas_ts_probe(void)
 	
 	INIT_WORK(&melfas_ts->work, melfas_ts_work_func);
 	
+	melfas_read_version();
+//	if( (melfas_ts->hw_rev == HW_VERSION) && (melfas_ts->fw_ver < FW_VERSION)||get_version_failed)
+
+	if( ((melfas_ts->hw_rev != HW_VERSION) && (melfas_ts->fw_ver != FW_VERSION))||(get_version_failed))
+	{ 	 
+		ret = mcsdl_download_binary_data();
+   	}
+	else
+	{
+		MCSDL_VDD_SET_LOW();
+		msleep(400);      // Delay for Stable VDD
+		MCSDL_VDD_SET_HIGH();
+	}	
+	
+   if(ret < 0)
+   {
+      printk(KERN_ERR "SET Download Fail - errro code [%d] \n",ret);
+   }
+   
 	melfas_read_version(); 
 
 	printk(KERN_INFO "[TOUCH] Melfas  H/W version: 0x%02x.\n", melfas_ts->hw_rev);
 	printk(KERN_INFO "[TOUCH] Current F/W version: 0x%02x.\n", melfas_ts->fw_ver);
-	
-	melfas_read_resolution();
-	max_x = melfas_ts->info[0].max_x ;
-	max_y = melfas_ts->info[0].max_y ;
+
+    if((melfas_ts->fw_ver == 0x00) || (melfas_ts->hw_rev == 0x00))
+    {    
+        printk("FIRMWARE DOWNLOAD START! \n");
+	//	melfas_firmware_download();
+    }
+    else
+    {
+        printk("Firmware update fail or upper firmware! \n");
+    }
+
+    
+//	melfas_read_resolution();
+	max_x = 320;//melfas_ts->info[0].max_x ;
+	max_y = 480;//melfas_ts->info[0].max_y ;
 	printk("melfas_ts_probe: max_x: %d, max_y: %d\n", max_x, max_y);
 
 	melfas_ts->input_dev = input_allocate_device();
@@ -641,8 +732,8 @@ int melfas_ts_probe(void)
 
 	melfas_ts->client->irq = IRQ_TOUCH_INT;	// heatup - test
 	melfas_ts->irq = melfas_ts->client->irq; //add by KJB
-	
-	ret = request_irq(melfas_ts->client->irq, melfas_ts_irq_handler, IRQF_DISABLED, "melfas_ts irq", 0);
+   // init_hw_setting();
+	ret = request_irq(melfas_ts->irq, melfas_ts_irq_handler, IRQF_DISABLED, "melfas_ts irq", 0);
 	if(ret == 0) {
 		printk(KERN_INFO "melfas_ts_probe: Start touchscreen %s \n", melfas_ts->input_dev->name);
 	}
@@ -658,14 +749,14 @@ int melfas_ts_probe(void)
 #endif	/* CONFIG_HAS_EARLYSUSPEND */
 
 	return 0;
-err_misc_register_device_failed:
+//err_misc_register_device_failed:
 err_input_register_device_failed:
 	input_free_device(melfas_ts->input_dev);
 
 err_input_dev_alloc_failed:
-err_detect_failed:
+//err_detect_failed:
 	kfree(melfas_ts);
-err_alloc_data_failed:
+//err_alloc_data_failed:
 err_check_functionality_failed:
 	return ret;
 
@@ -712,7 +803,9 @@ int melfas_ts_suspend(pm_message_t mesg)
 	
   melfas_ts->suspended = true;
   melfas_ts_gen_touch_up();
-  disable_irq(melfas_ts->irq);
+//  disable_irq(melfas_ts->irq);
+disable_irq(melfas_ts->irq);
+
 
 #if 0 // heatup
   s3c_gpio_cfgpin(GPIO_TOUCH_I2C_SCL, S3C_GPIO_OUTPUT); s3c_gpio_setpull(GPIO_TOUCH_I2C_SCL,S3C_GPIO_PULL_NONE);
@@ -729,10 +822,20 @@ int melfas_ts_suspend(pm_message_t mesg)
 // gpio's sleep current
 //  s3c_gpio_cfgpin(GPIO_TOUCH_INT,S3C_GPIO_INPUT);
 //  s3c_gpio_setpull(GPIO_TOUCH_INT,S3C_GPIO_PULL_DOWN);
-  
+#if 0
+	/*reset the gpio's for the sleep configuration*/
+	s3c_gpio_cfgpin(GPIO_TOUCH_INT, S3C_GPIO_INPUT);
+	s3c_gpio_setpull(GPIO_TOUCH_INT, S3C_GPIO_PULL_DOWN);
+
+	s3c_gpio_cfgpin(GPIO_TOUCH_EN, S3C_GPIO_OUTPUT);
+	s3c_gpio_setpull(GPIO_TOUCH_EN, S3C_GPIO_PULL_DOWN);
+    gpio_set_value(GPIO_TOUCH_EN,0);
+    
+#else
   gpio_set_value(GPIO_TOUCH_EN,0);
   gpio_set_value(GPIO_TOUCH_I2C_SCL, 0);  // TOUCH SCL DIS
   gpio_set_value(GPIO_TOUCH_I2C_SDA, 0);  // TOUCH SDA DIS
+#endif
   msleep(1);
   
   printk(KERN_INFO "%s: melfas_ts_suspend!\n", __func__);
@@ -754,13 +857,21 @@ int melfas_ts_resume(void)
 //  s3c_gpio_cfgpin(GPIO_TOUCH_INT, S3C_GPIO_SFN(0xf));
   
 //  mcsdl_vdd_on();
+#if 0
+    init_hw_setting();
+#else
   gpio_set_value(GPIO_TOUCH_EN,1);
   msleep(1);
   gpio_set_value(GPIO_TOUCH_I2C_SCL, 1);  // TOUCH SCL EN
   gpio_set_value(GPIO_TOUCH_I2C_SDA, 1);  // TOUCH SDA EN    
-  msleep(210);//300-> Minimum stable time 200msec for MMS100 series after power on
+#endif  
+  msleep(300);//300-> Minimum stable time 200msec for MMS100 series after power on
   melfas_ts->suspended = false;
+  #if 1  
   enable_irq(melfas_ts->irq);  
+  #else
+  enable_irq(melfas_ts->irq);  
+  #endif
   printk(KERN_INFO "%s: melfas_ts_resume!\n", __func__);
   return 0;
 }
@@ -797,6 +908,7 @@ void melfas_ts_late_resume(struct early_suspend *h)
 int melfas_i2c_probe(struct i2c_client *client,const struct i2c_device_id *id)
 {
 	melfas_ts->client = client;
+    printk(" MELFAS I2C PROBE \n");
 	i2c_set_clientdata(client, melfas_ts);
 	return 0;
 }
@@ -806,7 +918,7 @@ static int __devexit melfas_i2c_remove(struct i2c_client *client)
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	unregister_early_suspend(&melfas_ts->early_suspend);
 #endif  /* CONFIG_HAS_EARLYSUSPEND */
-	free_irq(melfas_ts->client->irq, 0);
+	free_irq(melfas_ts->irq, 0);
 	input_unregister_device(melfas_ts->input_dev);
    
 	melfas_ts = i2c_get_clientdata(client);
@@ -832,8 +944,7 @@ struct i2c_driver melfas_ts_i2c = {
 
 void init_hw_setting(void)
 {
-	int ret;
-
+	int ret=0;
 #if 0
 	vreg_touch = vreg_get(NULL, "wlan2"); /* VTOUCH_2.8V */
 	vreg_touchio = vreg_get(NULL, "gp13"); /* VTOUCHIO_1.8V */
@@ -842,7 +953,7 @@ void init_hw_setting(void)
 #endif	
 	if (!(gpio_get_value(GPIO_TOUCH_EN))) 
 	{
-		gpio_direction_output(GPIO_TOUCH_EN,1);
+		ret=gpio_direction_output(GPIO_TOUCH_EN,1);
 		printk(KERN_ERR "%s: vreg_touch enable failed (%d)\n", __func__, ret);
 //		return -EIO;
 	}
@@ -865,20 +976,14 @@ void init_hw_setting(void)
 	
 //	s3c_gpio_cfgpin(GPIO_TOUCH_I2C_SCL, S3C_GPIO_OUTPUT); s3c_gpio_setpull(GPIO_TOUCH_I2C_SCL,S3C_GPIO_PULL_UP);
 //	s3c_gpio_cfgpin(GPIO_TOUCH_I2C_SDA, S3C_GPIO_OUTPUT); s3c_gpio_setpull(GPIO_TOUCH_I2C_SDA,S3C_GPIO_PULL_UP);
-	s3c_gpio_cfgpin(GPIO_TOUCH_INT, S3C_GPIO_SFN(0xf)/*S3C_GPIO_INPUT*/); 
-	s3c_gpio_setpull(GPIO_TOUCH_INT,S3C_GPIO_PULL_UP);
-	
-//	gpio_tlmm_config(GPIO_CFG(GPIO_I2C0_SCL, 0, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_UP, GPIO_CFG_16MA),GPIO_CFG_ENABLE);
-//	gpio_tlmm_config(GPIO_CFG(GPIO_I2C0_SDA, 0, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_UP, GPIO_CFG_16MA),GPIO_CFG_ENABLE);
-//	gpio_tlmm_config(GPIO_CFG(GPIO_TOUCH_INT, 0, GPIO_CFG_INPUT, GPIO_CFG_PULL_UP, GPIO_CFG_16MA),GPIO_CFG_ENABLE);
-
+	s3c_gpio_cfgpin(GPIO_TOUCH_INT, S3C_GPIO_SFN(0xf)/*S3C_GPIO_INPUT*/); s3c_gpio_setpull(GPIO_TOUCH_INT,S3C_GPIO_PULL_UP);
 	set_irq_type(IRQ_TOUCH_INT, IRQ_TYPE_LEVEL_LOW); //chief.boot.temp changed from edge low to level low VERIFY!!!
 
 	mdelay(10);
 
 }
 
-struct platform_driver melfas_ts_driver =  {
+static struct platform_driver melfas_ts_driver =  {
 	.probe	= melfas_ts_probe,
 	.remove = melfas_ts_remove,
 	.driver = {

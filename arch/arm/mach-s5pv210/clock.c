@@ -1501,8 +1501,13 @@ void __init_or_cpufreq s5pv210_setup_clocks(void)
 	for (ptr = 0; ptr < ARRAY_SIZE(clksrcs); ptr++) {
 		pclkSrc = &clksrcs[ptr];
 		if (!strcmp(pclkSrc->clk.name, "sclk_mdnie")) {
+#ifdef CONFIG_MACH_AEGIS
+			clk_set_parent(&pclkSrc->clk, &clk_mout_mpll.clk);
+			clk_set_rate(&pclkSrc->clk, 53*MHZ);
+#else
 			clk_set_parent(&pclkSrc->clk, &clk_mout_mpll.clk);
 			clk_set_rate(&pclkSrc->clk, 167*MHZ);
+#endif
 		} else if (!strcmp(pclkSrc->clk.name, "sclk_mmc")) {
 			clk_set_parent(&pclkSrc->clk, &clk_mout_mpll.clk);
 

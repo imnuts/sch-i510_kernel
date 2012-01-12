@@ -186,8 +186,10 @@ int s3cfb_set_clock(struct s3cfb_global *ctrl)
 	}
 
 	div = src_clk / vclk;
+#ifndef CONFIG_MACH_AEGIS	
 	if (src_clk % vclk)
 		div++;
+#endif	
 
 	if ((src_clk/div) > maxclk)
 		dev_info(ctrl->dev, "vclk(%d) should be smaller than %d Hz\n",
