@@ -345,6 +345,7 @@ static ssize_t k3g_set_enable(struct device *dev,
 	mutex_lock(&k3g_data->lock);
 	if (new_enable) {
 		/* turning on */
+#ifdef CONFIG_MACH_AEGIS
 		if(k3g_get_dps() == 250)
 		{
 			k3g_data->ctrl_regs[3] = (k3g_data->ctrl_regs[3] & 0xCF) | (CTRL_REG4_250DPS << CTRL_REG4_DPS_SHIFT);
@@ -360,6 +361,7 @@ static ssize_t k3g_set_enable(struct device *dev,
 			k3g_data->ctrl_regs[3] = (k3g_data->ctrl_regs[3] & 0xCF) | (CTRL_REG4_2000DPS << CTRL_REG4_DPS_SHIFT);
 			pr_err("%s: dps = %d CTRL_REG4 = 0x%x \n", __func__, k3g_get_dps(), k3g_data->ctrl_regs[3]);
 		}
+#endif
 		err = i2c_smbus_write_i2c_block_data(k3g_data->client,
 			CTRL_REG1 | AC, sizeof(k3g_data->ctrl_regs),
 						k3g_data->ctrl_regs);
@@ -379,7 +381,9 @@ static ssize_t k3g_set_enable(struct device *dev,
 		hrtimer_start(&k3g_data->timer,
 			k3g_data->polling_delay, HRTIMER_MODE_REL);
 	} else {
+#ifdef CONFIG_MACH_AEGIS
 		k3g_set_dps(0);
+#endif
 		hrtimer_cancel(&k3g_data->timer);
 		cancel_work_sync(&k3g_data->work);
 		/* turning off */
@@ -629,6 +633,7 @@ static ssize_t k3g_self_test(struct device *dev,
 			temp = i2c_smbus_read_byte_data(data->client,
 							STATUS_REG);
 			if (temp >= 0) {
+#ifdef CONFIG_MACH_AEGIS
 				bZYXDA = temp & 0x08;
 				if (!bZYXDA) {
 					msleep(10);
@@ -636,6 +641,7 @@ static ssize_t k3g_self_test(struct device *dev,
 							__func__, i, j);
 					continue;
 				} else
+#endif
 					break;
 			}
 		}
@@ -644,6 +650,15 @@ static ssize_t k3g_self_test(struct device *dev,
 								__func__);
 			goto exit;
 		}
+
+#ifndef CONFIG_MACH_AEGIS
+		bZYXDA = temp & 0x08;
+		if (!bZYXDA) {
+			msleep(10);
+			continue;
+		}
+
+#endif
 
 		for (j = 0; j < 10; j++) {
 			err = i2c_smbus_read_i2c_block_data(data->client,
@@ -704,6 +719,7 @@ static ssize_t k3g_self_test(struct device *dev,
 			temp = i2c_smbus_read_byte_data(data->client,
 							STATUS_REG);
 			if (temp >= 0) {
+#ifdef CONFIG_MACH_AEGIS
 				bZYXDA = temp & 0x08;
 				if (!bZYXDA) {
 					msleep(10);
@@ -711,6 +727,7 @@ static ssize_t k3g_self_test(struct device *dev,
 							__func__, i, j);
 					continue;
 				} else
+#endif
 					break;
 			}
 
@@ -720,6 +737,14 @@ static ssize_t k3g_self_test(struct device *dev,
 								__func__);
 			goto exit;
 		}
+
+#ifndef CONFIG_MACH_AEGIS
+		bZYXDA = temp & 0x08;
+		if (!bZYXDA) {
+			msleep(10);
+			continue;
+		}
+#endif
 
 		for (j = 0; j < 10; j++) {
 			err = i2c_smbus_read_i2c_block_data(data->client,
@@ -785,8 +810,10 @@ static ssize_t k3g_self_test(struct device *dev,
 		pass = 0;
 
 	/* restore backup register */
+#ifdef CONFIG_MACH_AEGIS
 	if(data->enable)
 	{
+#endif
 		for (i = 0; i < 10; i++) {
 			err = i2c_smbus_write_i2c_block_data(data->client,
 				CTRL_REG1 | AC, sizeof(backup_regs), backup_regs);
@@ -795,6 +822,7 @@ static ssize_t k3g_self_test(struct device *dev,
 		}
 		if (err < 0)
 			pr_err("%s: CTRL_REGs i2c writing failed\n", __func__);
+#ifdef CONFIG_MACH_AEGIS
 	}
 	else /* If k3g is not enabled, make it go to the power down mode. */
 	{
@@ -803,6 +831,7 @@ static ssize_t k3g_self_test(struct device *dev,
 		if (err < 0)
 			pr_err("%s: CTRL_REGs i2c writing failed\n", __func__);
 	}
+#endif
 
 exit:
 	if (pass == 2)
@@ -815,6 +844,7 @@ exit:
 		NOST[0], NOST[1], NOST[2], ST[0], ST[1], ST[2], pass);
 }
 
+#ifdef CONFIG_MACH_AEGIS
 static DEVICE_ATTR(gyro_power_on, 0664,
 	k3g_power_on, NULL);
 static DEVICE_ATTR(gyro_get_temp, 0664,
@@ -823,6 +853,23 @@ static DEVICE_ATTR(gyro_selftest, 0664,
 	k3g_self_test, NULL);
 static DEVICE_ATTR(gyro_selftest_dps, 0664,
 	k3g_selftest_dps_show, k3g_selftest_dps_store);
+#else
+static ssize_t k3g_fs_write(struct device *dev, struct device_attribute *attr,
+						const char *buf, size_t size)
+{
+	/* buf[size]=0; */
+	printk(KERN_INFO "input data --> %s\n", buf);
+
+	return size;
+}
+
+static DEVICE_ATTR(gyro_power_on, S_IRUGO | S_IWUSR ,
+ 	k3g_power_on, NULL);
+static DEVICE_ATTR(gyro_get_temp, S_IRUGO | S_IWUSR ,
+ 	k3g_get_temp, NULL);
+static DEVICE_ATTR(gyro_selftest, S_IRUGO | S_IWUSR | S_IWGRP ,
+	k3g_self_test,k3g_fs_write);
+#endif
 
 static const struct file_operations k3g_fops = {
 	.owner = THIS_MODULE,
@@ -979,17 +1026,21 @@ static int k3g_probe(struct i2c_client *client,
 			dev_attr_gyro_selftest.attr.name);
 		goto device_create_file5;
 	}
+#ifdef CONFIG_MACH_AEGIS
 	if (device_create_file(data->dev, &dev_attr_gyro_selftest_dps) < 0) {
 		pr_err("%s: Failed to create device file(%s)!\n", __func__,
 			dev_attr_gyro_selftest_dps.attr.name);
 		goto device_create_file6;
 	}
+#endif
 	dev_set_drvdata(data->dev, data);
 
 	return 0;
 
+#ifdef CONFIG_MACH_AEGIS
 device_create_file6:
 	device_remove_file(data->dev, &dev_attr_gyro_selftest_dps);
+#endif
 device_create_file5:
 	device_remove_file(data->dev, &dev_attr_gyro_get_temp);
 device_create_file4:
@@ -1030,7 +1081,9 @@ static int k3g_remove(struct i2c_client *client)
 	unregister_chrdev(K3G_MAJOR, "k3g");
 	device_remove_file(&k3g_data->input_dev->dev, &dev_attr_enable);
 	device_remove_file(&k3g_data->input_dev->dev, &dev_attr_poll_delay);
+#ifdef CONFIG_MACH_AEGIS
 	device_remove_file(&k3g_data->input_dev->dev, &dev_attr_gyro_selftest_dps);
+#endif
 
 	if (k3g_data->enable)
 		err = i2c_smbus_write_byte_data(k3g_data->client,

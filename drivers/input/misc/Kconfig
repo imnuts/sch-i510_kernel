@@ -65,7 +65,7 @@ config INPUT_K3DH
 
 config INPUT_KR3DH_POSITION
         int "KR3DH Mounting Position on Board"
-        depends on INPUT_K3DH
+        depends on INPUT_K3DH && !MACH_STEALTHV
         default "0"
         help
           Chip mounting position (pin 1).
@@ -77,6 +77,7 @@ config INPUT_KR3DH_POSITION
             5: bottom, upper-right
             6: bottom, lower-right
             7: bottom, lower-left
+
 config INPUT_YAS529
 	tristate "Yamaha YAS529 Geomagnetic Sensor"
 	depends on I2C
@@ -87,7 +88,7 @@ config INPUT_YAS530
 
 config INPUT_YAS529_POSITION
 	int "YAS529 Mounting Position on Board"
-	depends on INPUT_YAS529
+	depends on INPUT_YAS529 && !MACH_STEALTHV
 	default "1"
 	help
 	  Chip mounting position (pin 1).
@@ -116,11 +117,11 @@ config INPUT_YAS_MAGNETOMETER_POSITION
               7: bottom, lower-left
 
 config INPUT_ORIENTATION
-	tristate "Yamaha Orientation Sensor"
+	tristate "Yamaha Orientation Sensor (YAS529)"
 	depends on I2C
 
 config INPUT_ORIENTATION_YAS530
-	tristate "Yamaha Orientation Sensor"
+	tristate "Yamaha Orientation Sensor (YAS530)"
 	depends on I2C
 
 config GYRO_K3G

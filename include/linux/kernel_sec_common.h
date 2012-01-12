@@ -44,7 +44,9 @@
 #endif
 
 /* WDOG register */
+#ifndef S3C_PA_WDT
 #define S3C_PA_WDT		0xE2700000
+#endif
 
 /* klaatu - schedule log */
 #define SCHED_LOG_MAX 1000

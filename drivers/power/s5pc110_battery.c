@@ -1395,7 +1395,9 @@ static ssize_t s3c_bat_store_attrs(struct device *dev, struct device_attribute *
 		break;
 	case BATT_USE_CALL:
 		if (sscanf(buf, "%d\n", &x) == 1) {
+#ifdef CONFIG_MACH_AEGIS
 			during_call = x;
+#endif
 			s3c_bat_use_module(chg, USE_CALL, x);
 			ret = count;
 		}
