@@ -1,4 +1,4 @@
-﻿/*  drivers/misc/sec_jack.c
+/*  drivers/misc/sec_jack.c
  *
  *  Copyright (C) 2010 Samsung Electronics Co.Ltd
  *
@@ -30,55 +30,21 @@
 #include <linux/gpio.h>
 #include <linux/gpio_event.h>
 #include <linux/sec_jack.h>
-#if defined(CONFIG_MACH_CHIEF)
-#include <linux/regulator/consumer.h>
-#endif
-
 
 #define MAX_ZONE_LIMIT		10
 /* keep this value if you support double-pressed concept */
 #define SEND_KEY_CHECK_TIME_MS	30		/* 30ms */
-#ifdef CONFIG_MACH_AEGIS
-#define DET_CHECK_TIME_MS	200		/* 200ms */
-#else
 #define DET_CHECK_TIME_MS	400		/* 400ms */
-#endif
-
 #define WAKE_LOCK_TIME		(HZ * 5)	/* 5 sec */
-
-#ifdef CONFIG_MACH_CHIEF
-#define CONFIG_DEBUG_SEC_JACK 1
-#ifdef CONFIG_DEBUG_SEC_JACK
-#define SEC_JACKDEV_DBG(...)\
-        printk (__VA_ARGS__);
-#else
-#define SEC_JACKDEV_DBG(...)
-#endif
-#define KEYCODE_SENDEND 226     // TODO:CHIEF 248 --> CHANGE sec_jack.kl
-
-#define DETECTION_CHECK_COUNT   2
-#define DETECTION_CHECK_TIME    get_jiffies_64() + (HZ/10)// 1000ms / 10 = 100ms
-#define SEND_END_ENABLE_TIME    get_jiffies_64() + (HZ*2)// 1000ms * 1 = 1sec
-
-
-#define SEND_END_CHECK_COUNT    3
-#define SEND_END_CHECK_TIME     get_jiffies_64() + (HZ/50) //2000ms
-#endif
 
 #define NUM_INPUT_DEVICE_ID	2
 
 static struct class *jack_class;
 static struct device *jack_dev;
 
-
 struct sec_jack_info {
 	struct sec_jack_platform_data *pdata;
-	#ifndef CONFIG_MACH_CHIEF
 	struct delayed_work jack_detect_work;
-	#endif
-	#ifdef CONFIG_MACH_CHIEF
-	struct input_dev *input;
-	#endif
 	struct work_struct buttons_work;
 	struct workqueue_struct *queue;
 	struct input_dev *input_dev;
@@ -114,20 +80,6 @@ struct switch_dev switch_jack_detection = {
 struct switch_dev switch_sendend = {
 		.name = "send_end",
 };
-#if defined (CONFIG_MACH_CHIEF)
-static unsigned int sendend_type; //0=short, 1=open
-static unsigned int send_end_key_timer_token;
-static unsigned int current_jack_type_status;
-static unsigned int jack_detect_timer_token;
-static unsigned int send_end_irq_token;
-
-static struct timer_list jack_detect_timer;
-static struct timer_list send_end_key_event_timer;
-static struct wake_lock jack_sendend_wake_lock;
-
-extern struct regulator *earmic_regulator ; /* LDO6 */
-struct sec_jack_info *jack_info;
-#endif
 
 static struct gpio_event_direct_entry sec_jack_key_map[] = {
 	{
@@ -327,211 +279,6 @@ static void determine_jack_type(struct sec_jack_info *hi)
 	handle_jack_not_inserted(hi);
 }
 
-#ifdef CONFIG_MACH_CHIEF
-static void jack_input_selector(int jack_type_status)
-{
-        SEC_JACKDEV_DBG("jack_type_status = 0X%x", jack_type_status);
-}
-
-static void jack_type_detect_change(struct work_struct *ignored)
-{
-		int headset_state = gpio_get_value(jack_info->pdata->det_gpio) ^ jack_info->pdata->det_active_high;
-        int sendend_short_state,sendend_open_state;
-	
-		printk(" ********************* LNT DEBUG : jack type detect change *************** \n");
-        if(headset_state)
-        {
-        		//  sendend_state = gpio_get_value(send_end->gpio) ^ send_end->low_active;
-            	sendend_short_state = gpio_get_value(jack_info->pdata->short_send_end_gpio) ^ jack_info->pdata->det_active_high;
-
-       			#if 1 //open_send_end do nothing
-                if (1) // suik_Fix (HWREV >= 0x01)
-                {
-                    // sendend_open_state = gpio_get_value(send_end_open->gpio) ^ send_end_open->low_active;
-					sendend_open_state = gpio_get_value(jack_info->pdata->open_send_end_gpio) ^ jack_info->pdata->det_active_low;
-    				SEC_JACKDEV_DBG("SendEnd state short: %d Sendend open: %d sendend type : %d \n",sendend_short_state,sendend_open_state,sendend_type);
-    				//if(sendend_state || sendend_open_state)   //suik_Fix
-    				if(!sendend_open_state)
-    				{
-        				printk("4 pole  headset attached\n");
-        				current_jack_type_status = SEC_HEADSET_4POLE;//SEC_HEADSET_4_POLE_DEVICE;
-    					#if 1 // !defined(CONFIG_MACH_FORTE) && !defined(CONFIG_MACH_CHIEF) // REV07 Only suik_Check
-        				// if(gpio_get_value(send_end->gpio))
-        				if(gpio_get_value(jack_info->pdata->short_send_end_gpio))
-   						#endif
-        				{
-            				//  enable_irq (send_end->eint);  //suik_Fix
-            				enable_irq (jack_info->pdata->short_send_end_eintr);  //suik_Fix
-			  	 			printk("*************** LNT DEBUG *********** Enabled Short and Open Irqs \n");
-                        }
-                        	// enable_irq (send_end_open->eint);
-                            enable_irq (jack_info->pdata->open_send_end_eintr);
-                    }else
-                    {
-                    	printk("3 pole headset attatched\n");
-                        current_jack_type_status = SEC_HEADSET_3POLE; //SEC_HEADSET_3_POLE_DEVICE;
-                    }
-
-                }else
-        		#endif
-                {
-                	if(sendend_short_state)
-                    {
-                		printk("4 pole  headset attached\n");
-                                current_jack_type_status = SEC_HEADSET_4POLE; //SEC_HEADSET_4_POLE_DEVICE;
-                    }else
-                    {
-                            printk("3 pole headset attatched\n");
-                            current_jack_type_status = SEC_HEADSET_3POLE; //SEC_HEADSET_3_POLE_DEVICE;
-                    }
-                       // enable_irq (send_end->eint);
-                        enable_irq (jack_info->pdata->short_send_end_eintr);
-                }
-                send_end_irq_token++;
-                switch_set_state(&switch_jack_detection, current_jack_type_status);
-                jack_input_selector(current_jack_type_status);
-    	}
-    	wake_unlock(&jack_sendend_wake_lock);
-}
-
-static DECLARE_DELAYED_WORK(detect_jack_type_work, jack_type_detect_change);
-
-static void jack_detect_change(struct work_struct *ignored)
-{
-	int headset_state;
-
-	printk(" *************** LNT DEBUG *************** %s \n",__func__);
-	// SEC_JACKDEV_DBG("");
-	del_timer(&jack_detect_timer);
-	cancel_delayed_work_sync(&detect_jack_type_work);
-
-	headset_state = gpio_get_value(jack_info->pdata->det_gpio) ^ jack_info->pdata->det_active_high;
-#if 1
-	SEC_JACKDEV_DBG("jack_detect_change state %d send_end_irq_token %d", headset_state,send_end_irq_token);
-	if (headset_state && !send_end_irq_token)
-	{
-		SEC_JACKDEV_DBG("************* Locked jack send end wake lock ");	
-		wake_lock(&jack_sendend_wake_lock);
-		if (jack_info->pdata->set_popup_sw_state)
-			jack_info->pdata->set_popup_sw_state(1);
-		SEC_JACKDEV_DBG("JACK dev attached timer start\n");
-		jack_detect_timer_token = 0;
-		jack_detect_timer.expires = DETECTION_CHECK_TIME;
-		add_timer(&jack_detect_timer);
-		sendend_type =0x00;//short type always
-	}
-	else if(!headset_state && send_end_irq_token)
-	{
-		/*  if(!get_recording_status())
-		    {
-		    gpio_set_value(GPIO_MICBIAS_EN, 0);
-		    } */
-		current_jack_type_status = SEC_JACK_NO_DEVICE;
-		switch_set_state(&switch_jack_detection, current_jack_type_status);
-		if (jack_info->pdata->set_popup_sw_state)
-			jack_info->pdata->set_popup_sw_state(0);
-		printk("JACK dev detached %d \n", send_end_irq_token);
-		if(send_end_irq_token > 0)
-		{
-			//  if (1) //suik_Fix (HWREV >= 0x01)
-			disable_irq (jack_info->pdata->open_send_end_eintr);
-			disable_irq (jack_info->pdata->short_send_end_eintr);
-			send_end_irq_token--;
-			sendend_type = 0;
-		}
-		SEC_JACKDEV_DBG("************* Unlocked jack send end wake lock ");	
-		wake_unlock(&jack_sendend_wake_lock);
-	}
-	else
-		SEC_JACKDEV_DBG("Headset state does not valid. or send_end event");
-#endif
-
-}
-
-static DECLARE_WORK(jack_detect_work, jack_detect_change);
-
-static void jack_detect_timer_handler(unsigned long arg)
-{
-        struct sec_jack_platform_data *pdata = jack_info->pdata;
-        int headset_state = 0;
-
-        headset_state = gpio_get_value(pdata->det_gpio) ^ pdata->det_active_high;
-
-		printk("****************** LNT DEBUG ********** In Jack detect timer handler: timer token : %d \n", jack_detect_timer_token);
-
-        if(headset_state)
-        {
-               // SEC_JACKDEV_DBG("jack_detect_timer_token is %d\n", jack_detect_timer_token);
-                if(jack_detect_timer_token < DETECTION_CHECK_COUNT)
-                {
-                        jack_detect_timer.expires = DETECTION_CHECK_TIME;
-                        add_timer(&jack_detect_timer);
-                        jack_detect_timer_token++;
-                        //gpio_set_value(GPIO_MICBIAS_EN, 1); //suik_Fix for saving Sleep current
-                }
-                else if(jack_detect_timer_token == DETECTION_CHECK_COUNT)
-                {
-                        jack_detect_timer.expires = SEND_END_ENABLE_TIME;
-                        jack_detect_timer_token = 0;
-			printk(" ********** LNT DEBUG ********* JACK DETECT TIMER HANDLER : sendend_type : %d \n",sendend_type);
-                        schedule_delayed_work(&detect_jack_type_work,50);
-                }
-                else if(jack_detect_timer_token == 4)
-                {
-                 //       SEC_JACKDEV_DBG("mic bias enable add work queue \n");
-                        jack_detect_timer_token = 0;
-                }
-                else
-                	printk(KERN_ALERT "wrong jack_detect_timer_token count %d", jack_detect_timer_token);
-        }
-        else
-        	printk(KERN_ALERT "headset detach!! %d", jack_detect_timer_token);
-}
-
-static void send_end_key_event_timer_handler(unsigned long arg)
-{
-	struct sec_jack_platform_data *pdata = jack_info->pdata;
-	int sendend_state, headset_state = 0;
-
-	headset_state = gpio_get_value(pdata->det_gpio) ^ pdata->det_active_high;
-
-	printk(" ****************** LNT DEBUG ************** In send end key event timer handler \n ");
-
-#if 1 //open_send_end do nothing..//suik_Fix
-	if (sendend_type)
-	{	
-		sendend_state = gpio_get_value(pdata->open_send_end_gpio) ^ pdata->det_active_low;
-	}else
-#endif
-	{
-		sendend_state = gpio_get_value(pdata->short_send_end_gpio) ^ pdata->det_active_high;
-	}
-
-	printk(" ************** LNT DEBUG ********** In send event timer handler : headset state : %d , sendend_state : %d \n",headset_state,sendend_state);
-
-	if(headset_state && sendend_state)
-	{
-		if(send_end_key_timer_token < SEND_END_CHECK_COUNT)
-		{
-			send_end_key_timer_token++;
-			send_end_key_event_timer.expires = SEND_END_CHECK_TIME;
-			add_timer(&send_end_key_event_timer);
-			// SEC_JACKDEV_DBG("SendEnd Timer Restart %d", send_end_key_timer_token);
-			printk("SendEnd Timer Restart %d", send_end_key_timer_token);
-		}
-		else if(send_end_key_timer_token == SEND_END_CHECK_COUNT)
-		{
-			printk("%s:SEND/END is pressed\n", __func__);
-			input_report_key(jack_info->input, KEYCODE_SENDEND, 1); //suik_Fix
-			input_sync(jack_info->input);
-			send_end_key_timer_token = 0;
-		}
-		else
-			printk(KERN_ALERT "[JACK]wrong timer counter %d\n", send_end_key_timer_token);
-	}else
-		printk(KERN_ALERT "[JACK]GPIO Error\n");
-}
-#endif
 /* thread run whenever the headset detect state changes (either insertion
  * or removal).
  */
@@ -565,10 +312,6 @@ static irqreturn_t sec_jack_detect_irq_thread(int irq, void *dev_id)
 	}
 	/* jack presence was detected the whole time, figure out which type */
 	determine_jack_type(hi);
-#ifdef CONFIG_MACH_CHIEF
-	schedule_work(&jack_detect_work);
-#endif	
-	
 	return IRQ_HANDLED;
 }
 
@@ -597,7 +340,6 @@ void sec_jack_buttons_work(struct work_struct *work)
 
 	/* when button is pressed */
 	adc = pdata->get_adc_value();
-	pr_debug("%s: adc = %d\n", __func__, adc);
 
 	for (i = 0; i < pdata->num_buttons_zones; i++)
 		if (adc >= btn_zones[i].adc_low &&
@@ -613,80 +355,6 @@ void sec_jack_buttons_work(struct work_struct *work)
 
 	pr_warn("%s: key is skipped. ADC value is %d\n", __func__, adc);
 }
-
-#ifdef CONFIG_MACH_CHIEF
-static void open_sendend_switch_change(struct work_struct *work)
-{
-
-	int sendend_state, headset_state;
-	struct sec_jack_platform_data *pdata = jack_info->pdata;
-	//        SEC_JACKDEV_DBG("");
-	del_timer(&send_end_key_event_timer);
-	send_end_key_timer_token = 0;
-
-	printk(" ****************** LNT DEBUG ************** In open send end switch change \n ");
-
-	headset_state = gpio_get_value(pdata->det_gpio) ^ pdata->det_active_high;
-	sendend_state = gpio_get_value(pdata->open_send_end_gpio) ^ pdata->det_active_low;
-
-	printk("************* LNT DEBUG *********** : headset state : %d , sendend state : %d \n",headset_state, sendend_state);
-
-	//if(headset_state && send_end_irq_token)//headset connect && send irq enable
-	if(headset_state )//headset connect && send irq enable
-	{
-		printk(" open_sendend_switch_change sendend state %d\n",sendend_state);
-		if(!sendend_state)  //suik_Fix sams as Sendend(Short)
-		{
-			// SEC_JACKDEV_DBG(KERN_ERR "sendend isr work queue\n");
-			switch_set_state(&switch_sendend, sendend_state);
-			input_report_key(jack_info->input, KEYCODE_SENDEND, 0); //released    //suik_Fix
-			printk(" *********** Reported released event to platform *********** \n");
-			input_sync(jack_info->input);
-			printk("%s:SEND/END %s.\n", __func__, "released");
-			wake_unlock(&jack_sendend_wake_lock);
-		}else
-		{
-			wake_lock(&jack_sendend_wake_lock);
-			send_end_key_event_timer.expires = SEND_END_CHECK_TIME;
-			add_timer(&send_end_key_event_timer);
-			printk(" *********** Added timer to check for few milli seconds in open send end switch change  *********** \n");
-			switch_set_state(&switch_sendend, sendend_state);
-			printk("%s:SEND/END %s.timer start \n", __func__, "pressed");
-		}
-
-	}else
-	{
-		printk("********** In else part of headset state in Bottom Half \n");
-		//   SEC_JACKDEV_DBG("SEND/END Button is %s but headset disconnect or irq disable.\n", state?"pressed":"released");
-	}
-}
-
-
-static DECLARE_WORK(open_sendend_switch_work, open_sendend_switch_change);
-
-/* IRQ handler for Open SEND END */
-static irqreturn_t send_end_open_irq_handler(int irq, void *dev_id)
-{
-	int headset_state;
-	struct sec_jack_info *hi = dev_id;
-	struct sec_jack_platform_data *pdata = hi->pdata;
-
-	printk("************ LNT DEBUG *********** ENTERED OPEN SEND END IRQ HANDLER \n");
-
-	/* SEC_JACKDEV_DBG("[OPEN]send_end_open_irq_handler isr"); */
-	del_timer(&send_end_key_event_timer);
-	headset_state = gpio_get_value(pdata->det_gpio) ^ (pdata->det_active_high);
-
-	printk(" **************** LNT DEBUG *********: headset state : %d \n", headset_state);
-
-	if (headset_state)
-	{
-		sendend_type = 0x01;
-		schedule_work(&open_sendend_switch_work);               //suik_Fix
-	}
-	return IRQ_HANDLED;
-}
-#endif
 
 static ssize_t select_jack_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
@@ -725,10 +393,6 @@ static int sec_jack_probe(struct platform_device *pdev)
 	struct sec_jack_platform_data *pdata = pdev->dev.platform_data;
 	int ret;
 
-	#ifdef CONFIG_MACH_CHIEF
-		struct input_dev *input;
-	#endif
-
 	pr_info("%s : Registering jack driver\n", __func__);
 	if (!pdata) {
 		pr_err("%s : pdata is NULL.\n", __func__);
@@ -750,11 +414,6 @@ static int sec_jack_probe(struct platform_device *pdev)
 	sec_jack_key_map[0].gpio = pdata->send_end_gpio;
 
 	hi = kzalloc(sizeof(struct sec_jack_info), GFP_KERNEL);
-	
-	#ifdef CONFIG_MACH_CHIEF
-		jack_info = hi;
-	#endif
-	
 	if (hi == NULL) {
 		pr_err("%s : Failed to allocate memory.\n", __func__);
 		ret = -ENOMEM;
@@ -776,49 +435,11 @@ static int sec_jack_probe(struct platform_device *pdev)
 		goto err_gpio_request;
 	}
 
-/* Allocate the input device for reporting the sendend events to platform */
-#ifdef CONFIG_MACH_CHIEF	
-	input = hi->input = input_allocate_device();
-	if (!input)
-	{
-		ret = -ENOMEM;
-		printk(KERN_ERR "SEC JACK: Failed to allocate input device.\n");
-		goto err_request_input_dev;
-	}
-
-	input->name = "sec_jack";
-	set_bit(EV_SYN, input->evbit);
-	set_bit(EV_KEY, input->evbit);
-	set_bit(KEYCODE_SENDEND, input->keybit);
-	ret = input_register_device(input); 
-	if (ret < 0)
-	{
-		printk(KERN_ERR "SEC JACK: Failed to register driver\n");
-		goto err_register_input_dev;
-	}
-#endif
-
 	ret = switch_dev_register(&switch_jack_detection);
 	if (ret < 0) {
 		pr_err("%s : Failed to register switch device\n", __func__);
 		goto err_switch_dev_register;
 	}
-	
-#ifdef CONFIG_MACH_CHIEF
-	wake_lock_init(&jack_sendend_wake_lock, WAKE_LOCK_SUSPEND, "sec_jack");
-	init_timer(&jack_detect_timer);
-	jack_detect_timer.function = jack_detect_timer_handler;
-	init_timer(&send_end_key_event_timer);
-	send_end_key_event_timer.function = send_end_key_event_timer_handler;
-        if (IS_ERR_OR_NULL(earmic_regulator)) {
-                earmic_regulator = regulator_get(NULL, "earmic");
-                if (IS_ERR_OR_NULL(earmic_regulator)) {
-                        pr_err("failed to get earmic bias regulator");
-                        return -EINVAL;
-                }
-        }
-#endif
-
 
 	ret = switch_dev_register(&switch_sendend);
 	if (ret < 0) {
@@ -850,7 +471,7 @@ static int sec_jack_probe(struct platform_device *pdev)
 	if (device_create_file(jack_dev, &dev_attr_select_jack) < 0)
 		pr_err("Failed to create device file(%s)!\n",
 			dev_attr_select_jack.attr.name);
-#ifndef  CONFIG_MACH_CHIEF
+
 	set_bit(EV_KEY, hi->ids[0].evbit);
 	hi->ids[0].flags = INPUT_DEVICE_ID_MATCH_EVBIT;
 	hi->handler.filter = sec_jack_buttons_filter;
@@ -865,7 +486,6 @@ static int sec_jack_probe(struct platform_device *pdev)
 		pr_err("%s : Failed to register_handler\n", __func__);
 		goto err_register_input_handler;
 	}
-#endif
 	ret = request_threaded_irq(hi->det_irq, NULL,
 				   sec_jack_detect_irq_thread,
 				   IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING |
@@ -882,36 +502,10 @@ static int sec_jack_probe(struct platform_device *pdev)
 		goto err_enable_irq_wake;
 	}
 
-#ifdef CONFIG_MACH_CHIEF
-	sendend_type = 0; /* By default sendend type 0 always , Short type */
-	set_irq_type(pdata->open_send_end_eintr,IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT );
-	ret = request_threaded_irq(pdata->open_send_end_eintr,NULL, 
-			send_end_open_irq_handler, IRQF_DISABLED, 
-			"sec_headset_send_end_open",hi);
-	if (ret < 0) {
-		printk(KERN_ERR "SEC HEADSET: Failed to register OPEN send/end interrupt.\n");
-		goto err_request_open_send_end_irq;
-	}
-	disable_irq(pdata->open_send_end_eintr);
-
-	printk("******************* LNT DEBUG *********** SEND END OPEN IRQ registration success, gpio-pin : %d \n ",pdata->open_send_end_gpio ); 
-
-	schedule_work(&jack_detect_work);
-#endif
-
 	dev_set_drvdata(&pdev->dev, hi);
-
-#if defined(CONFIG_MACH_VIPER)
-        sec_jack_detect_irq_thread(hi->det_irq, hi);
-#endif
 
 	return 0;
 
-#ifdef CONFIG_MACH_CHIEF
-err_request_open_send_end_irq:
-err_register_input_dev:
-    input_free_device(input);	
-#endif
 err_enable_irq_wake:
 	free_irq(hi->det_irq, hi);
 err_request_detect_irq:
@@ -925,17 +519,11 @@ err_switch_dev_register_send_end:
 	switch_dev_unregister(&switch_jack_detection);
 err_switch_dev_register:
 	gpio_free(pdata->det_gpio);
-
-#ifdef CONFIG_MACH_CHIEF
-err_request_input_dev:
-#endif
 err_gpio_request:
 	kfree(hi);
-#ifdef CONFIG_MACH_CHIEF	
-	jack_info=NULL;
-#endif	
 err_kzalloc:
 	atomic_set(&instantiated, 0);
+
 	return ret;
 }
 
@@ -945,10 +533,6 @@ static int sec_jack_remove(struct platform_device *pdev)
 	struct sec_jack_info *hi = dev_get_drvdata(&pdev->dev);
 
 	pr_info("%s :\n", __func__);
-#ifdef CONFIG_MACH_CHIEF	
-	input_unregister_device(hi->input);
-	free_irq(hi->pdata->open_send_end_eintr,hi);
-#endif	
 	disable_irq_wake(hi->det_irq);
 	free_irq(hi->det_irq, hi);
 	destroy_workqueue(hi->queue);

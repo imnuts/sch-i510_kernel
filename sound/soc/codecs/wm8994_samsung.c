@@ -812,7 +812,13 @@ static int wm8994_set_codec_status(struct snd_kcontrol *kcontrol,
 #ifdef CONFIG_SND_SOC_A1026
 		A1026Sleep();
 		
+#ifdef CONFIG_MACH_AEGIS
 		A1026SetBypass(1);
+#else
+		if(HWREV >= 0x0A)
+			A1026SetBypass(1);
+#endif
+
 #endif
 #ifdef FEATURE_FACTORY_LOOPBACK
 		loopback_mode = LOOPBACK_MODE_OFF;
@@ -826,7 +832,13 @@ static int wm8994_set_codec_status(struct snd_kcontrol *kcontrol,
 #ifdef CONFIG_SND_SOC_A1026
 		A1026Sleep();
 		
+#ifdef CONFIG_MACH_AEGIS
 		A1026SetBypass(1);
+#else
+		if(HWREV >= 0x0A)
+			A1026SetBypass(1);
+#endif
+
 #endif
 		wm8994_shutdown(&tempstream, codec_dai);
 
@@ -3716,7 +3728,13 @@ static int wm8994_probe(struct platform_device *pdev)
 	A1026_i2c_drv_init();
 	A1026_dev_powerup();
 	
+#ifdef CONFIG_MACH_AEGIS
 	A1026SetBypass(1);
+#else
+	if(HWREV >= 0x0A)
+		A1026SetBypass(1);
+#endif
+
 #endif
 	setup = socdev->codec_data;
 	wm8994_socdev = socdev;

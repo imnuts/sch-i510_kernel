@@ -49,9 +49,13 @@
 #include <linux/kernel_sec_common.h>
 #endif
 
+#ifndef CONFIG_MACH_AEGIS
 extern unsigned int HWREV;
+#endif
 
+#ifdef CONFIG_MACH_AEGIS
 extern int during_call;
+#endif
 
 #define BAT_POLLING_INTERVAL	10000
 #define BAT_WAITING_INTERVAL	20000	/* 20 sec */
@@ -215,7 +219,9 @@ static struct device_attribute s3c_battery_attrs[] = {
 	SEC_BATTERY_ATTR(control_temp),	/* test purpose */
 };
 
+#ifdef CONFIG_MACH_AEGIS
 static void quick_charging_control(struct chg_data *chg, int enable);
+#endif
 
 static void max8998_lowbat_config(struct chg_data *chg, int on)
 {

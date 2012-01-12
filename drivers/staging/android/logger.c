@@ -503,6 +503,7 @@ static int logger_open(struct inode *inode, struct file *file)
  *
  * Note this is a total no-op in the write-only case. Keep it that way!
  */
+#ifdef CONFIG_MACH_AEGIS
 static int logger_release(struct inode *inode, struct file *file)
 {
 	if (file->f_mode & FMODE_READ) {
@@ -519,6 +520,18 @@ static int logger_release(struct inode *inode, struct file *file)
 
 	return 0;
 }
+#else
+static int logger_release(struct inode *ignored, struct file *file)
+{
+	if (file->f_mode & FMODE_READ) {
+		struct logger_reader *reader = file->private_data;
+		list_del(&reader->list);
+		kfree(reader);
+	}
+
+	return 0;
+}
+#endif
 
 /*
  * logger_poll - the log's poll file operation, for poll/select/epoll

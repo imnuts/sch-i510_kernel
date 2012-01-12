@@ -839,12 +839,17 @@ static int s5p_rp_ioctl(struct inode *inode, struct file *file, unsigned int cmd
 
 	case S5P_RP_PAUSE:							/* Pause */
 		s5pdbg("Pause\n");
+#ifdef CONFIG_MACH_AEGIS
 		if (s5p_rp.decoding_started) {
 			s5p_rp_pause();						/* RP Pause */
 			s5p_rp_is_running = 0;					/* To stop i2s */
 		} else {
 			s5pdbg("Pause ignored\n");
 		}
+#else
+		s5p_rp_pause();						/* RP Pause */
+		s5p_rp_is_running = 0;					/* To stop i2s */
+#endif
 		break;
 
 	case S5P_RP_STOP:							/* Stop */

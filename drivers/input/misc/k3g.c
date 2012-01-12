@@ -64,10 +64,12 @@
 #define ODR840_BW50	0xE0  /* ODR = 840Hz; BW = 50Hz   */
 #define ODR840_BW110	0xF0  /* ODR = 840Hz; BW = 110Hz  */
 
+#ifdef CONFIG_MACH_AEGIS
 #define CTRL_REG4_DPS_SHIFT 4
 #define CTRL_REG4_250DPS	0x00
 #define CTRL_REG4_500DPS	0x01
 #define CTRL_REG4_2000DPS	0x10
+#endif
 #define MIN_ST		175
 #define MAX_ST		875
 #define AC		(1 << 7) /* register auto-increment bit */
@@ -281,6 +283,7 @@ timer_set:
 		k3g_data->polling_delay, HRTIMER_MODE_REL);
 }
 
+#ifdef CONFIG_MACH_AEGIS
 static int k3g_get_dps(void)
 {
 	return k3g_dps;
@@ -311,6 +314,8 @@ static ssize_t k3g_selftest_dps_store(struct device *dev,
 
 	return count;
 }
+#endif
+
 static ssize_t k3g_show_enable(struct device *dev,
 			struct device_attribute *attr, char *buf)
 {

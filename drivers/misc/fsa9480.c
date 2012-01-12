@@ -96,19 +96,11 @@
  * D- [7:5] / D+ [4:2]
  * 000: Open all / 001: USB / 010: AUDIO / 011: UART / 100: V_AUDIO
  */
-#ifdef CONFIG_USB_SWITCH_FSA9485
-#define SW_VAUDIO               ((4 << 5) | (4 << 2)|3)
-#define SW_UART                 ((3 << 5) | (3 << 2)|3)
-#define SW_AUDIO                ((2 << 5) | (2 << 2)|3)
-#define SW_DHOST                ((1 << 5) | (1 << 2)|3)
-#define SW_AUTO                 ((0 << 5) | (0 << 2)|3)
-#else
 #define SW_VAUDIO		((4 << 5) | (4 << 2))
 #define SW_UART			((3 << 5) | (3 << 2))
 #define SW_AUDIO		((2 << 5) | (2 << 2))
 #define SW_DHOST		((1 << 5) | (1 << 2))
 #define SW_AUTO			((0 << 5) | (0 << 2))
-#endif
 
 /* Interrupt 1 */
 #define INT_OVP_EN			(1 << 5)
@@ -222,7 +214,7 @@ static ssize_t fsa9480_show_manualsw(struct device *dev,
 {
 	struct fsa9480_usbsw *usbsw = dev_get_drvdata(dev);
 	struct i2c_client *client = usbsw->client;
-	s32 value;
+	unsigned int value;
 
 	value = i2c_smbus_read_byte_data(client, FSA9480_REG_MANSW1);
 	if (value < 0)
@@ -248,7 +240,7 @@ static ssize_t fsa9480_set_manualsw(struct device *dev,
 {
 	struct fsa9480_usbsw *usbsw = dev_get_drvdata(dev);
 	struct i2c_client *client = usbsw->client;
-	s32 value;
+	unsigned int value;
 	unsigned int path = 0;
 	unsigned int mansw1_value;
 	int ret;
@@ -332,7 +324,7 @@ static const struct attribute_group fsa9480_group = {
 void fsa9480_manual_switching(int path)
 {
 	struct i2c_client *client = local_usbsw->client;
-	s32 value;
+	unsigned int value;
 	unsigned int data = 0;
 	unsigned int mansw1_value;
 	int ret;
@@ -417,7 +409,7 @@ static void fsa9480_detect_dev(struct fsa9480_usbsw *usbsw)
 	unsigned char val1, val2;
 	struct fsa9480_platform_data *pdata = usbsw->pdata;
 	struct i2c_client *client = usbsw->client;
-	s32 value;
+	unsigned int value;
 
 	device_type = i2c_smbus_read_word_data(client, FSA9480_REG_DEV_T1);
 	if (device_type < 0)
@@ -436,7 +428,7 @@ static void fsa9480_detect_dev(struct fsa9480_usbsw *usbsw)
 				pdata->usb_charger_cb(FSA9480_ATTACHED);
 			if (pdata->usb_cb && usbsw->is_usb_ready)
 				pdata->usb_cb(FSA9480_ATTACHED);
-#if defined(CONFIG_MACH_STEALTHV) || defined(CONFIG_MACH_AEGIS)|| defined(CONFIG_MACH_CHIEF)
+#if defined(CONFIG_MACH_STEALTHV) || defined(CONFIG_MACH_AEGIS)
 			/* For only LTE device */
 			sec_usb_switch();
 #else
@@ -452,7 +444,7 @@ static void fsa9480_detect_dev(struct fsa9480_usbsw *usbsw)
 		} else if (val1 & DEV_T1_UART_MASK || val2 & DEV_T2_UART_MASK) {
 			if (pdata->uart_cb)
 				pdata->uart_cb(FSA9480_ATTACHED);
-#if defined(CONFIG_MACH_STEALTHV) || defined(CONFIG_MACH_AEGIS)|| defined(CONFIG_MACH_CHIEF) 
+#if defined(CONFIG_MACH_STEALTHV) || defined(CONFIG_MACH_AEGIS) 
 			/* For only LTE device */
 			sec_uart_switch();
 #else
@@ -477,16 +469,20 @@ static void fsa9480_detect_dev(struct fsa9480_usbsw *usbsw)
 #if defined (CONFIG_STEALTHV_USA) || defined (CONFIG_MACH_AEGIS) || defined(CONFIG_MACH_VIPER) || defined(CONFIG_MACH_CHIEF)
 		if (pdata->deskdock_cb)
 			pdata->deskdock_cb(FSA9480_ATTACHED);
-
-			/* Set manual switching */
+				
 			value = i2c_smbus_read_byte_data(client, FSA9480_REG_MANSW1);
 			if (value < 0)
 				dev_err(&client->dev, "%s: err %d\n", __func__, value);
-			value = value & ~(0x03);	// vbus manual switching
+
+			value = value | 0x1;	// vbus connected to charger
+
 			dev_info(&client->dev, "DEV_AUDIO_1(ATTACH) -> manual sw1 write 0x%x\n", value);
-			ret = i2c_smbus_write_byte_data(client, FSA9480_REG_MANSW1, value);
+
+			ret = i2c_smbus_write_byte_data(client,
+					FSA9480_REG_MANSW1, value);
 			if (ret < 0)
-				dev_err(&client->dev, "%s: err %d\n", __func__, ret);
+				dev_err(&client->dev,
+					"%s: err %d\n", __func__, ret);
 
 			ret = i2c_smbus_read_byte_data(client,
 					FSA9480_REG_CTRL);
@@ -498,7 +494,7 @@ static void fsa9480_detect_dev(struct fsa9480_usbsw *usbsw)
 					FSA9480_REG_CTRL, ret & ~CON_MANUAL_SW);
 			if (ret < 0)
 				dev_err(&client->dev,
-					"%s: err %d\n", __func__, ret);
+					"%s: err %d\n", __func__, ret);		
 #endif
 		/* JIG */
 		} else if (val2 & DEV_T2_JIG_MASK) {
@@ -530,8 +526,7 @@ static void fsa9480_detect_dev(struct fsa9480_usbsw *usbsw)
 			if (ret < 0)
 				dev_err(&client->dev,
 					"%s: err %d\n", __func__, ret);
-		}
-	/* Detached */
+		} 	/* Detached */
 	} else {
 		/* USB */
 		if (usbsw->dev1 & DEV_T1_USB_MASK ||
@@ -578,6 +573,20 @@ static void fsa9480_detect_dev(struct fsa9480_usbsw *usbsw)
 			if (pdata->deskdock_cb)
 				pdata->deskdock_cb(FSA9480_DETACHED);
 
+			value = i2c_smbus_read_byte_data(client, FSA9480_REG_MANSW1);
+			if (value < 0)
+				dev_err(&client->dev, "%s: err %d\n", __func__, value);
+
+			value = value & ~(0x1);	// clear vbus switching to auto-switch
+
+			dev_info(&client->dev, "DEV_AUDIO_1(DETACH) -> manual sw1 write 0x%x\n", value);
+
+			ret = i2c_smbus_write_byte_data(client,
+					FSA9480_REG_MANSW1, value);
+			if (ret < 0)
+				dev_err(&client->dev,
+					"%s: err %d\n", __func__, ret);
+
 			ret = i2c_smbus_read_byte_data(client,
 					FSA9480_REG_CTRL);
 			if (ret < 0)
@@ -588,13 +597,13 @@ static void fsa9480_detect_dev(struct fsa9480_usbsw *usbsw)
 					FSA9480_REG_CTRL, ret | CON_MANUAL_SW);
 			if (ret < 0)
 				dev_err(&client->dev,
-					"%s: err %d\n", __func__, ret);
+					"%s: err %d\n", __func__, ret);			
 #endif
 		/* JIG */
 		} else if (usbsw->dev2 & DEV_T2_JIG_MASK) {
 			if (pdata->jig_cb)
 				pdata->jig_cb(FSA9480_DETACHED);
-		/* Car Dock (Stealth-V, Aegis) */
+		/* Desk Dock (Stealth-V, Aegis: Car Dock) */
 		} else if (usbsw->dev2 & DEV_AV) {
 #if defined (CONFIG_STEALTHV_USA) || defined (CONFIG_MACH_AEGIS) || defined(CONFIG_MACH_VIPER) || defined(CONFIG_MACH_CHIEF)
 			if (pdata->cardock_cb)
@@ -627,7 +636,7 @@ static void fsa9480_detect_dev(struct fsa9480_usbsw *usbsw)
 static void fsa9480_detect_key(struct fsa9480_usbsw *usbsw)
 {
 	int button2;
-	bool is_press = 0;
+	bool is_press;
 	bool is_long;
 	unsigned char key_mask;
 	unsigned int key_index;
@@ -733,11 +742,6 @@ static irqreturn_t fsa9480_irq_thread(int irq, void *data)
 	if (intr < 0) {
 		dev_err(&client->dev, "%s: err %d\n", __func__, intr);
 	} else if (intr == 0) {
-#if defined (CONFIG_STEALTHV_USA) || defined (CONFIG_MACH_AEGIS) || defined(CONFIG_MACH_VIPER) || defined(CONFIG_MACH_CHIEF)
-		/* Support Desktopdock charging (vbus manual switching) */
-		if (usbsw->dev1 & DEV_AUDIO_1)
-			goto skip;
-#endif
 		/* interrupt was fired, but no status bits were set,
 		so device was reset. In this case, the registers were
 		reset to defaults so they need to be reinitialised. */
@@ -746,7 +750,6 @@ static irqreturn_t fsa9480_irq_thread(int irq, void *data)
 
 	usbsw->intr = intr;
 
-skip:
 	pr_info("%s: intr1 = 0x%x\n", __func__, intr);
 
 #if defined(CONFIG_MACH_STEALTHV) || defined(CONFIG_MACH_AEGIS) || defined(CONFIG_MACH_VIPER) || defined(CONFIG_MACH_CHIEF)

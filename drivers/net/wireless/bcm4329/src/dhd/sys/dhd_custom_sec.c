@@ -129,7 +129,7 @@ dhd_write_macaddr(char *addr)
 }
 #endif /* WRITE_MACADDR */
 
-#if defined(READ_MACADDR) && !defined(CONFIG_MACH_CHIEF)
+#ifdef READ_MACADDR
 
 int
 dhd_read_macaddr(dhd_info_t *dhd)

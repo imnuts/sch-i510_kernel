@@ -426,7 +426,11 @@ void android_register_function(struct android_usb_function *f)
 		bind_functions(dev);
 #ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
 /* Change usb mode when device register last function driver */
+#ifdef CONFIG_MACH_AEGIS
 		samsung_enable_function(USBSTATUS_UMS);
+#else
+		samsung_enable_function(USBSTATUS_SAMSUNG_KIES);
+#endif
 #  ifdef CSY_USE_SAFE_USB_SWITCH
 /* soonyong.cho : If usb switch can call usb cable handler safely, you don't need below code.
  *		  Below codes are used for to turn on always.
@@ -898,6 +902,7 @@ static ssize_t UsbMenuSel_switch_store(struct device *dev, struct device_attribu
         static int prev_value=0xffff;
 	sscanf(buf, "%d", &value);
 
+#ifdef CONFIG_MACH_AEGIS
         if ( prev_value == value )
         {
             if (value == 3 ) 
@@ -905,6 +910,7 @@ static ssize_t UsbMenuSel_switch_store(struct device *dev, struct device_attribu
             CSY_DBG_ESS("UsbMenuSel_switch_store : return (%d)\n", value);
             return size;
         }
+#endif
 
 	switch(value) {
 		case 0:

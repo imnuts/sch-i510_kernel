@@ -118,8 +118,9 @@ static int s3c_rtc_setpie(struct device *dev, int enabled)
 
 		if (enabled)
 			tmp |= S3C2410_TICNT_ENABLE;
-
+#ifdef CONFIG_MACH_AEGIS
 		writew(tmp, s3c_rtc_base + S3C2410_TICNT);
+#endif
 	}
 
 	spin_unlock_irq(&s3c_rtc_pie_lock);
@@ -145,7 +146,9 @@ static int s3c_rtc_setfreq(struct device *dev, int freq)
 
 	tmp |= (rtc_dev->max_user_freq / freq)-1;
 
+#ifdef CONFIG_MACH_AEGIS
 	writel(tmp, s3c_rtc_base + S3C2410_TICNT);
+#endif
 	spin_unlock_irq(&s3c_rtc_pie_lock);
 
 	return 0;
@@ -773,7 +776,9 @@ static int s3c_rtc_resume(struct platform_device *pdev)
 
 	time.tv_nsec = 0;
 
+#ifdef CONFIG_MACH_AEGIS
 	writel(ticnt_save, s3c_rtc_base + S3C2410_TICNT);
+#endif
 
 	if (device_may_wakeup(&pdev->dev))
 		disable_irq_wake(s3c_rtc_alarmno);

@@ -99,6 +99,7 @@ static int s6e63m0_spi_write_driver(struct s5p_lcd *lcd, u16 reg)
 	return ret ;
 }
 
+#ifdef CONFIG_MACH_AEGIS
 static int s6e63m0_panel_send_sequence(struct s5p_lcd *lcd,
 	const u16 *wbuf)
 {
@@ -117,6 +118,23 @@ static int s6e63m0_panel_send_sequence(struct s5p_lcd *lcd,
 
 	return ret;
 }
+#else
+static void s6e63m0_panel_send_sequence(struct s5p_lcd *lcd,
+	const u16 *wbuf)
+{
+	int i = 0;
+
+	while ((wbuf[i] & DEFMASK) != ENDDEF) {
+		if ((wbuf[i] & DEFMASK) != SLEEPMSEC) {
+			s6e63m0_spi_write_driver(lcd, wbuf[i]);
+			i += 1;
+		} else {
+			msleep(wbuf[i+1]);
+			i += 2;
+		}
+	}
+}
+#endif
 
 static int get_gamma_value_from_bl(int bl)
 {
@@ -209,7 +227,7 @@ static int update_elvss(struct s5p_lcd *lcd, int level)
 {	
 	int ret = 0;
 	struct s5p_panel_data *pdata = lcd->data;
-//	printk("[AMOLED] s6e63m0_set_elvss..%d ~.\n",level);
+	printk("[AMOLED] s6e63m0_set_elvss..%d ~.\n",level);
 	
 	switch (level) 
 	{	
@@ -242,7 +260,10 @@ static void update_brightness(struct s5p_lcd *lcd)
 	int gamma_value;
 
 	gamma_value = get_gamma_value_from_bl(lcd->bl);
+
+#ifdef CONFIG_MACH_AEGIS
 	update_elvss(lcd ,gamma_value);
+#endif
 
 	printk("bl:%d, gamma:%d,on_19:%d\n", lcd->bl, gamma_value, lcd->on_19gamma);
 
@@ -335,7 +356,7 @@ static ssize_t gammaset_file_cmd_store(struct device *dev,
 	sscanf(buf, "%d", &value);
 
 	if ((lcd->ldi_enable) && ((value == 0) || (value == 1))) {
-		//printk("[gamma set] in gammaset_file_cmd_store, input value = %d\n", value);
+		printk("[gamma set] in gammaset_file_cmd_store, input value = %d\n", value);
 		if (value != lcd->on_19gamma)	{
 			lcd->on_19gamma = value;
 			update_brightness(lcd);

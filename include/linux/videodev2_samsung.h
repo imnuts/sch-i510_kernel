@@ -22,7 +22,9 @@
 /* strobe control */
 #define V4L2_CAP_STROBE			0x20000000
 
+#ifdef CONFIG_MACH_AEGIS
 #define SOC_MODULE
+#endif
 
 /* sensor state */
 enum
@@ -535,6 +537,7 @@ enum v4l2_caf_start_stop
 };
 
 #define V4L2_CID_CAMERA_AUTO_FOCUS_RESULT	    (V4L2_CID_PRIVATE_BASE+104)
+#ifdef CONFIG_MACH_AEGIS
 enum v4l2_af_status
 {
   CAMERA_AF_STATUS_IN_PROGRESS = 0,
@@ -543,6 +546,7 @@ enum v4l2_af_status
   CAMERA_AF_STATUS_1ST_SUCCESS,
   CAMERA_AF_STATUS_MAX
 };
+#endif
 
 #define V4L2_CID_CAMERA_FRAME_RATE			    (V4L2_CID_PRIVATE_BASE+105)
 enum v4l2_frame_rate 
@@ -679,8 +683,9 @@ enum v4l2_ae_stable_mode
 #define V4L2_CID_CAM_S_FW_VER                   (V4L2_CID_PRIVATE_BASE+152)
 
 #define V4L2_CID_CAMERA_POWER_CONTROL           (V4L2_CID_PRIVATE_BASE+153)
-
+#ifdef CONFIG_MACH_AEGIS
 #define V4L2_CID_CAMERA_SNAPSHOT_WIDTH		 (V4L2_CID_PRIVATE_BASE+154)
+#endif
 
 /* Pixel format FOURCC depth Description */
 /* 12  Y/CbCr 4:2:0 64x32 macroblocks */

@@ -27,7 +27,9 @@
 #include <mach/regs-gpio.h>
 #include <mach/gpio.h>
 #include <asm/mach-types.h>
+#ifdef CONFIG_MACH_AEGIS
 #include <linux/delay.h>
+#endif
 
 /* clock sources for the mmc bus clock, order as for the ctrl2[5..4] */
 

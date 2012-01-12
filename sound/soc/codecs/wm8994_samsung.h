@@ -42,7 +42,9 @@ extern struct snd_soc_dai wm8994_dai;
 #define FEATURE_TTY
 #define FEATURE_FACTORY_LOOPBACK
 
+#ifdef CONFIG_MACH_AEGIS
 #define CONFIG_VOIP
+#endif
 
 #ifdef FEATURE_TTY
 #include <linux/proc_fs.h>
