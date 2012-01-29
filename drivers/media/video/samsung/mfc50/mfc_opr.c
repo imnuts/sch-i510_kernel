@@ -1015,7 +1015,7 @@ enum mfc_error_code mfc_init_encode(struct mfc_inst_ctx *mfc_ctx, union mfc_args
 	if (mfc_ctx->img_width * mfc_ctx->img_height == 1280 * 720)
 	{   
 		s5pv210_unlock_dvfs_high_level(DVFS_LOCK_TOKEN_1);
-		s5pv210_lock_dvfs_high_level(DVFS_LOCK_TOKEN_1, L1);
+		s5pv210_lock_dvfs_high_level(DVFS_LOCK_TOKEN_1, L7);
 	}
 #endif
 
