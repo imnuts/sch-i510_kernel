@@ -49,9 +49,6 @@ static int finish_sec_switch_init = 0;
 
 /* for sysfs control (/sys/class/sec/switch/) */
 extern struct device *switch_dev;
-/*extern ssize_t fsa9480_show_device_type(struct device *dev,
-                                   struct device_attribute *attr,
-                                   char *buf);*/
 
 #define CABLE_CONNECTED      4
 #define UART_JIG_ON_CONNECTED (1<<2) 
@@ -96,28 +93,33 @@ static void usb_switch_mode(int mode)
 void sec_uart_switch(void)
 {
 	int switch_sel = UART_PATH_MODEM;
+
 	if (!finish_sec_switch_init) {
 		pr_info("%s : skip for initialing\n", __func__);
 		initial_path_sel = UART_PATH_MASK;
 		return;
 	}
+
 	if (sec_get_param_value)
 		sec_get_param_value(__SWITCH_SEL, &switch_sel);
+
 	uart_switch_mode((switch_sel & UART_PATH_MASK) >> 2);
 }
 EXPORT_SYMBOL(sec_uart_switch);
 
-
 void sec_usb_switch(void)
 {
 	int switch_sel = USB_PATH_PDA;
+
 	if (!finish_sec_switch_init) {
 		pr_info("%s : skip for initialing\n", __func__);
 		initial_path_sel = USB_PATH_MASK;
 		return;
 	}
+
 	if (sec_get_param_value)
 		sec_get_param_value(__SWITCH_SEL, &switch_sel);
+
 	usb_switch_mode(switch_sel & USB_PATH_MASK);
 }
 EXPORT_SYMBOL(sec_usb_switch);
@@ -127,23 +129,26 @@ static ssize_t uart_sel_show(struct device *dev, struct device_attribute *attr, 
 	struct sec_switch_struct *secsw = dev_get_drvdata(dev);
 	int uart_sel = (secsw->switch_sel & UART_PATH_MASK) >> 2;
 	char *chip_sel[] = {"MODEM", "PDA", "LTEMODEM"};
+
 	return sprintf(buf, "%s UART\n", chip_sel[uart_sel]);
 }
 
 static ssize_t uart_sel_store(struct device *dev, struct device_attribute *attr,
-				 const char *buf, size_t size)
+				const char *buf, size_t size)
 {
 	struct sec_switch_struct *secsw = dev_get_drvdata(dev);
 	int value;
 	value = uart_cable;
+
 	printk("%s\n",__func__);
 	printk("%s the device type detected is %x \n ",__func__, value);
+
 	if (sec_get_param_value)
 		sec_get_param_value(__SWITCH_SEL, &secsw->switch_sel);
 
 	if (strncmp(buf, "PDA", 3) == 0 || strncmp(buf, "pda", 3) == 0) {
 		if ( (value == UART_JIG_ON_CONNECTED) || (value == UART_JIG_OFF_CONNECTED))
-		    uart_switch_mode(SWITCH_PDA);
+			uart_switch_mode(SWITCH_PDA);
 
 		secsw->switch_sel = (secsw->switch_sel & ~UART_PATH_MASK) | UART_PATH_PDA;
 		pr_info("[UART Switch] Path : PDA\n");
@@ -151,7 +156,7 @@ static ssize_t uart_sel_store(struct device *dev, struct device_attribute *attr,
 
 	if (strncmp(buf, "MODEM", 5) == 0 || strncmp(buf, "modem", 5) == 0) {
 		if ( (value == UART_JIG_ON_CONNECTED) || (value == UART_JIG_OFF_CONNECTED))
-		   uart_switch_mode(SWITCH_MODEM);
+			uart_switch_mode(SWITCH_MODEM);
 
 		secsw->switch_sel = (secsw->switch_sel & ~UART_PATH_MASK) | UART_PATH_MODEM;
 		pr_info("[UART Switch] Path : MODEM\n");
@@ -159,7 +164,7 @@ static ssize_t uart_sel_store(struct device *dev, struct device_attribute *attr,
 
 	if (strncmp(buf, "LTEMODEM", 8) == 0 || strncmp(buf, "ltemodem", 8) == 0) {
 		if ( (value == UART_JIG_ON_CONNECTED) || (value == UART_JIG_OFF_CONNECTED))
-		   uart_switch_mode(SWITCH_LTE);
+			uart_switch_mode(SWITCH_LTE);
 
 		secsw->switch_sel = (secsw->switch_sel & ~UART_PATH_MASK) | UART_PATH_LTE;
 		pr_info("[UART Switch] Path : LTEMODEM\n");
@@ -185,28 +190,33 @@ static ssize_t usb_sel_store(struct device *dev, struct device_attribute *attr,
 	struct sec_switch_struct *secsw = dev_get_drvdata(dev);
 	int value;
 	value = usb_cable;
+
 	printk("%s\n",__func__);
 	printk("%s the device type detected is %x \n ",__func__, value);
+
 	if (sec_get_param_value)
 		sec_get_param_value(__SWITCH_SEL, &secsw->switch_sel);
 
 	if (strncmp(buf, "PDA", 3) == 0 || strncmp(buf, "pda", 3) == 0) {
 		if (value == CABLE_CONNECTED)
-		   usb_switch_mode(SWITCH_PDA);
+			usb_switch_mode(SWITCH_PDA);
+
 		secsw->switch_sel = (secsw->switch_sel & ~USB_PATH_MASK) | USB_PATH_PDA;
 		pr_info("[USB Switch] Path : PDA\n");
 	}
 
 	if (strncmp(buf, "MODEM", 5) == 0 || strncmp(buf, "modem", 5) == 0) {
 		if (value == CABLE_CONNECTED)
-		   usb_switch_mode(SWITCH_MODEM);
+			usb_switch_mode(SWITCH_MODEM);
+
 		secsw->switch_sel = (secsw->switch_sel & ~USB_PATH_MASK) | USB_PATH_MODEM;
 		pr_info("[USB Switch] Path : MODEM\n");
 	}
 
 	if (strncmp(buf, "LTEMODEM", 3) == 0 || strncmp(buf, "ltemodem", 3) == 0) {
 		if (value == CABLE_CONNECTED)
-		   usb_switch_mode(SWITCH_LTE);
+			usb_switch_mode(SWITCH_LTE);
+
 		secsw->switch_sel = (secsw->switch_sel & ~USB_PATH_MASK) | USB_PATH_LTE;
 		pr_info("[USB Switch] Path : LTEMODEM\n");
 	}
@@ -241,13 +251,13 @@ static ssize_t disable_vbus_show(struct device *dev, struct device_attribute *at
 }
 
 static ssize_t disable_vbus_store(struct device *dev, struct device_attribute *attr,
-				  const char *buf, size_t size)
+				const char *buf, size_t size)
 {
 	struct sec_switch_struct *secsw = dev_get_drvdata(dev);
 
 	if (IS_ERR_OR_NULL(secsw->pdata) ||
-	    IS_ERR_OR_NULL(secsw->pdata->set_vbus_status) ||
-	    IS_ERR_OR_NULL(secsw->pdata->set_usb_gadget_vbus))
+		IS_ERR_OR_NULL(secsw->pdata->set_vbus_status) ||
+		IS_ERR_OR_NULL(secsw->pdata->set_usb_gadget_vbus))
 		return size;
 
 	secsw->pdata->set_usb_gadget_vbus(false);
@@ -289,45 +299,33 @@ static ssize_t uart_debug_store(struct device *dev, struct device_attribute *att
 
 	return size;
 }
-#if 0
-static int determine_usb_and_store(struct device *dev, struct device_attribute *attr,
-                                const char *buf, size_t size)
+
+static ssize_t adc_value_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
 {
-
-	int value;
-	printk ("%s IN\n",__func__);
-	
-	value = cable_type;
-	if (value == USB_CONNECTED)
-		usb_sel_store(dev, attr, buf, size);
-	
-	printk("%s the device type detected is %x \n ",__func__, value);
-	printk("%s OUT\n",__func__);
-	return 0;	
+	return fsa9480_get_adc_value(buf);
 }
-
-static int determine_uart_and_store(struct device *dev, struct device_attribute *attr,
-                                const char *buf, size_t size)
-{
-
-        int value;
-        printk ("%s IN\n",__func__);
-
-        value = cable_type;
-        if (value == UART_CONNECTED)
-                uart_sel_store(dev, attr, buf, size);
-
-        printk("%s the device type detected is %x \n ",__func__, value);
-        printk("%s OUT\n",__func__);
-        return 0;
-}
-#endif
 
 static DEVICE_ATTR(uart_sel,     0664, uart_sel_show,     uart_sel_store);
 static DEVICE_ATTR(usb_sel,      0664, usb_sel_show,      usb_sel_store);
 static DEVICE_ATTR(usb_state,    0664, usb_state_show,    usb_state_store);
 static DEVICE_ATTR(disable_vbus, 0664, disable_vbus_show, disable_vbus_store);
 static DEVICE_ATTR(UartDebug,    0664, uart_debug_show,   uart_debug_store);
+static DEVICE_ATTR(adc,       S_IRUGO, adc_value_show,    NULL);
+
+static struct attribute *sec_switch_attributes[] = {
+	&dev_attr_uart_sel.attr,
+	&dev_attr_usb_sel.attr,
+	&dev_attr_usb_state.attr,
+	&dev_attr_disable_vbus.attr,
+	&dev_attr_UartDebug.attr,
+	&dev_attr_adc.attr,
+	NULL
+};
+
+static const struct attribute_group sec_switch_group = {
+	.attrs = sec_switch_attributes,
+};
 
 static void sec_switch_init_work(struct work_struct *work)
 {
@@ -337,11 +335,8 @@ static void sec_switch_init_work(struct work_struct *work)
 	int usb_sel = 0;
 	int uart_sel = 0;
 
-	if (sec_get_param_value &&
-	    secsw->pdata &&
-	    secsw->pdata->set_vbus_status &&
-	    secsw->pdata->get_phy_init_status &&
-	    secsw->pdata->get_phy_init_status()) {
+	if (sec_get_param_value && secsw->pdata && secsw->pdata->set_vbus_status &&
+		secsw->pdata->get_phy_init_status && secsw->pdata->get_phy_init_status()) {
 		sec_get_param_value(__SWITCH_SEL, &secsw->switch_sel);
 		cancel_delayed_work(&wq->work_q);
 	} else {
@@ -352,7 +347,7 @@ static void sec_switch_init_work(struct work_struct *work)
 	pr_info("%s : initial sec switch value = 0x%X\n", __func__, secsw->switch_sel);
 
 	if (!(secsw->switch_sel & UART_DEBUG_MASK) ||
-	    ((secsw->switch_sel & UART_PATH_MASK) == UART_PATH_MASK))
+		((secsw->switch_sel & UART_PATH_MASK) == UART_PATH_MASK))
 		secsw->switch_sel = (secsw->switch_sel & ~UART_PATH_MASK) | UART_PATH_MODEM;
 
 	if ((secsw->switch_sel & USB_PATH_MASK) == USB_PATH_MASK)
@@ -377,7 +372,7 @@ static int sec_switch_probe(struct platform_device *pdev)
 	struct sec_switch_struct *secsw;
 	struct sec_switch_platform_data *pdata = pdev->dev.platform_data;
 	struct sec_switch_wq *wq;
-
+	int ret;
 
 	if (!pdata) {
 		pr_err("%s : pdata is NULL.\n", __func__);
@@ -393,23 +388,15 @@ static int sec_switch_probe(struct platform_device *pdev)
 	secsw->pdata = pdata;
 	secsw->switch_sel = 1;
 
+	/* create sysfs group*/
+	ret = sysfs_create_group(&switch_dev->kobj, &sec_switch_group);
+	if (ret < 0) {
+		dev_err(&pdev->dev,
+			"%s : Failed to create fsa9480 muic attribute group\n", __func__);
+		goto fail;
+	}
+
 	dev_set_drvdata(switch_dev, secsw);
-
-	/* create sysfs files */
-	if (device_create_file(switch_dev, &dev_attr_uart_sel) < 0)
-		pr_err("Failed to create device file(%s)!\n", dev_attr_uart_sel.attr.name);
-
-	if (device_create_file(switch_dev, &dev_attr_usb_sel) < 0)
-		pr_err("Failed to create device file(%s)!\n", dev_attr_usb_sel.attr.name);
-
-	if (device_create_file(switch_dev, &dev_attr_usb_state) < 0)
-		pr_err("Failed to create device file(%s)!\n", dev_attr_usb_state.attr.name);
-
-	if (device_create_file(switch_dev, &dev_attr_disable_vbus) < 0)
-		pr_err("Failed to create device file(%s)!\n", dev_attr_disable_vbus.attr.name);
-
-	if (device_create_file(switch_dev, &dev_attr_UartDebug) < 0)
-			pr_err("Failed to create device file(%s)!\n", dev_attr_UartDebug.attr.name);
 
 	/* run work queue */
 	wq = kmalloc(sizeof(struct sec_switch_wq), GFP_ATOMIC);
@@ -421,11 +408,18 @@ static int sec_switch_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	return 0;
+
+fail:
+	kfree(secsw);
+	return ret;
 }
 
 static int sec_switch_remove(struct platform_device *pdev)
 {
 	struct sec_switch_struct *secsw = dev_get_drvdata(&pdev->dev);
+
+	sysfs_remove_group(&switch_dev->kobj, &sec_switch_group);
+	
 	kfree(secsw);
 	return 0;
 }

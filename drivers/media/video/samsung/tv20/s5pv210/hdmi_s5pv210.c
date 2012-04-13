@@ -101,6 +101,7 @@ static s32 i2c_hdmi_phy_interruptwait(void)
 {
 	u8 status, reg;
 	s32 retval = 0;
+	int retry = 12000;
 
 	do {
 		status = readb(i2c_hdmi_phy_base + I2C_HDMI_CON);
@@ -111,8 +112,10 @@ static s32 i2c_hdmi_phy_interruptwait(void)
 			break;
 		}
 
-	} while (1);
+	} while (retry--);
 
+	if (retry < 1000)
+		printk("[HDMI] i2c_hdmi_phy_interruptwait fail [retry%d]: time over!\n", retry);
 	return retval;
 }
 
@@ -338,6 +341,11 @@ int __s5p_hdmi_phy_power(bool on)
 		/ sizeof(phy_config[0][0][0]);
 
 	buffer = (u8 *) phy_config[0][0];
+
+	/*HDMI PHY SW reset*/
+	writeb(0x1, hdmi_base + S5P_HDMI_CTRL_PHY_RSTOUT);
+	mdelay(10);
+	writeb(0x0, hdmi_base + S5P_HDMI_CTRL_PHY_RSTOUT);
 
 	/* write offset */
 	if (i2c_hdmi_phy_write(PHY_I2C_ADDRESS, 1, buffer) != 0)

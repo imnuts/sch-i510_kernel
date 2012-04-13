@@ -323,28 +323,21 @@ int verizon_batt_auth_full_check(void)
 
 		msleep(100);
 
-		if (Reset_TA())
-			return 0;
+		if (Reset_TA()) {
+			retval = 0;
+			printk("/BATT_ID/ full check retry = %d\n", i + 1);
+			continue;
+		}
 
 		if (rom_code_protection() == 0)
-			retval = 0;
+			retval = 1;
 		else if (CRC_protection() == 0)
-			retval = 0;
+			retval = 1;
 		else {
 			retval = 1;
 			break;
 		}
 
-	}
-
-	if (retval == 0) {
-		for (i = 0; i < 8; i++) {
-			if (vzw_rcode[i] != 0) {
-				retval = 1;
-				pr_info("/BATT_ID/ %s: accepted\n", __func__);
-				break;
-			}
-		}
 	}
 
 	return retval;

@@ -557,11 +557,11 @@ void qt_Noise_Suppression_Config_Init(void)
 		noise_suppression_config.actvgcafvalid = 3;
 		noise_suppression_config.noisethr = 30; 	//35;
 		noise_suppression_config.freqhopscale = 0;///1;
-		noise_suppression_config.freq[0] = 29; 	//5;	// 6;//10;
-		noise_suppression_config.freq[1] = 34;	//15;	// 11;//15;
-		noise_suppression_config.freq[2] = 39;	//25;	//16;//20;
-		noise_suppression_config.freq[3] = 49;	//35;	// 19;//25;
-		noise_suppression_config.freq[4] = 58;	//45;	// 21;//30;
+		noise_suppression_config.freq[0] = 10;
+		noise_suppression_config.freq[1] = 12;
+		noise_suppression_config.freq[2] = 18;
+		noise_suppression_config.freq[3] = 20;
+		noise_suppression_config.freq[4] = 29;
 		noise_suppression_config.idlegcafvalid = 3;
 
 		/* Write Noise suppression config to chip. */
@@ -569,32 +569,34 @@ void qt_Noise_Suppression_Config_Init(void)
 			if (write_noisesuppression_config(0, noise_suppression_config) != CFG_WRITE_OK)
 				dprintk("[TSP] Configuration Fail!!! , Line %d \n\r", __LINE__);
 		}
-		noise_freq_table.fherr_setting = false;
+		noise_freq_table.fherr_setting = 0;
 		noise_freq_table.fherr_count = 0;
+		noise_freq_table.fherr_num = 1;
 		noise_freq_table.t9_blen_for_fherr = 16;
 		noise_freq_table.t9_thr_for_fherr = 60;
-		noise_freq_table.t22_noisethr_for_fherr = 35;
-		noise_freq_table.freq_for_fherr0[0] = 29;
-		noise_freq_table.freq_for_fherr0[1] = 34;
-		noise_freq_table.freq_for_fherr0[2] = 39;
-		noise_freq_table.freq_for_fherr0[3] = 49;
-		noise_freq_table.freq_for_fherr0[4] = 58;
-		noise_freq_table.freq_for_fherr1[0] = 45;
-		noise_freq_table.freq_for_fherr1[1] = 49;
-		noise_freq_table.freq_for_fherr1[2] = 55;
-		noise_freq_table.freq_for_fherr1[3] = 59;
-		noise_freq_table.freq_for_fherr1[4] = 63;
-		noise_freq_table.freq_for_fherr2[0] = 10;
-		noise_freq_table.freq_for_fherr2[1] = 12;
-		noise_freq_table.freq_for_fherr2[2] = 18;
-		noise_freq_table.freq_for_fherr2[3] = 40;
-		noise_freq_table.freq_for_fherr2[4] = 72;
+		noise_freq_table.t9_movfilter_for_fherr = 80;
+		noise_freq_table.t22_noisethr_for_fherr = 30;
+		noise_freq_table.t22_freqscale_for_fherr = 1;
+		noise_freq_table.freq_for_fherr1[0] = 10;
+		noise_freq_table.freq_for_fherr1[1] = 12;
+		noise_freq_table.freq_for_fherr1[2] = 18;
+		noise_freq_table.freq_for_fherr1[3] = 20;
+		noise_freq_table.freq_for_fherr1[4] = 29;
+		noise_freq_table.freq_for_fherr2[0] = 45;
+		noise_freq_table.freq_for_fherr2[1] = 49;
+		noise_freq_table.freq_for_fherr2[2] = 55;
+		noise_freq_table.freq_for_fherr2[3] = 59;
+		noise_freq_table.freq_for_fherr2[4] = 63;
 		noise_freq_table.freq_for_fherr3[0] = 7;
 		noise_freq_table.freq_for_fherr3[1] = 33;
 		noise_freq_table.freq_for_fherr3[2] = 39;
 		noise_freq_table.freq_for_fherr3[3] = 52;
 		noise_freq_table.freq_for_fherr3[4] = 64;
-
+		noise_freq_table.freq_for_fherr4[0] = 29;
+		noise_freq_table.freq_for_fherr4[1] = 34;
+		noise_freq_table.freq_for_fherr4[2] = 39;
+		noise_freq_table.freq_for_fherr4[3] = 49;
+		noise_freq_table.freq_for_fherr4[4] = 58;
 	} if (info_block->info_id.family_id == 0x81) {
 		noise_suppression_config_e.ctrl = 3;//1;
 		noise_suppression_config_e.cfg = 12;
@@ -2664,9 +2666,12 @@ void print_msg(void)
 }
 #endif
 
+static unsigned int qt_time_point_freq;
+static unsigned int qt_time_diff_freq;
 static unsigned int qt_time_point=0;
 static unsigned int qt_time_diff=0;
 static unsigned int qt_timer_state =0;
+
 static int check_abs_time(void)
 {
 	if (!qt_time_point)
@@ -2674,6 +2679,19 @@ static int check_abs_time(void)
 
 	qt_time_diff = jiffies_to_msecs(jiffies) - qt_time_point;
 	if (qt_time_diff > 0)
+		return 1;
+	else
+		return 0;
+}
+
+static int check_abs_time_freq_err(void)
+{
+	if (!qt_time_point_freq)
+		return 0;
+
+	qt_time_diff_freq = jiffies_to_msecs(jiffies) - qt_time_point_freq;
+
+	if (qt_time_diff_freq > 0)
 		return 1;
 	else
 		return 0;
@@ -2855,7 +2873,6 @@ static int set_tsp_threshhold(bool state)
 #if MXT224E_TA_CONFIG_MODE
 	uint8_t data;
 #endif
-	int i;
 
 	if (info_block->info_id.family_id == 0x80) {
 		object_address = get_object_address(TOUCH_MULTITOUCHSCREEN_T9, 0);
@@ -2883,20 +2900,30 @@ static int set_tsp_threshhold(bool state)
 		}
 
 		if (state == 0) {
-			if (noise_freq_table.fherr_setting) {
+			if (noise_freq_table.fherr_setting >= 1) {
 				object_address = get_object_address(GEN_POWERCONFIG_T7, 0);
 				tmp = &power_config.idleacqint;
 				write_mem(object_address, 1, tmp);
+
 				object_address = get_object_address(TOUCH_MULTITOUCHSCREEN_T9, 0);
 				tmp = &touchscreen_config.blen;
 				write_mem(object_address+6, 1, tmp);
+
+				tmp = &touchscreen_config.movfilter;
+				write_mem(object_address+13, 1, tmp);
+
 				object_address = get_object_address(PROCG_NOISESUPPRESSION_T22, 0);
-				for (i = 0; i < 5; i++) {
-					tmp = &noise_suppression_config.freq[i];
-					write_mem(object_address+11+i, 1, tmp);
-				}
+				data = 135;
+				write_mem(object_address, 1, &data);
+
+				data = 0;
+				write_mem(object_address+10, 1, &data);
+
+				write_mem(object_address+11, 5,
+					&noise_freq_table.freq_for_fherr1[0]);
 				noise_freq_table.fherr_count = 0;
-				noise_freq_table.fherr_setting = false;
+				noise_freq_table.fherr_num = 1;
+				noise_freq_table.fherr_setting = 0;
 			}
 		}
 	} else if (info_block->info_id.family_id == 0x81) {
@@ -2968,13 +2995,30 @@ EXPORT_SYMBOL(set_tsp_for_ta_detect);
 
 static void freq_hop_err_setting(int state)
 {
-	int i = 0;
 	uint16_t object_address;
 	uint8_t data;
+
+	printk(KERN_DEBUG"[TSP] %s(%d)\n", __func__, state);
+	noise_freq_table.fherr_num = 30;
 
 	object_address = get_object_address(GEN_POWERCONFIG_T7, 0);
 	data = power_config.idleacqint = 255;
 	write_mem(object_address, 1, &data);
+
+	cal_check_flag = 0;
+	qt_timer_state = 0;
+
+	object_address = get_object_address(GEN_ACQUISITIONCONFIG_T8, 0);
+	data = 5;
+	/* TCHAUTOCAL 1sec */
+	write_mem(object_address+4, 1, &data);
+
+	qt_time_point_freq = jiffies_to_msecs(jiffies);
+	noise_freq_table.fherr_setting = 2;
+	data = acquisition_config.atchcalst;
+	write_mem(object_address+6, 1, &data);
+	data = acquisition_config.atchcalsthr;
+	write_mem(object_address+7, 1, &data);
 
 	object_address = get_object_address(TOUCH_MULTITOUCHSCREEN_T9, 0);
 	data = noise_freq_table.t9_blen_for_fherr;
@@ -2983,28 +3027,37 @@ static void freq_hop_err_setting(int state)
 	data = noise_freq_table.t9_thr_for_fherr;
 	write_mem(object_address+7, 1, &data);
 
+	data = noise_freq_table.t9_movfilter_for_fherr;
+	write_mem(object_address+13, 1, &data);
+
 	object_address = get_object_address(PROCG_NOISESUPPRESSION_T22, 0);
+	data = 135;
+	write_mem(object_address, 1, &data);
 	data = noise_freq_table.t22_noisethr_for_fherr;
 	write_mem(object_address+8, 1, &data);
+	data = noise_freq_table.t22_noisethr_for_fherr;
+	write_mem(object_address+10, 1, &data);
 
-	for (i = 0; i< 5; i++) {
-		if (state == 0) {
-			data = noise_freq_table.freq_for_fherr0[i];
-			write_mem(object_address+11+i, 1, &data);
-		} else if (state == 1) {
-			data = noise_freq_table.freq_for_fherr1[i];
-			write_mem(object_address+11+i, 1, &data);
-		} else if (state == 2) {
-			data = noise_freq_table.freq_for_fherr2[i];
-			write_mem(object_address+11+i, 1, &data);
-		} else if (state == 3) {
-			data = noise_freq_table.freq_for_fherr3[i];
-			write_mem(object_address+11+i, 1, &data);
-		}
+	if (state == 1) {
+		write_mem(object_address+11, 5,
+			&noise_freq_table.freq_for_fherr1[0]);
+	} else if (state == 2) {
+		write_mem(object_address+11, 5,
+			&noise_freq_table.freq_for_fherr2[0]);
+		noise_freq_table.fherr_num = 1;
+		noise_freq_table.fherr_count = 2;
+	} else if (state == 3) {
+		write_mem(object_address+11, 5,
+			&noise_freq_table.freq_for_fherr3[0]);
+		noise_freq_table.fherr_num = 1;
+	} else if (state == 4) {
+		write_mem(object_address+11, 5,
+			&noise_freq_table.freq_for_fherr4[0]);
+		noise_freq_table.fherr_num = 1;
+		noise_freq_table.fherr_count = 1;
 	}
-	noise_freq_table.fherr_setting = true;
 }
-#endif
+#endif /* USE_TS_TA_DETECT_CHANGE_REG */
 
 void TSP_forced_release(void)
 {
@@ -3130,7 +3183,8 @@ void  get_message(void)
 
 		if (quantum_msg[0] == 1) {
 			if ((quantum_msg[1]) == 0) {
-				if (cal_check_flag == 2)
+				if ((cal_check_flag == 2) &&
+					(noise_freq_table.fherr_setting == 0))
 					cal_check_flag = 1;
 			}
 			if ((quantum_msg[1]&0x04) == 0x04)
@@ -3141,7 +3195,8 @@ void  get_message(void)
 			}
 			if ((quantum_msg[1]&0x10) == 0x10) {
 				dprintk("[TSP] CAL - chip calibrating\n");
-				if (cal_check_flag == 0)
+				if ((cal_check_flag == 0) &&
+					(noise_freq_table.fherr_setting == 0))
 					cal_check_flag = 2;
 			}
 			if ((quantum_msg[1]&0x20) == 0x20) {
@@ -3193,14 +3248,20 @@ void  get_message(void)
 			}
 #endif
 			if ((quantum_msg[1]&0x08) == 0x08) {
-				if (touch_TA_detect) {
-					noise_freq_table.fherr_count++;
-					if (noise_freq_table.fherr_count == 12)
-						noise_freq_table.fherr_count = 0;
-					if ((noise_freq_table.fherr_count%3) == 0)
-						printk(KERN_DEBUG"[TSP] freq changed. noise level too high. %d\n",
-							noise_freq_table.fherr_count/3);
-					freq_hop_err_setting(noise_freq_table.fherr_count/3);
+				noise_freq_table.fherr_count++;
+				if (noise_freq_table.fherr_count >
+					(noise_freq_table.fherr_num * 4))
+					noise_freq_table.fherr_count = 1;
+
+				if (!(noise_freq_table.fherr_count%
+					noise_freq_table.fherr_num)) {
+					printk(KERN_DEBUG"[TSP] freq changed."
+					   "noise level too high.(%d)\n",
+					   noise_freq_table.fherr_count/
+					   noise_freq_table.fherr_num);
+					freq_hop_err_setting(
+					   noise_freq_table.fherr_count/
+					   noise_freq_table.fherr_num);
 				}
 			}
 		}
@@ -3345,6 +3406,29 @@ void  get_message(void)
 		input_sync(qt602240->input_dev);
 		if (one_touch_input_flag == 0) {
 			touch_state_val = 0;
+
+			if (noise_freq_table.fherr_setting >= 2) {
+				if (!check_abs_time_freq_err())
+					qt_time_diff_freq = 5001;
+
+				if (qt_time_diff_freq > 5000) {
+					object_address = get_object_address(GEN_ACQUISITIONCONFIG_T8, 0);
+					data = 0;
+					/* TCHAUTOCAL disable */
+					write_mem(object_address+4, 1, &data);
+					noise_freq_table.fherr_setting = 1;
+					printk(KERN_ERR"[TSP] auto cal disable\n");
+
+					object_address = get_object_address(PROCG_NOISESUPPRESSION_T22, 0);
+					data = 60;
+					write_mem(object_address+8, 1, &data);
+				}
+				if (noise_freq_table.fherr_setting == 2) {
+					data = 1u;
+					write_mem(command_processor_address + CALIBRATE_OFFSET, 1, &data);
+					noise_freq_table.fherr_setting = 3;
+				}
+			}
 #if TOUCH_CPU_FREQ
 			if (touch_cpu_freq_flag == 1) {
 				touch_cpu_freq_flag = 0;
@@ -3813,6 +3897,9 @@ static void qt602240_early_suspend(struct early_suspend *h)
 #endif
 #endif
 	qt_timer_state = 0;
+	noise_freq_table.fherr_count = 0;
+	noise_freq_table.fherr_num = 1;
+	noise_freq_table.fherr_setting = 0;
 
 	/*reset the gpio's for the sleep configuration*/
 	s3c_gpio_cfgpin(GPIO_TOUCH_INT, S3C_GPIO_INPUT);
@@ -3858,8 +3945,6 @@ static void qt602240_late_resume(struct early_suspend *h)
 
 	msleep(20);
 	calibrate_chip();
-
-	noise_freq_table.fherr_count = 0;
 
 	touchscreen_power_state_on = 1;
 	set_tsp_threshhold(touch_TA_detect);

@@ -1141,7 +1141,7 @@ int rndis_function_bind_config(struct usb_configuration *c)
 #ifdef CSY_SAMSUNG
 	CSY_DBG(
 #else
-	printk(KERN_INFO
+	printk(KERN_DEBUG
 #endif
 		"rndis_function_bind_config MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
 		rndis_pdata->ethaddr[0], rndis_pdata->ethaddr[1],
