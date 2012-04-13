@@ -286,10 +286,18 @@ static ssize_t store_debug(struct device *d,
 	return count;
 }
 
+static ssize_t store_ramdump(struct device *d,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	sipc_ramdump(svnet_dev->si);
+	return 0;
+}
+
 static DEVICE_ATTR(version, S_IRUGO, show_version, NULL);
 static DEVICE_ATTR(latency, S_IRUGO | S_IWUSR, show_latency, store_latency);
 static DEVICE_ATTR(waketime, S_IRUGO | S_IWUSR, show_waketime, store_waketime);
 static DEVICE_ATTR(debug, S_IRUGO | S_IWUSR, show_debug, store_debug);
+static DEVICE_ATTR(ramdump, S_IRUGO | S_IWUSR, NULL, store_ramdump);
 #ifdef SUSPEND_RESUME_BRIDGE
 static DEVICE_ATTR(resume, S_IRUGO | S_IWUSR | S_IWGRP, NULL, store_bridge_resume);
 static DEVICE_ATTR(suspend, S_IRUGO | S_IWUSR | S_IWGRP, NULL, store_bridge_suspend);
@@ -303,6 +311,7 @@ static struct attribute *svnet_attributes[] = {
 	&dev_attr_waketime.attr,
 	&dev_attr_debug.attr,
 	&dev_attr_latency.attr,
+	&dev_attr_ramdump.attr,
 	#ifdef SUSPEND_RESUME_BRIDGE
 	&dev_attr_resume.attr,
 	&dev_attr_suspend.attr,

@@ -633,7 +633,6 @@ int s5p_tv_v_release(struct file *filp)
 	mutex_unlock(mutex_for_i2c);
 #endif
 
-	s5p_tv_clk_gate(false);
 
 #ifdef CONFIG_CPU_S5PV210
 #ifdef CONFIG_PM
@@ -1142,7 +1141,7 @@ static int __devinit s5p_tv_probe(struct platform_device *pdev)
 	
 	regulator_enable(s5ptv_status.tv_tv);
 	regulator_enable(s5ptv_status.tv_tvout);
-	
+	regulator_enable(s5ptv_status.tv_regulator);
 
 	s5ptv_status.dev_fb = &pdev->dev;
 
@@ -1258,6 +1257,7 @@ static int __devinit s5p_tv_probe(struct platform_device *pdev)
 	clk_disable(s5ptv_status.i2c_phy_clk);
 	s5p_tv_clk_gate(false);
 #endif
+	regulator_disable(s5ptv_status.tv_regulator);
 	regulator_disable(s5ptv_status.tv_tv);
 	regulator_disable(s5ptv_status.tv_tvout);
 	printk("tv_base_probe is successfully\n");

@@ -458,22 +458,10 @@ config PN544
 	help
 	  NXP PN544 Near Field Communication controller support.
 
-config PARAM
-	tristate "Samsung PARAM"
-	default m
-	help
-	  Samsung PARAM
-
 config LEVEL
 	tristate "level_debug"
 	default n
 	help
 	  Say Y to enable debug level I/F support.
-
-config STORAGE_DGS
-	tristate "readable dgs"
-	default m
-	help
-	  Say Y to readable dgs I/F support.
 
 endif # MISC_DEVICES

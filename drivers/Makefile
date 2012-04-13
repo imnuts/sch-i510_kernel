@@ -116,9 +116,11 @@ obj-$(CONFIG_VLYNQ)		+= vlynq/
 obj-$(CONFIG_STAGING)		+= staging/
 
 ifeq ($(CONFIG_MACH_CHIEF),y)
+obj-m				+= nvstorage/
 obj-$(CONFIG_LTESPI)		+= ltespi/
 else
 obj-$(CONFIG_SAMSUNG_PHONE_TTY) += cdma_dpram/
+#obj-$(CONFIG_STORAGE)		+= storage/
 obj-m				+= wtlfota_dpram/
 obj-$(CONFIG_LTESPI)		+= ltespi/
 endif

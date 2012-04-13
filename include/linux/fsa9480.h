@@ -52,4 +52,6 @@ enum {
 
 extern void fsa9480_manual_switching(int path);
 
+extern ssize_t fsa9480_get_adc_value(char *buf);
+
 #endif /* _FSA9480_H_ */

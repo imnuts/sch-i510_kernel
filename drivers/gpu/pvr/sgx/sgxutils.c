@@ -431,6 +431,7 @@ PVRSRV_ERROR SGXScheduleCCBCommandKM(PVRSRV_DEVICE_NODE		*psDeviceNode,
 {
 	PVRSRV_ERROR		eError;
 	PVRSRV_SGXDEV_INFO 	*psDevInfo = psDeviceNode->pvDevice;
+	SYS_DATA *psSysData;
 
 	
 	PDUMPSUSPEND();
@@ -458,6 +459,9 @@ PVRSRV_ERROR SGXScheduleCCBCommandKM(PVRSRV_DEVICE_NODE		*psDeviceNode,
 
 				psDeviceNode->bReProcessDeviceCommandComplete = IMG_TRUE;
 				eError = PVRSRV_OK;
+
+				SysAcquireData(&psSysData);
+				OSScheduleMISR((IMG_VOID *)psSysData);
 			}
 			else
 			{

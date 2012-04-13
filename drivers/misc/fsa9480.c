@@ -63,6 +63,9 @@
 #define CON_MASK		(CON_SWITCH_OPEN | CON_RAW_DATA | \
 				CON_MANUAL_SW | CON_WAIT)
 
+/* ADC */
+#define FSA9480_ADC_MASK	(0x1f)
+
 /* Device Type 1 */
 #define DEV_USB_OTG		(1 << 7)
 #define DEV_DEDICATED_CHG	(1 << 6)
@@ -140,7 +143,7 @@
 #define LONGKEY_PRESS_TIME_1_5S		(0x0C)
 
 
-#if defined(CONFIG_MACH_STEALTHV) || defined(CONFIG_MACH_AEGIS) || defined(CONFIG_MACH_VIPER) || defined(CONFIG_MACH_CHIEF)
+#if defined(CONFIG_MACH_STEALTHV)
 #define REG_INT1_MASK_VALUE     (0x3fe0)
 #define REG_TIMING1_VALUE	(ADC_DETECTION_TIME_300MS \
 				|KEY_PRESS_TIME_200MS)
@@ -340,19 +343,19 @@ void fsa9480_manual_switching(int path)
 		data = SW_VAUDIO;
 		value &= ~CON_MANUAL_SW;
 		value |= CON_SWITCH_OPEN;
-	} else if (path ==  SWITCH_PORT_UART) {
+	} else if (path == SWITCH_PORT_UART) {
 		data = SW_UART;
 		value &= ~CON_MANUAL_SW;
 		value |= CON_SWITCH_OPEN;
-	} else if (path ==  SWITCH_PORT_AUDIO) {
+	} else if (path == SWITCH_PORT_AUDIO) {
 		data = SW_AUDIO;
 		value &= ~CON_MANUAL_SW;
 		value |= CON_SWITCH_OPEN;
-	} else if (path ==  SWITCH_PORT_USB) {
+	} else if (path == SWITCH_PORT_USB) {
 		data = SW_DHOST;
 		value &= ~CON_MANUAL_SW;
 		value |= CON_SWITCH_OPEN;
-	} else if (path ==  SWITCH_PORT_AUTO) {
+	} else if (path == SWITCH_PORT_AUTO) {
 		data = SW_AUTO;
 		value |= CON_MANUAL_SW;
 		value |= CON_SWITCH_OPEN;
@@ -388,7 +391,24 @@ void fsa9480_manual_switching(int path)
 }
 EXPORT_SYMBOL(fsa9480_manual_switching);
 
-#if defined(CONFIG_MACH_STEALTHV) || defined(CONFIG_MACH_AEGIS) || defined(CONFIG_MACH_VIPER) || defined(CONFIG_MACH_CHIEF)
+ssize_t fsa9480_get_adc_value(char *buf)
+{
+	struct i2c_client *client = local_usbsw->client;
+	int value;
+
+	value = i2c_smbus_read_byte_data(client, FSA9480_REG_ADC);
+	
+	dev_info(&client->dev, "%s: adc = 0x%x\n", __func__, value);
+
+	if (value < 0) {
+		dev_err(&client->dev, "%s: err %d\n", __func__, value);
+		return sprintf(buf, "UNKNOWN\n");
+	}
+
+	return sprintf(buf, "%x\n", (value & FSA9480_ADC_MASK));
+}
+
+#if defined(CONFIG_MACH_STEALTHV) || defined(CONFIG_MACH_AEGIS)
 extern void sec_usb_switch(void);
 extern void sec_uart_switch(void);
 #endif
@@ -466,7 +486,7 @@ static void fsa9480_detect_dev(struct fsa9480_usbsw *usbsw)
 				pdata->charger_cb(FSA9480_ATTACHED);
 		/* Desk Dock (Stealth-V, Aegis) */
 		} else if (val1 & DEV_AUDIO_1) {
-#if defined (CONFIG_STEALTHV_USA) || defined (CONFIG_MACH_AEGIS) || defined(CONFIG_MACH_VIPER) || defined(CONFIG_MACH_CHIEF)
+#if defined (CONFIG_STEALTHV_USA) || defined (CONFIG_MACH_AEGIS) || defined(CONFIG_MACH_CHIEF)
 		if (pdata->deskdock_cb)
 			pdata->deskdock_cb(FSA9480_ATTACHED);
 				
@@ -478,11 +498,9 @@ static void fsa9480_detect_dev(struct fsa9480_usbsw *usbsw)
 
 			dev_info(&client->dev, "DEV_AUDIO_1(ATTACH) -> manual sw1 write 0x%x\n", value);
 
-			ret = i2c_smbus_write_byte_data(client,
-					FSA9480_REG_MANSW1, value);
+			ret = i2c_smbus_write_byte_data(client, FSA9480_REG_MANSW1, value);
 			if (ret < 0)
-				dev_err(&client->dev,
-					"%s: err %d\n", __func__, ret);
+				dev_err(&client->dev, "%s: err %d\n", __func__, ret);
 
 			ret = i2c_smbus_read_byte_data(client,
 					FSA9480_REG_CTRL);
@@ -494,7 +512,7 @@ static void fsa9480_detect_dev(struct fsa9480_usbsw *usbsw)
 					FSA9480_REG_CTRL, ret & ~CON_MANUAL_SW);
 			if (ret < 0)
 				dev_err(&client->dev,
-					"%s: err %d\n", __func__, ret);		
+					"%s: err %d\n", __func__, ret);
 #endif
 		/* JIG */
 		} else if (val2 & DEV_T2_JIG_MASK) {
@@ -502,7 +520,7 @@ static void fsa9480_detect_dev(struct fsa9480_usbsw *usbsw)
 				pdata->jig_cb(FSA9480_ATTACHED);
 		/* Desk Dock (Stealth-V, Aegis: Car Dock) */
 		} else if (val2 & DEV_AV) {
-#if defined (CONFIG_STEALTHV_USA) || defined (CONFIG_MACH_AEGIS) || defined(CONFIG_MACH_VIPER) || defined(CONFIG_MACH_CHIEF)
+#if defined (CONFIG_STEALTHV_USA) || defined (CONFIG_MACH_AEGIS) || defined(CONFIG_MACH_CHIEF)
 			if (pdata->cardock_cb)
 				pdata->cardock_cb(FSA9480_ATTACHED);
 #else
@@ -526,7 +544,8 @@ static void fsa9480_detect_dev(struct fsa9480_usbsw *usbsw)
 			if (ret < 0)
 				dev_err(&client->dev,
 					"%s: err %d\n", __func__, ret);
-		} 	/* Detached */
+		}
+	/* Detached */
 	} else {
 		/* USB */
 		if (usbsw->dev1 & DEV_T1_USB_MASK ||
@@ -569,7 +588,7 @@ static void fsa9480_detect_dev(struct fsa9480_usbsw *usbsw)
 				pdata->charger_cb(FSA9480_DETACHED);
 		/* Desk Dock (Stealth-V, Aegis) */
 		} else if (usbsw->dev1 & DEV_AUDIO_1) {
-#if defined (CONFIG_STEALTHV_USA) || defined (CONFIG_MACH_AEGIS) || defined(CONFIG_MACH_VIPER) || defined(CONFIG_MACH_CHIEF)
+#if defined (CONFIG_STEALTHV_USA) || defined (CONFIG_MACH_AEGIS) || defined(CONFIG_MACH_CHIEF)
 			if (pdata->deskdock_cb)
 				pdata->deskdock_cb(FSA9480_DETACHED);
 
@@ -597,7 +616,7 @@ static void fsa9480_detect_dev(struct fsa9480_usbsw *usbsw)
 					FSA9480_REG_CTRL, ret | CON_MANUAL_SW);
 			if (ret < 0)
 				dev_err(&client->dev,
-					"%s: err %d\n", __func__, ret);			
+					"%s: err %d\n", __func__, ret);
 #endif
 		/* JIG */
 		} else if (usbsw->dev2 & DEV_T2_JIG_MASK) {
@@ -605,7 +624,7 @@ static void fsa9480_detect_dev(struct fsa9480_usbsw *usbsw)
 				pdata->jig_cb(FSA9480_DETACHED);
 		/* Desk Dock (Stealth-V, Aegis: Car Dock) */
 		} else if (usbsw->dev2 & DEV_AV) {
-#if defined (CONFIG_STEALTHV_USA) || defined (CONFIG_MACH_AEGIS) || defined(CONFIG_MACH_VIPER) || defined(CONFIG_MACH_CHIEF)
+#if defined (CONFIG_STEALTHV_USA) || defined (CONFIG_MACH_AEGIS) || defined(CONFIG_MACH_CHIEF)
 			if (pdata->cardock_cb)
 				pdata->cardock_cb(FSA9480_DETACHED);
 #else
@@ -632,7 +651,7 @@ static void fsa9480_detect_dev(struct fsa9480_usbsw *usbsw)
 	usbsw->dev2 = val2;
 }
 
-#if defined(CONFIG_MACH_STEALTHV) || defined(CONFIG_MACH_AEGIS) || defined(CONFIG_MACH_VIPER) || defined(CONFIG_MACH_CHIEF)
+#if defined(CONFIG_MACH_STEALTHV)
 static void fsa9480_detect_key(struct fsa9480_usbsw *usbsw)
 {
 	int button2;
@@ -752,7 +771,7 @@ static irqreturn_t fsa9480_irq_thread(int irq, void *data)
 
 	pr_info("%s: intr1 = 0x%x\n", __func__, intr);
 
-#if defined(CONFIG_MACH_STEALTHV) || defined(CONFIG_MACH_AEGIS) || defined(CONFIG_MACH_VIPER) || defined(CONFIG_MACH_CHIEF)
+#if defined(CONFIG_MACH_STEALTHV)
 	if (intr & INT_KEY_MASK)
 		/* key detection */
 		fsa9480_detect_key(usbsw);

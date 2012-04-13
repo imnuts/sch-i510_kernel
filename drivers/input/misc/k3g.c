@@ -324,8 +324,8 @@ static ssize_t k3g_set_enable(struct device *dev,
 		hrtimer_start(&k3g_data->timer,
 			k3g_data->polling_delay, HRTIMER_MODE_REL);
 	} else {
-		hrtimer_cancel(&k3g_data->timer);
 		cancel_work_sync(&k3g_data->work);
+		hrtimer_cancel(&k3g_data->timer);
 		/* turning off */
 		err = i2c_smbus_write_byte_data(k3g_data->client,
 						CTRL_REG1, 0x00);
@@ -964,8 +964,8 @@ static int k3g_remove(struct i2c_client *client)
 		err = i2c_smbus_write_byte_data(k3g_data->client,
 					CTRL_REG1, 0x00);
 
-	hrtimer_cancel(&k3g_data->timer);
 	cancel_work_sync(&k3g_data->work);
+	hrtimer_cancel(&k3g_data->timer);
 	destroy_workqueue(k3g_data->k3g_wq);
 
 	input_unregister_device(k3g_data->input_dev);
@@ -983,8 +983,8 @@ static int k3g_suspend(struct device *dev)
 
 	if (k3g_data->enable) {
 		mutex_lock(&k3g_data->lock);
-		hrtimer_cancel(&k3g_data->timer);
 		cancel_work_sync(&k3g_data->work);
+		hrtimer_cancel(&k3g_data->timer);
 		err = i2c_smbus_write_byte_data(k3g_data->client,
 						CTRL_REG1, 0x00);
 		mutex_unlock(&k3g_data->lock);
@@ -1001,11 +1001,11 @@ static int k3g_resume(struct device *dev)
 
 	if (k3g_data->enable) {
 		mutex_lock(&k3g_data->lock);
-		hrtimer_start(&k3g_data->timer,
-			k3g_data->polling_delay, HRTIMER_MODE_REL);
 		err = i2c_smbus_write_i2c_block_data(client,
 				CTRL_REG1 | AC, sizeof(k3g_data->ctrl_regs),
 							k3g_data->ctrl_regs);
+		hrtimer_start(&k3g_data->timer,
+			k3g_data->polling_delay, HRTIMER_MODE_REL);
 		mutex_unlock(&k3g_data->lock);
 	}
 

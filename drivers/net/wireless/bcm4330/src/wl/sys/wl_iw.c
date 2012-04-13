@@ -52,8 +52,8 @@ typedef const struct si_pub  si_t;
 #include <proto/ethernet.h>
 #include <dngl_stats.h>
 #include <dhd.h>
-#define WL_ERROR(x) printf x
-#define WL_TRACE(x) printf x
+#define WL_ERROR(x) 
+#define WL_TRACE(x) 
 #define WL_ASSOC(x) 
 #define WL_INFORM(x) 
 #define WL_WSEC(x)

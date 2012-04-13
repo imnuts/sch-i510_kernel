@@ -759,15 +759,18 @@ typedef struct
 
 typedef struct
 {
-	bool fherr_setting;
+	uint8_t fherr_setting;
 	uint8_t fherr_count;
+	uint8_t fherr_num;
 	uint8_t t9_blen_for_fherr;
 	uint8_t t9_thr_for_fherr;
+	uint8_t t9_movfilter_for_fherr;
 	uint8_t t22_noisethr_for_fherr;
-	uint8_t freq_for_fherr0[5];
+	uint8_t t22_freqscale_for_fherr;
 	uint8_t freq_for_fherr1[5];
 	uint8_t freq_for_fherr2[5];
 	uint8_t freq_for_fherr3[5];
+	uint8_t freq_for_fherr4[5];
 }__packed t22_freq_table_config_t;
 
 
