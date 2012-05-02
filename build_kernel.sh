@@ -10,14 +10,16 @@ cd ..
 # check for device we're building for
 if [ "$1" == "strat" ]; then
 	DEVICE="stratosphere"
+	mv $WORK/.git .git-kernel
 	cd "$DEVICE"_initramfs
 	git checkout gingerbread
-	mv .git ../
+	mv .git ../.git-initramfs
 else
 	DEVICE="charge"
+	mv $WORK/.git .git-kernel
 	cd "$DEVICE"_initramfs
 	git checkout gingerbread
-	mv .git ../
+	mv .git ../.git-initramfs
 fi
 
 # build the kernel
@@ -28,10 +30,10 @@ rm -f update/*.zip update/kernel_update/zImage
 
 if [ $DEVICE == stratosphere ]; then
 make ARCH=arm EXTRAVERSION=.7 "$DEVICE"_defconfig 1>/dev/null 2>"$WORK"/errlog.txt
-make -j3 EXTRAVERSION=.7 HOSTCFLAGS="-g -O3" 1>"$WORK"/stdlog.txt 2>>"$WORK"/errlog.txt
+make -j8 EXTRAVERSION=.7 HOSTCFLAGS="-g -O3" 1>"$WORK"/stdlog.txt 2>>"$WORK"/errlog.txt
 else
 make ARCH=arm "$DEVICE"_defconfig 1>/dev/null 2>"$WORK"/errlog.txt
-make -j3 HOSTCFLAGS="-g -O3" 1>"$WORK"/stdlog.txt 2>>"$WORK"/errlog.txt
+make -j8 HOSTCFLAGS="-g -O3" 1>"$WORK"/stdlog.txt 2>>"$WORK"/errlog.txt
 fi
 if [ $? != 0 ]; then
 		echo -e "FAIL!\n\n"
@@ -58,7 +60,8 @@ mv kernel_update.zip ../"$DATE"_"$DEVICE".zip
 
 # Finish up
 cd ../../
-mv .git "$DEVICE"_initramfs/
+mv .git-initramfs "$DEVICE"_initramfs/.git
+mv .git-kernel $WORK/.git
 cd $WORK
 echo -e "***** Successfully compiled for $DEVICE *****\n"
 
