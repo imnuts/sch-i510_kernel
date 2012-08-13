@@ -1,0 +1,17 @@
+#!/system/bin/sh
+#
+# Script to enable/disable logcat on boot
+#
+# If /data/local/disable-logcat exists, then don't load
+# the logger module, otherwise, turn on logcat.
+#
+# For this to work properly, you must set
+# CONFIG_ANDROID_LOGGER=m
+# in the kernel configuration and put this in the initramfs.
+#
+# (c) 2011 - Mark Dietz (imnuts)
+
+if ! ls /data/local/disable-logcat
+then
+	insmod /lib/modules/logger.ko
+fi

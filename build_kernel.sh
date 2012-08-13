@@ -4,65 +4,41 @@
 WORK=`pwd`
 DATE=$(date +%m%d)
 
-# execution!
-cd ..
-
-# check for device we're building for
-if [ "$1" == "strat" ]; then
-	DEVICE="stratosphere"
-	mv $WORK/.git .git-kernel
-	cd "$DEVICE"_initramfs
-	git checkout gingerbread
-	mv .git ../.git-initramfs
-else
-	DEVICE="charge"
-	mv $WORK/.git .git-kernel
-	cd "$DEVICE"_initramfs
-	git checkout gingerbread
-	mv .git ../.git-initramfs
-fi
+# Move .git so we don't have a commit hash in the kernel version
+mv .git ../.git
 
 # build the kernel
-cd $WORK
-echo "***** Building for $DEVICE *****"
+echo "***** Building *****"
 make mrproper > /dev/null 2>&1
 rm -f update/*.zip update/kernel_update/zImage
 
-if [ $DEVICE == stratosphere ]; then
-make ARCH=arm EXTRAVERSION=.7 "$DEVICE"_defconfig 1>/dev/null 2>"$WORK"/errlog.txt
-make -j8 EXTRAVERSION=.7 HOSTCFLAGS="-g -O3" 1>"$WORK"/stdlog.txt 2>>"$WORK"/errlog.txt
-else
-make ARCH=arm "$DEVICE"_defconfig 1>/dev/null 2>"$WORK"/errlog.txt
+make ARCH=arm charge_defconfig 1>/dev/null 2>"$WORK"/errlog.txt
 make -j8 HOSTCFLAGS="-g -O3" 1>"$WORK"/stdlog.txt 2>>"$WORK"/errlog.txt
-fi
 if [ $? != 0 ]; then
-		echo -e "FAIL!\n\n"
+		echo -e "EPIC FAIL!\n\n"
 		cd ..
-		mv .git "$DEVICE"_initramfs/
+		mv .git "$WORK"/.git
 		exit 1
 	else
-		echo -e "Success!\n"
+		echo -e "Great Success!\n"
 		rm -f "$WORK"/*log.txt
 fi
 
 # Build a recovery odin file
 cp arch/arm/boot/zImage recovery.bin
-tar -c recovery.bin > "$DATE"_"$DEVICE"_recovery.tar
-md5sum -t "$DATE"_"$DEVICE"_recovery.tar >> "$DATE"_"$DEVICE"_recovery.tar
-mv "$DATE"_"$DEVICE"_recovery.tar "$DATE"_"$DEVICE"_recovery.tar.md5
+tar -c recovery.bin > "$DATE"_charge_recovery.tar
+md5sum -t "$DATE"_charge_recovery.tar >> "$DATE"_charge_recovery.tar
+mv "$DATE"_charge_recovery.tar "$DATE"_charge_recovery.tar.md5
 rm recovery.bin
 
 # Make the CWM Zip
 cp arch/arm/boot/zImage update/kernel_update/zImage
 cd update
 zip -r -q kernel_update.zip .
-mv kernel_update.zip ../"$DATE"_"$DEVICE".zip
+mv kernel_update.zip ../"$DATE"_charge.zip
 
 # Finish up
 cd ../../
-mv .git-initramfs "$DEVICE"_initramfs/.git
-mv .git-kernel $WORK/.git
+mv .git $WORK/.git
 cd $WORK
-echo -e "***** Successfully compiled for $DEVICE *****\n"
-
-if [ "$1" == "A" ]; then ./build_kernel.sh strat; fi
+echo -e "***** Finish *****\n"

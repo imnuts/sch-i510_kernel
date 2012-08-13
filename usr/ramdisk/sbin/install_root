@@ -1,0 +1,22 @@
+#!/system/bin/sh
+
+export PATH=$PATH:/bin
+
+mount -o remount,rw /
+mount -o remount,rw /dev/block/stl10 /system
+
+if ! ls /system/xbin/su || ! ls /system/bin/su
+then
+	rm -f /system/bin/su
+	rm -f /system/xbin/su
+	cp -f /res/su /system/bin/su
+	ln -s /system/bin/su /system/xbin/su
+fi
+rm -f /res/su
+chown 0:0 /system/bin/su
+chmod 6755 /system/bin/su
+
+mount -o remount,ro /
+mount -o remount,ro /dev/block/stl10 /system
+
+exit
