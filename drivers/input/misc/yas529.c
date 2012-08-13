@@ -2320,9 +2320,6 @@ geomagnetic_enable_store(struct device *dev,
 	if (hwdep_driver.set_enable == NULL)
 		return -ENOTTY;
 
-	if (geomagnetic_multi_lock() < 0)
-		return count;
-
 	if (value) {
 		hwdep_driver.set_enable(value);
 		geomagnetic_enable(data);
@@ -2330,8 +2327,6 @@ geomagnetic_enable_store(struct device *dev,
 		geomagnetic_disable(data);
 		hwdep_driver.set_enable(value);
 	}
-
-	geomagnetic_multi_unlock();
 
 	return count;
 }

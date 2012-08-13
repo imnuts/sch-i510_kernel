@@ -29,6 +29,7 @@ void sec_dhd_config_pm(dhd_pub_t *dhd, uint power_mode)
 		if(IS_ERR(fp)||(fp==NULL))
 		{
 			DHD_ERROR(("[WIFI] %s: File open error\n", filepath));
+			return;
 		}
 		else
 		{
@@ -65,6 +66,7 @@ void sec_dhd_config_pm(dhd_pub_t *dhd, uint power_mode)
 			if(IS_ERR(fp)||(fp==NULL))
 			{
 				DHD_ERROR(("[WIFI] %s: File open error\n", filepath));
+				return;
 			}
 			else
 			{

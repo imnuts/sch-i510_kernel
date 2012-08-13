@@ -1458,6 +1458,7 @@ extern int tcp_gro_complete(struct sk_buff *skb);
 extern int tcp4_gro_complete(struct sk_buff *skb);
 
 extern void tcp_v4_nuke_addr(__u32 saddr);
+extern int tcp_v6_nuke_addr(struct net *net, struct sockaddr *addr);
 
 #ifdef CONFIG_PROC_FS
 extern int  tcp4_proc_init(void);

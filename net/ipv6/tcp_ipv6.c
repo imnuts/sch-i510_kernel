@@ -2254,3 +2254,75 @@ void tcpv6_exit(void)
 	inet6_unregister_protosw(&tcpv6_protosw);
 	inet6_del_protocol(&tcpv6_protocol, IPPROTO_TCP);
 }
+
+static int tcp_is_local6(struct net *net, struct in6_addr *addr) {
+    struct rt6_info *rt6 = rt6_lookup(net, addr, addr, 0, 0);
+    return rt6 && rt6->rt6i_dev && (rt6->rt6i_dev->flags & IFF_LOOPBACK);
+}
+
+/*
+ * tcp_v6_nuke_addr destroy IPv6 sockets.
+ * Backported from ICS.
+ * if local address is the unspecified address (::), destroy all
+ * sockets with local addresses that are not configured.
+ *
+ */
+int tcp_v6_nuke_addr(struct net *net, struct sockaddr *addr)
+{
+    unsigned int bucket;
+
+    struct in6_addr *in6 = NULL;
+    in6 = &((struct sockaddr_in6 *)addr)->sin6_addr;
+
+    for (bucket = 0; bucket < tcp_hashinfo.ehash_mask; bucket++) {
+
+        struct hlist_nulls_node *node;
+        struct sock *sk;
+        spinlock_t *lock = inet_ehash_lockp(&tcp_hashinfo, bucket);
+
+restart:
+        spin_lock_bh(lock);
+
+        sk_nulls_for_each(sk, node, &tcp_hashinfo.ehash[bucket].chain) {
+
+            struct inet_sock *inet = inet_sk(sk);
+
+            if (sysctl_ip_dynaddr && sk->sk_state == TCP_SYN_SENT)
+                continue;
+            if (sock_flag(sk, SOCK_DEAD))
+                continue;
+
+            struct in6_addr *s6;
+            if (!inet->pinet6)
+                continue;
+            s6 = &inet->pinet6->rcv_saddr;
+            if (ipv6_addr_type(s6) == IPV6_ADDR_MAPPED)
+                continue;
+            if (!ipv6_addr_equal(in6, s6) &&
+                !(ipv6_addr_equal(in6, &in6addr_any) &&
+                !tcp_is_local6(net, s6)))
+            continue;
+
+            sock_hold(sk);
+            spin_unlock_bh(lock);
+
+            local_bh_disable();
+            bh_lock_sock(sk);
+            sk->sk_err = ETIMEDOUT;
+            sk->sk_error_report(sk);
+
+            tcp_done(sk);
+            bh_unlock_sock(sk);
+            local_bh_enable();
+            sock_put(sk);
+
+            goto restart;
+        }
+        spin_unlock_bh(lock);
+    }
+
+    return 0;
+}
+
+
+

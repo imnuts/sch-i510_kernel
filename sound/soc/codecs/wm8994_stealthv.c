@@ -1214,6 +1214,14 @@ void wm8994_set_playback_headset(struct snd_soc_codec *codec)
 	val |= 0x0005;
 	wm8994_write(codec, WM8994_CLASS_W_1, val);
 
+	if (wm8994->output_source == RING_TONE) {
+		DEBUG_LOG("Set ringtone_path_flag");
+		wm8994->ringtone_path_flag = 1;
+		
+		wm8994_set_voicecall_common(codec);
+		wm8994_write(codec, WM8994_AIF2_CLOCKING_1, 0x0019);
+	}
+
 	if (!wm8994->testmode_config_flag) {
 		val = wm8994_read(codec, WM8994_LEFT_OUTPUT_VOLUME);
 		val &= ~(WM8994_HPOUT1L_MUTE_N_MASK | WM8994_HPOUT1L_VOL_MASK);
@@ -1390,6 +1398,14 @@ void wm8994_set_playback_speaker(struct snd_soc_codec *codec)
 	val |= WM8994_SPKLVOL_ENA;
 	wm8994_write(codec, WM8994_POWER_MANAGEMENT_3, val);
 
+	if (wm8994->output_source == RING_TONE) {
+		DEBUG_LOG("Set ringtone_path_flag");
+		wm8994->ringtone_path_flag = 1;
+		
+		wm8994_set_voicecall_common(codec);
+		wm8994_write(codec, WM8994_AIF2_CLOCKING_1, 0x0019);
+	}
+
 	/* Speaker Volume Control */
 	if (!wm8994->testmode_config_flag) {
 		/* Unmute the SPKMIXVOLUME */
@@ -1527,6 +1543,14 @@ void wm8994_set_playback_speaker_headset(struct snd_soc_codec *codec)
 	val &= ~(WM8994_AIF1DAC1R_VOL_MASK);
 	val |= (WM8994_AIF1DAC1_VU |TUNING_DAC1R_VOL);
 	wm8994_write(codec, WM8994_AIF1_DAC1_RIGHT_VOLUME, val);
+
+	if (wm8994->output_source == RING_TONE) {
+		DEBUG_LOG("Set ringtone_path_flag");
+		wm8994->ringtone_path_flag = 1;
+		
+		wm8994_set_voicecall_common(codec);
+		wm8994_write(codec, WM8994_AIF2_CLOCKING_1, 0x0019);
+	}
 
 	/*------------------  Speaker Path Settings ------------------ */
 	/* Speaker Volume Control */

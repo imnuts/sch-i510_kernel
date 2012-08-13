@@ -239,6 +239,7 @@ struct wm8994_priv {
 	enum nc_state ncbypass_active;
 	enum nc_state prev_ncbypass_active;
 #endif	
+	int ringtone_path_flag;
 };
 
 struct gain_info_t {
