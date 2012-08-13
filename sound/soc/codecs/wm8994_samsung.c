@@ -569,12 +569,14 @@ static int wm8994_set_mic_path(struct snd_kcontrol *kcontrol,
 {
 	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
 	struct wm8994_priv *wm8994 = codec->drvdata;
+        int path_num = ucontrol->value.integer.value[0];
 
-	DEBUG_LOG("");
+
+	DEBUG_LOG("(%d)", path_num);
 
 	wm8994->codec_state |= CAPTURE_ACTIVE;
 
-	switch (ucontrol->value.integer.value[0]) {
+	switch (path_num) {
 	case MAIN:
 #ifdef CONFIG_VOIP
                 if((wm8994->cur_path == SPK) && (wm8994->voip_start_flag)) {
@@ -875,7 +877,7 @@ static int wm8994_set_codec_status(struct snd_kcontrol *kcontrol,
                 if(wm8994->codec_state & CALL_ACTIVE) {
                         int val;
                         
-                        DEBUG_LOG("Mute AIF2 in call !!");
+                        DEBUG_LOG("Mute playback path from CP side");
                         
                         val = wm8994_read(codec, WM8994_AIF2_DAC_FILTERS_1);
                         val &= ~(WM8994_AIF2DAC_MUTE_MASK);
@@ -1691,6 +1693,7 @@ void wm8994_shutdown(struct snd_pcm_substream *substream,
 		
 		/* mute only AIF1DAC1 when call, radio or recording is active */
 		if (wm8994->codec_state) {
+                        DEBUG_LOG("Mute playback path from AP side");
 			val = wm8994_read(codec, WM8994_AIF1_DAC1_FILTERS_1);
 			val |= (WM8994_AIF1DAC1_MUTE);
 			wm8994_write(codec, WM8994_AIF1_DAC1_FILTERS_1, val);
@@ -1707,7 +1710,14 @@ void wm8994_shutdown(struct snd_pcm_substream *substream,
 		wm8994->fmradio_path = FMR_OFF;
 		wm8994->cur_path = OFF;
 		wm8994->rec_path = MIC_OFF;
-		wm8994_write(codec, WM8994_SOFTWARE_RESET, 0x0000);
+
+		if (!wm8994->ringtone_path_flag) /* This flag is set only using VIA CP */ 
+			wm8994_write(codec, WM8994_SOFTWARE_RESET, 0x0000);
+		else {
+			DEBUG_LOG("Clear ringtone_path_flag");
+			wm8994->ringtone_path_flag = 0;
+		}
+		
 #if defined ATTACH_ADDITINAL_PCM_DRIVER
 		vtcall_active = VT_OFF;
 #endif
@@ -3487,6 +3497,8 @@ static int wm8994_init(struct wm8994_priv *wm8994_private,
 #ifdef CONFIG_VOIP
 	wm8994->voip_start_flag = 0;
 #endif
+	wm8994->ringtone_path_flag = 0;
+
 	wm8994->pdata = pdata;
 	wm8994->codec_clk = clk_get(NULL, "usb_osc");
 	wm8994->universal_clock_control(codec, CODEC_ON);

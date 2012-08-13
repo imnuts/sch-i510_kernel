@@ -260,6 +260,8 @@ struct wm8994_priv {
 #ifdef CONFIG_VOIP
 	int voip_start_flag;
 #endif
+#endif	
+	int ringtone_path_flag;
 };
 
 struct gain_info_t {
